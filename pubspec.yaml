@@ -57,8 +57,15 @@ flutter:
   # included with your application, so that you can use the icons in
   # the material Icons class.
   uses-material-design: true
+
   assets:
     - assets/images/
+    - assets/images/system/
+    - assets/images/backgrounds/battle/
+    - assets/images/backgrounds/story/
+    - assets/images/characters/enemies/
+    - assets/images/characters/player/
+
   fonts:
     - family: NotoSansKR
       fonts:

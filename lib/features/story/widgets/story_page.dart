@@ -1,6 +1,11 @@
 import 'package:flutter/material.dart';
 import 'typewriter_text.dart';
 
+import '../../../core/constants/asset_paths.dart';
+import '../../battle/data/battle_configs.dart';
+import '../../battle/models/battle_result.dart';
+import '../../battle/pages/battle_page.dart';
+
 class StoryPage extends StatefulWidget {
   const StoryPage({super.key});
 
@@ -10,6 +15,46 @@ class StoryPage extends StatefulWidget {
 
 class _StoryPageState extends State<StoryPage> {
   bool _showChoices = false;
+
+  Future<void> _moveToBattle() async {
+    final config = battleConfigs['zombie_01'];
+    if (config == null) return;
+
+    final result = await Navigator.push<BattleResult>(
+      context,
+      MaterialPageRoute(
+        builder: (_) => BattlePage(config: config),
+      ),
+    );
+
+    if (!mounted || result == null) return;
+
+    if (result.isWin) {
+      final rewardText = result.reward.itemIds.isEmpty
+          ? '획득한 아이템 없음'
+          : '획득 아이템: ${result.reward.itemIds.join(', ')}';
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            '전투 승리. 남은 HP: ${result.remainHp} / $rewardText',
+          ),
+        ),
+      );
+    } else if (result.isEscaped) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('전투에서 도망쳤다.'),
+        ),
+      );
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('전투에서 패배했다.'),
+        ),
+      );
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -21,17 +66,15 @@ class _StoryPageState extends State<StoryPage> {
         children: [
           Positioned.fill(
             child: Image.asset(
-              'assets/images/chapter1.png',
+              BackgroundPaths.chapter1Bg,
               fit: BoxFit.cover,
             ),
           ),
-
           Positioned.fill(
             child: Container(
               color: Colors.black.withOpacity(0.22),
             ),
           ),
-
           Positioned.fill(
             child: DecoratedBox(
               decoration: BoxDecoration(
@@ -49,7 +92,6 @@ class _StoryPageState extends State<StoryPage> {
               ),
             ),
           ),
-
           Positioned.fill(
             child: DecoratedBox(
               decoration: BoxDecoration(
@@ -66,15 +108,12 @@ class _StoryPageState extends State<StoryPage> {
               ),
             ),
           ),
-
           SafeArea(
             child: Padding(
-
               padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 26),
               child: Column(
                 children: [
                   const SizedBox(height: 8),
-
                   Center(
                     child: Column(
                       children: [
@@ -108,9 +147,7 @@ class _StoryPageState extends State<StoryPage> {
                       ],
                     ),
                   ),
-
                   const Spacer(),
-
                   Align(
                     alignment: Alignment.centerLeft,
                     child: Container(
@@ -167,9 +204,7 @@ class _StoryPageState extends State<StoryPage> {
                       ),
                     ),
                   ),
-
                   const SizedBox(height: 30),
-
                   AnimatedOpacity(
                     opacity: _showChoices ? 1 : 0,
                     duration: const Duration(milliseconds: 500),
@@ -186,13 +221,12 @@ class _StoryPageState extends State<StoryPage> {
                           _buildChoiceButton(
                             text: '소리가 들린 골목으로 향한다.',
                             textColor: ivory,
-                            onTap: () {},
+                            onTap: _moveToBattle,
                           ),
                         ],
                       ),
                     ),
                   ),
-
                   const SizedBox(height: 10),
                 ],
               ),
@@ -258,13 +292,12 @@ class _HoverChoiceButtonState extends State<_HoverChoiceButton> {
                   child: Opacity(
                     opacity: 0.22,
                     child: Image.asset(
-                      'assets/images/boxBackGround.png',
+                      UiPaths.choiceBg,
                       fit: BoxFit.cover,
                     ),
                   ),
                 ),
               ),
-
               Positioned.fill(
                 child: Container(
                   decoration: BoxDecoration(
@@ -285,7 +318,6 @@ class _HoverChoiceButtonState extends State<_HoverChoiceButton> {
                   ),
                 ),
               ),
-
               Positioned.fill(
                 child: Container(
                   decoration: BoxDecoration(
@@ -306,7 +338,6 @@ class _HoverChoiceButtonState extends State<_HoverChoiceButton> {
                   ),
                 ),
               ),
-
               Positioned.fill(
                 child: Container(
                   decoration: BoxDecoration(
@@ -322,7 +353,6 @@ class _HoverChoiceButtonState extends State<_HoverChoiceButton> {
                   ),
                 ),
               ),
-
               Center(
                 child: Text(
                   widget.text,
