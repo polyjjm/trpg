@@ -1,73 +1,42 @@
+import '../models/battle_card.dart';
 import 'dart:math';
-
-import '../models/battle_config.dart';
-import '../models/battle_drop_item.dart';
-import '../models/battle_reward.dart';
-import '../models/battle_unit.dart';
 
 class BattleService {
   final Random _random = Random();
 
-  BattleUnit createEnemy(BattleConfig config) {
-    final int hp = _randomInRange(
-      config.enemyHpRange.min,
-      config.enemyHpRange.max,
-    );
+  List<BattleCard> getBattleCards() {
+    final cards = [
+      BattleCard(
+        type: BattleCardType.fail,
+        frontImagePath: 'assets/images/system/failCard.png',
+      ),
+      BattleCard(
+        type: BattleCardType.lightAttack,
+        frontImagePath: 'assets/images/system/lightAttackCard.png',
+      ),
+      BattleCard(
+        type: BattleCardType.attack,
+        frontImagePath: 'assets/images/system/attackCard.png',
+      ),
+      BattleCard(
+        type: BattleCardType.attack,
+        frontImagePath: 'assets/images/system/attackCard.png',
+      ),
+      BattleCard(
+        type: BattleCardType.heavyAttack,
+        frontImagePath: 'assets/images/system/heavyAttackCard.png',
+      ),
+    ];
 
-    final int attack = _randomInRange(
-      config.enemyAttackRange.min,
-      config.enemyAttackRange.max,
-    );
+    cards.shuffle(_random); // 🔥 랜덤 섞기
 
-    return BattleUnit(
-      name: config.enemyName,
-      maxHp: hp,
-      hp: hp,
-      attack: attack,
-    );
+    return cards;
   }
 
-  BattleReward createReward(BattleConfig config) {
-    final List<String> droppedItems = [];
-
-    final int dropCount = _randomInRange(
-      config.minDropCount,
-      config.maxDropCount,
+  BattleCard getFailCard() {
+    return const BattleCard(
+      type: BattleCardType.fail,
+      frontImagePath: 'assets/images/system/failCard.png',
     );
-
-    final List<BattleDropItem> shuffledDrops =
-    List<BattleDropItem>.from(config.dropItems)..shuffle(_random);
-
-    for (final drop in shuffledDrops) {
-      if (droppedItems.length >= dropCount) {
-        break;
-      }
-
-      final double roll = _random.nextDouble();
-      if (roll <= drop.chance) {
-        droppedItems.add(drop.itemId);
-      }
-    }
-
-    return BattleReward(
-      itemIds: droppedItems,
-      gold: 0,
-      exp: 0,
-    );
-  }
-
-  bool tryEscape(BattleConfig config) {
-    if (!config.canEscape) {
-      return false;
-    }
-
-    return _random.nextDouble() <= config.escapeChance;
-  }
-
-  int _randomInRange(int min, int max) {
-    if (min >= max) {
-      return min;
-    }
-    return min + _random.nextInt(max - min + 1);
   }
 }
