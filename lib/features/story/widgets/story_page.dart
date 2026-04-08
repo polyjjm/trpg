@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import 'package:sotry_trpg/features/panel/widgets/game_bottom_panel.dart';
+import 'package:sotry_trpg/features/panel/widgets/panel_handle_button.dart';
 import 'typewriter_text.dart';
 
 import '../../../core/constants/asset_paths.dart';
@@ -231,6 +233,10 @@ class _StoryPageState extends State<StoryPage> {
                 ],
               ),
             ),
+          ),
+          const Align(
+            alignment: Alignment.bottomCenter,
+            child: PanelHandleButton(),
           ),
         ],
       ),

@@ -11,6 +11,7 @@ import '../models/battle_reward.dart';
 import '../models/battle_unit.dart';
 import '../services/battle_service.dart';
 import '../widgets/battle_card_select_row.dart';
+import '../widgets/battle_hp_bar.dart';
 
 class BattlePage extends StatefulWidget {
   final BattleConfig config;
@@ -162,8 +163,7 @@ class _BattlePageState extends State<BattlePage> {
     if (!playerTurn || battleEnd || actionLock) return;
 
     setState(() {
-      _battleCards = _battleService.getBattleCards(); // 🔥 추가
-
+      _battleCards = _battleService.getBattleCards();
       actionLock = true;
       _showCardSelection = true;
       _selectedCardIndex = null;
@@ -419,50 +419,6 @@ class _BattlePageState extends State<BattlePage> {
     });
   }
 
-  Widget _buildHpBar({
-    required String name,
-    required int hp,
-    required int maxHp,
-    required Alignment alignment,
-  }) {
-    final ratio = maxHp == 0 ? 0.0 : hp / maxHp;
-
-    return Align(
-      alignment: alignment,
-      child: Container(
-        width: 250,
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-        decoration: BoxDecoration(
-          color: Colors.black.withOpacity(0.48),
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: Colors.white.withOpacity(0.14)),
-        ),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              '$name HP $hp / $maxHp',
-              style: const TextStyle(
-                color: Colors.white,
-                fontWeight: FontWeight.w700,
-                fontSize: 15,
-              ),
-            ),
-            const SizedBox(height: 8),
-            ClipRRect(
-              borderRadius: BorderRadius.circular(8),
-              child: LinearProgressIndicator(
-                value: ratio,
-                minHeight: 12,
-                backgroundColor: Colors.white.withOpacity(0.14),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
 
   Widget _buildActionButton({
     required String text,
@@ -588,33 +544,6 @@ class _BattlePageState extends State<BattlePage> {
               ),
             ),
           ),
-          if (_showCardSelection)
-            Positioned.fill(
-              child: Stack(
-                children: [
-                  // 전체 어둡게
-                  Container(
-                    color: Colors.black.withOpacity(0.6),
-                  ),
-
-                  // 카드 영역
-                  Center(
-                    child: Container(
-                      padding: const EdgeInsets.all(20),
-                      decoration: BoxDecoration(
-                        color: Colors.black.withOpacity(0.3),
-                        borderRadius: BorderRadius.circular(20),
-                      ),
-                      child: BattleCardSelectRow(
-                        cards: _battleCards,
-                        selectedIndex: _selectedCardIndex,
-                        onSelect: onBattleCardSelected,
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ),
           SafeArea(
             child: Padding(
               padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
@@ -641,39 +570,92 @@ class _BattlePageState extends State<BattlePage> {
                     ],
                   ),
                   const SizedBox(height: 8),
-                  _buildHpBar(
-                    name: enemy.name,
-                    hp: enemy.hp,
-                    maxHp: enemy.maxHp,
+                  Align(
                     alignment: Alignment.topRight,
+                    child: BattleHpBar(
+                      label: enemy.name,
+                      currentHp: enemy.hp,
+                      maxHp: enemy.maxHp,
+                    ),
                   ),
                   Expanded(
                     child: SizedBox(
                       width: double.infinity,
-                      child: Stack(
-                        children: [
-                          Positioned.fill(
-                            child: Container(),
-                          ),
-                          Positioned(
-                            top: 30,
-                            right: 50 + enemyShakeX,
-                            child: _buildEnemyCharacter(),
-                          ),
-                          Positioned(
-                            left: 10 + playerOffsetX,
-                            bottom: 20,
-                            child: _buildPlayerCharacter(),
-                          ),
-                        ],
+                      child: LayoutBuilder(
+                        builder: (context, constraints) {
+                          final battleWidth = constraints.maxWidth;
+                          final battleHeight = constraints.maxHeight;
+
+                          final enemySize = battleWidth < 700 ? 180.0 : 250.0;
+                          final playerSize = battleWidth < 700 ? 180.0 : 250.0;
+
+                          final enemyTop = battleHeight * 0.05;
+                          final enemyRight = battleWidth * 0.03 + enemyShakeX;
+
+                          final playerLeft = battleWidth * 0.02 + playerOffsetX;
+                          final playerBottom = battleHeight * 0.04;
+
+                          final cardAreaWidth = battleWidth * 0.86;
+                          final dimColor = Colors.black.withOpacity(0.30);
+
+                          return Stack(
+                            clipBehavior: Clip.none,
+                            children: [
+                              Positioned(
+                                top: enemyTop,
+                                right: enemyRight,
+                                child: SizedBox(
+                                  width: enemySize,
+                                  height: enemySize,
+                                  child: _buildEnemyCharacter(),
+                                ),
+                              ),
+
+                              Positioned(
+                                left: playerLeft,
+                                bottom: playerBottom,
+                                child: SizedBox(
+                                  width: playerSize,
+                                  height: playerSize,
+                                  child: _buildPlayerCharacter(),
+                                ),
+                              ),
+
+                              if (_showCardSelection)
+                                Positioned.fill(
+                                  child: IgnorePointer(
+                                    ignoring: false,
+                                    child: Container(
+                                      color: Colors.black.withOpacity(0.20),
+                                    ),
+                                  ),
+                                ),
+
+                              if (_showCardSelection)
+                                Align(
+                                  alignment: Alignment.center,
+                                  child: SizedBox(
+                                    width: cardAreaWidth,
+                                    child: BattleCardSelectRow(
+                                      cards: _battleCards,
+                                      selectedIndex: _selectedCardIndex,
+                                      onSelect: onBattleCardSelected,
+                                    ),
+                                  ),
+                                ),
+                            ],
+                          );
+                        },
                       ),
                     ),
                   ),
-                  _buildHpBar(
-                    name: player.name,
-                    hp: player.hp,
-                    maxHp: player.maxHp,
+                  Align(
                     alignment: Alignment.bottomLeft,
+                    child: BattleHpBar(
+                      label: player.name,
+                      currentHp: player.hp,
+                      maxHp: player.maxHp,
+                    ),
                   ),
                   const SizedBox(height: 14),
                   Container(
