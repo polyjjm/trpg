@@ -44,50 +44,61 @@ class _GameBottomPanelState extends State<GameBottomPanel> {
   }
 
   Widget _buildMenuView() {
-    return Column(
-      children: [
-        _buildMenuButton(
-          title: '상태창',
-          onTap: () => changeMenu(PanelMenuType.status),
-        ),
-        const SizedBox(height: 12),
-        _buildMenuButton(
-          title: '장비창',
-          onTap: () => changeMenu(PanelMenuType.equipment),
-        ),
-        const SizedBox(height: 12),
-        _buildMenuButton(
-          title: '인벤토리',
-          onTap: () => changeMenu(PanelMenuType.inventory),
-        ),
-      ],
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 10),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+        children: [
+          _buildMenuCard(
+            label: '상태',
+            imagePath: 'assets/images/system/status.png',
+            onTap: () => changeMenu(PanelMenuType.status),
+          ),
+          _buildMenuCard(
+            label: '장비',
+            imagePath: 'assets/images/system/equipment.png',
+            onTap: () => changeMenu(PanelMenuType.equipment),
+          ),
+          _buildMenuCard(
+            label: '인벤토리',
+            imagePath: 'assets/images/system/inventory.png',
+            onTap: () => changeMenu(PanelMenuType.inventory),
+          ),
+        ],
+      ),
     );
   }
 
-  Widget _buildMenuButton({
-    required String title,
+  Widget _buildMenuCard({
+    required String label,
+    required String imagePath,
     required VoidCallback onTap,
   }) {
-    return SizedBox(
-      width: double.infinity,
-      child: ElevatedButton(
-        onPressed: onTap,
-        style: ElevatedButton.styleFrom(
-          backgroundColor: const Color(0xFF2A2A2A),
-          foregroundColor: Colors.white,
-          elevation: 0,
-          padding: const EdgeInsets.symmetric(vertical: 16),
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(14),
-            side: const BorderSide(color: Colors.white12),
-          ),
-        ),
-        child: Text(
-          title,
-          style: const TextStyle(
-            fontSize: 16,
-            fontWeight: FontWeight.bold,
-          ),
+    return Expanded(
+      child: GestureDetector(
+        onTap: onTap,
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            // 🔥 핵심: 아이콘 크게
+            Image.asset(
+              imagePath,
+              width: 110,
+              height: 110,
+              fit: BoxFit.contain,
+            ),
+
+            const SizedBox(height: 10),
+
+            Text(
+              label,
+              style: const TextStyle(
+                color: Colors.white,
+                fontSize: 14,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ],
         ),
       ),
     );
