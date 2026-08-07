@@ -57,3 +57,43 @@ Feature-first layout under `lib/features/<feature>/{pages,widgets,models,service
 - [ ] Verify screen size / touch UI (battle card selection, panel system, and other touch interactions)
 - [ ] Confirm asset paths and fonts load correctly on mobile
 - [ ] In-app purchase / ad SDK integration planned (service not yet decided)
+# Game Systems Design
+
+## Core loop
+Story-driven survival — branching narrative choices, combat, and random encounter events woven together.
+
+## Random events / mini-games
+Chance-based encounters that can trigger during story progression:
+
+- **Merchant/beggar encounters**: while traveling or in town, a random-chance encounter with a merchant or street vendor
+    - Bartering (item ↔ item)
+    - Buy/sell (currency ↔ item, if a currency system exists)
+- **Gambling elements**: encounter triggers a mini-game where the player wagers items/currency
+    - Coin flip (heads/tails)
+    - (expandable later: dice, card draw, etc.)
+- **Random risk encounters**: chance-based threatening NPC/monster encounter that forces a choice (flee / fight / negotiate)
+
+## Shop system
+- Fixed shop access at specific story nodes (e.g. a town/village)
+- Buy/sell inventory items
+
+## Boss battles
+- A distinct, tougher battle placed at the end of certain chapters, separate from regular encounters
+- Higher stats than regular monsters + needs unique attack patterns/presentation
+
+## Undecided (to discuss later)
+- Whether a currency system exists, or if it's barter-only
+- Whether bosses appear once per chapter, or only at specific story points
+- Additional gambling/mini-game types
+  markdown
+## Death / Revival system
+- On death, the player is NOT sent back to the very beginning — progress continues from where they died (or a recent checkpoint)
+- Revival options on death:
+    - **Paid item**: use a premium currency/item to revive on the spot
+    - **Watch ad**: watch a rewarded ad to revive (free alternative to paid item)
+
+## Monetization
+- **Revival item**: purchasable premium item used to revive after death (see above)
+- **Rewarded ads**: ad-based free revival option
+- **Expansion packs**: purchasable content packs that unlock additional story chapters/content
+- (To decide later: what exactly is gated behind expansion packs — new chapters only, or also exclusive items/monsters?)
