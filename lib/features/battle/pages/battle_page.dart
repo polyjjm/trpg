@@ -4,6 +4,7 @@ import 'dart:math';
 import 'package:flutter/material.dart';
 
 import '../../../core/constants/asset_paths.dart';
+import '../../../core/state/game_state_scope.dart';
 import '../models/battle_card.dart';
 import '../models/battle_config.dart';
 import '../models/battle_result.dart';
@@ -41,22 +42,33 @@ class _BattlePageState extends State<BattlePage> {
 
   double playerOffsetX = 0;
   double enemyShakeX = 0;
+  double playerShakeX = 0;
 
   bool showDamageText = false;
   String damageText = '';
 
+  bool showPlayerDamageText = false;
+  String playerDamageText = '';
+
   bool _showCardSelection = false;
   int? _selectedCardIndex;
 
+  bool _initialized = false;
+
   @override
-  void initState() {
-    super.initState();
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+
+    if (_initialized) return;
+    _initialized = true;
+
+    final gameState = GameStateScope.of(context);
 
     player = BattleUnit(
       name: '생존자',
-      maxHp: 30,
-      hp: 30,
-      attack: 8,
+      maxHp: gameState.playerMaxHp,
+      hp: gameState.playerHp,
+      attack: gameState.playerAttack,
     );
 
     enemy = _createEnemy(widget.config);
@@ -159,6 +171,42 @@ class _BattlePageState extends State<BattlePage> {
     });
   }
 
+  Future<void> _playPlayerHitMotion(int damage) async {
+    setState(() {
+      playerDamageText = '-$damage';
+      showPlayerDamageText = true;
+      playerShakeX = -10;
+    });
+
+    await Future.delayed(const Duration(milliseconds: 60));
+    if (!mounted) return;
+
+    setState(() {
+      playerShakeX = 10;
+    });
+
+    await Future.delayed(const Duration(milliseconds: 60));
+    if (!mounted) return;
+
+    setState(() {
+      playerShakeX = -6;
+    });
+
+    await Future.delayed(const Duration(milliseconds: 60));
+    if (!mounted) return;
+
+    setState(() {
+      playerShakeX = 0;
+    });
+
+    await Future.delayed(const Duration(milliseconds: 500));
+    if (!mounted) return;
+
+    setState(() {
+      showPlayerDamageText = false;
+    });
+  }
+
   Future<void> onAttackPressed() async {
     if (!playerTurn || battleEnd || actionLock) return;
 
@@ -183,6 +231,13 @@ class _BattlePageState extends State<BattlePage> {
     await Future.delayed(const Duration(milliseconds: 500));
     if (!mounted || battleEnd) return;
 
+    setState(() {
+      battleLog = '${enemy.name}이(가) 공격을 준비한다!';
+    });
+
+    await Future.delayed(const Duration(milliseconds: 500));
+    if (!mounted || battleEnd) return;
+
     final reducedDamage = (enemy.attack / 2).floor();
     if (reducedDamage > 0) {
       player.takeDamage(reducedDamage);
@@ -190,11 +245,16 @@ class _BattlePageState extends State<BattlePage> {
 
     setState(() {
       battleLog =
-      '${enemy.name}의 공격. ${player.name}이(가) $reducedDamage 데미지를 입었다.';
+      '${enemy.name}의 공격! ${player.name}이(가) 방어로 피해를 줄여 $reducedDamage 데미지를 입었다.';
     });
 
-    await Future.delayed(const Duration(milliseconds: 700));
-    if (!mounted) return;
+    if (reducedDamage > 0) {
+      await _playPlayerHitMotion(reducedDamage);
+      if (!mounted) return;
+    } else {
+      await Future.delayed(const Duration(milliseconds: 500));
+      if (!mounted) return;
+    }
 
     if (player.isDead) {
       setState(() {
@@ -376,17 +436,21 @@ class _BattlePageState extends State<BattlePage> {
   }
 
   Future<void> enemyAttack() async {
-    await Future.delayed(const Duration(milliseconds: 700));
-    if (!mounted || battleEnd) return;
-
-    player.takeDamage(enemy.attack);
-
     setState(() {
-      battleLog =
-      '${enemy.name}의 공격. ${player.name}이(가) ${enemy.attack} 데미지를 입었다.';
+      battleLog = '${enemy.name}이(가) 공격을 준비한다!';
     });
 
     await Future.delayed(const Duration(milliseconds: 700));
+    if (!mounted || battleEnd) return;
+
+    final damage = enemy.attack;
+    player.takeDamage(damage);
+
+    setState(() {
+      battleLog = '${enemy.name}의 공격! ${player.name}이(가) $damage 데미지를 입었다.';
+    });
+
+    await _playPlayerHitMotion(damage);
     if (!mounted) return;
 
     if (player.isDead) {
@@ -503,11 +567,42 @@ class _BattlePageState extends State<BattlePage> {
     return SizedBox(
       width: 250,
       height: 250,
-      child: Image.asset(
-        CharacterPaths.player,
-        width: 250,
-        height: 250,
-        fit: BoxFit.contain,
+      child: Stack(
+        alignment: Alignment.topCenter,
+        children: [
+          Image.asset(
+            CharacterPaths.player,
+            width: 250,
+            height: 250,
+            fit: BoxFit.contain,
+          ),
+          Positioned(
+            top: 8,
+            child: AnimatedSlide(
+              duration: const Duration(milliseconds: 180),
+              offset: showPlayerDamageText ? const Offset(0, -0.15) : Offset.zero,
+              child: AnimatedOpacity(
+                duration: const Duration(milliseconds: 180),
+                opacity: showPlayerDamageText ? 1 : 0,
+                child: Text(
+                  playerDamageText,
+                  style: const TextStyle(
+                    color: Colors.redAccent,
+                    fontSize: 28,
+                    fontWeight: FontWeight.w900,
+                    shadows: [
+                      Shadow(
+                        blurRadius: 10,
+                        color: Colors.black,
+                        offset: Offset(0, 2),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -592,7 +687,8 @@ class _BattlePageState extends State<BattlePage> {
                           final enemyTop = battleHeight * 0.05;
                           final enemyRight = battleWidth * 0.03 + enemyShakeX;
 
-                          final playerLeft = battleWidth * 0.02 + playerOffsetX;
+                          final playerLeft =
+                              battleWidth * 0.02 + playerOffsetX + playerShakeX;
                           final playerBottom = battleHeight * 0.04;
 
                           final cardAreaWidth = battleWidth * 0.86;

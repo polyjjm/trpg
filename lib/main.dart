@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'widgets/loading.dart';
 import 'core/platform/remove_app_loading.dart';
+import 'core/state/game_state_provider.dart';
 import 'features/story/widgets/story_page.dart';
 
 void main() {
@@ -13,15 +14,17 @@ class MyApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return MaterialApp(
-      title: 'Zombie Story Game',
-      debugShowCheckedModeBanner: false,
-      theme: ThemeData(
-        brightness: Brightness.dark,
-        scaffoldBackgroundColor: Colors.black,
-        fontFamily: 'NotoSansKR',
+    return GameStateProvider(
+      child: MaterialApp(
+        title: 'Zombie Story Game',
+        debugShowCheckedModeBanner: false,
+        theme: ThemeData(
+          brightness: Brightness.dark,
+          scaffoldBackgroundColor: Colors.black,
+          fontFamily: 'NotoSansKR',
+        ),
+        home: const MainPage(),
       ),
-      home: const MainPage(),
     );
   }
 }

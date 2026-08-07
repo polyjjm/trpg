@@ -1,12 +1,14 @@
 import 'package:flutter/material.dart';
-import 'package:sotry_trpg/features/panel/widgets/game_bottom_panel.dart';
 import 'package:sotry_trpg/features/panel/widgets/panel_handle_button.dart';
 import 'typewriter_text.dart';
 
 import '../../../core/constants/asset_paths.dart';
+import '../../../core/state/game_state_scope.dart';
 import '../../battle/data/battle_configs.dart';
 import '../../battle/models/battle_result.dart';
 import '../../battle/pages/battle_page.dart';
+import '../data/story_nodes.dart';
+import '../models/story_choice.dart';
 
 class StoryPage extends StatefulWidget {
   const StoryPage({super.key});
@@ -16,11 +18,25 @@ class StoryPage extends StatefulWidget {
 }
 
 class _StoryPageState extends State<StoryPage> {
+  String? _typedNodeId;
   bool _showChoices = false;
 
-  Future<void> _moveToBattle() async {
-    final config = battleConfigs['zombie_01'];
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+
+    final currentNodeId = GameStateScope.of(context).currentNodeId;
+    if (_typedNodeId != currentNodeId) {
+      _typedNodeId = currentNodeId;
+      _showChoices = false;
+    }
+  }
+
+  Future<void> _handleBattleChoice(StoryBattleTrigger trigger) async {
+    final config = battleConfigs[trigger.battleId];
     if (config == null) return;
+
+    final gameState = GameStateScope.of(context);
 
     final result = await Navigator.push<BattleResult>(
       context,
@@ -31,31 +47,40 @@ class _StoryPageState extends State<StoryPage> {
 
     if (!mounted || result == null) return;
 
-    if (result.isWin) {
-      final rewardText = result.reward.itemIds.isEmpty
-          ? '획득한 아이템 없음'
-          : '획득 아이템: ${result.reward.itemIds.join(', ')}';
+    gameState.applyBattleResult(result);
 
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            '전투 승리. 남은 HP: ${result.remainHp} / $rewardText',
-          ),
-        ),
-      );
-    } else if (result.isEscaped) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('전투에서 도망쳤다.'),
-        ),
-      );
-    } else {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('전투에서 패배했다.'),
-        ),
-      );
-    }
+    final nextNodeId = switch (result.outcome) {
+      BattleOutcome.win => trigger.winNodeId,
+      BattleOutcome.lose => trigger.loseNodeId,
+      BattleOutcome.escape => trigger.escapeNodeId,
+    };
+
+    gameState.goToNode(nextNodeId);
+
+    if (!mounted) return;
+
+    final rewardText = result.reward.itemIds.isEmpty
+        ? '획득한 아이템 없음'
+        : '획득 아이템: ${result.reward.itemIds.join(', ')}';
+
+    final message = switch (result.outcome) {
+      BattleOutcome.win => '전투 승리. 남은 HP: ${result.remainHp} / $rewardText',
+      BattleOutcome.escape => '전투에서 도망쳤다.',
+      BattleOutcome.lose => '전투에서 패배했다.',
+    };
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(message)),
+    );
+  }
+
+  void _handleNodeChoice(String nextNodeId) {
+    GameStateScope.of(context).goToNode(nextNodeId);
+  }
+
+  void _handleRestart() {
+    GameStateScope.of(context).resetProgress(storyStartNodeId);
+    Navigator.popUntil(context, (route) => route.isFirst);
   }
 
   @override
@@ -63,12 +88,15 @@ class _StoryPageState extends State<StoryPage> {
     const Color ivory = Color(0xFFE2D4BF);
     const Color softLine = Color(0x99CDBDA7);
 
+    final currentNodeId = GameStateScope.of(context).currentNodeId;
+    final node = storyNodes[currentNodeId]!;
+
     return Scaffold(
       body: Stack(
         children: [
           Positioned.fill(
             child: Image.asset(
-              BackgroundPaths.chapter1Bg,
+              node.backgroundImage,
               fit: BoxFit.cover,
             ),
           ),
@@ -120,7 +148,7 @@ class _StoryPageState extends State<StoryPage> {
                     child: Column(
                       children: [
                         Text(
-                          'DAY 1',
+                          node.dayLabel,
                           style: TextStyle(
                             fontSize: 18,
                             letterSpacing: 3.5,
@@ -130,7 +158,7 @@ class _StoryPageState extends State<StoryPage> {
                         ),
                         const SizedBox(height: 12),
                         Text(
-                          '폐허가 된 도시 외곽',
+                          node.title,
                           textAlign: TextAlign.center,
                           style: TextStyle(
                             fontSize: 32,
@@ -178,8 +206,8 @@ class _StoryPageState extends State<StoryPage> {
                           ),
                           Expanded(
                             child: TypewriterText(
-                              text:
-                              '도시는 이미 무너져 있었다.\n하지만 아직 끝난 것은 아니었다.\n살아남기 위해, 나는 걸음을 옮겼다.',
+                              key: ValueKey(node.id),
+                              text: node.text,
                               speed: const Duration(milliseconds: 45),
                               style: TextStyle(
                                 fontSize: 21,
@@ -213,19 +241,27 @@ class _StoryPageState extends State<StoryPage> {
                     child: IgnorePointer(
                       ignoring: !_showChoices,
                       child: Column(
-                        children: [
-                          _buildChoiceButton(
-                            text: '무너진 편의점으로 들어간다.',
-                            textColor: ivory,
-                            onTap: () {},
-                          ),
-                          const SizedBox(height: 14),
-                          _buildChoiceButton(
-                            text: '소리가 들린 골목으로 향한다.',
-                            textColor: ivory,
-                            onTap: _moveToBattle,
-                          ),
-                        ],
+                        children: node.isEnding
+                            ? [
+                                _buildChoiceButton(
+                                  text: '처음으로',
+                                  textColor: ivory,
+                                  onTap: _handleRestart,
+                                ),
+                              ]
+                            : [
+                                for (final choice in node.choices) ...[
+                                  _buildChoiceButton(
+                                    text: choice.text,
+                                    textColor: ivory,
+                                    onTap: choice.triggersBattle
+                                        ? () => _handleBattleChoice(choice.battleTrigger!)
+                                        : () => _handleNodeChoice(choice.nextNodeId!),
+                                  ),
+                                  if (choice != node.choices.last)
+                                    const SizedBox(height: 14),
+                                ],
+                              ],
                       ),
                     ),
                   ),

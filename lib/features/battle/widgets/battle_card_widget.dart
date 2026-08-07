@@ -1,7 +1,9 @@
+import 'dart:math';
+
 import 'package:flutter/material.dart';
 import '../models/battle_card.dart';
 
-class BattleCardWidget extends StatelessWidget {
+class BattleCardWidget extends StatefulWidget {
   final BattleCard card;
   final bool isFlipped;
   final VoidCallback? onTap;
@@ -18,20 +20,89 @@ class BattleCardWidget extends StatelessWidget {
   });
 
   @override
+  State<BattleCardWidget> createState() => _BattleCardWidgetState();
+}
+
+class _BattleCardWidgetState extends State<BattleCardWidget>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _flipController;
+  late final Animation<double> _flipAnimation;
+
+  @override
+  void initState() {
+    super.initState();
+
+    _flipController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 320),
+      value: widget.isFlipped ? 1 : 0,
+    );
+
+    _flipAnimation = CurvedAnimation(
+      parent: _flipController,
+      curve: Curves.easeInOut,
+    );
+  }
+
+  @override
+  void didUpdateWidget(covariant BattleCardWidget oldWidget) {
+    super.didUpdateWidget(oldWidget);
+
+    if (widget.isFlipped != oldWidget.isFlipped) {
+      if (widget.isFlipped) {
+        _flipController.forward();
+      } else {
+        _flipController.reverse();
+      }
+    }
+  }
+
+  @override
+  void dispose() {
+    _flipController.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
-    final imagePath = isFlipped ? card.frontImagePath : card.backImagePath;
-    final height = width * 1.68;
+    final height = widget.width * 1.68;
 
     return GestureDetector(
-      onTap: onTap,
+      onTap: widget.onTap,
       child: Opacity(
-        opacity: dimmed ? 0.3 : 1.0,
+        opacity: widget.dimmed ? 0.3 : 1.0,
         child: SizedBox(
-          width: width,
+          width: widget.width,
           height: height,
-          child: Image.asset(
-            imagePath,
-            fit: BoxFit.contain,
+          child: AnimatedBuilder(
+            animation: _flipAnimation,
+            builder: (context, child) {
+              // 0~pi 회전. 절반을 넘어가면 뒷면 대신 앞면 이미지를 보여준다.
+              final angle = _flipAnimation.value * pi;
+              final showFront = angle > pi / 2;
+
+              Widget face = Image.asset(
+                showFront ? widget.card.frontImagePath : widget.card.backImagePath,
+                fit: BoxFit.contain,
+              );
+
+              if (showFront) {
+                // 절반을 넘어간 뒤에는 이미지가 좌우 반전되어 보이므로 다시 뒤집어 바로잡는다.
+                face = Transform(
+                  alignment: Alignment.center,
+                  transform: Matrix4.identity()..rotateY(pi),
+                  child: face,
+                );
+              }
+
+              return Transform(
+                alignment: Alignment.center,
+                transform: Matrix4.identity()
+                  ..setEntry(3, 2, 0.0015)
+                  ..rotateY(angle),
+                child: face,
+              );
+            },
           ),
         ),
       ),

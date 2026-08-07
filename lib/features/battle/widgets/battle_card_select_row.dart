@@ -70,7 +70,7 @@ class BattleCardSelectRow extends StatelessWidget {
                           ..translate(0.0, isSelected ? -10.0 : 0.0),
                         child: BattleCardWidget(
                           card: card,
-                          isFlipped: false,
+                          isFlipped: isSelected,
                           width: cardWidth,
                           onTap: () => onSelect(index),
                           dimmed: isAnotherCardSelected,
