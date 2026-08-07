@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'widgets/loading.dart';
-import 'dart:html' as html;
-import 'package:flutter/foundation.dart';
+import 'core/platform/remove_app_loading.dart';
 import 'features/story/widgets/story_page.dart';
 
 void main() {
@@ -45,13 +44,7 @@ class _MainPageState extends State<MainPage> {
   }
 
   Future<void> _initialLoad() async {
-    if (kIsWeb) {
-      // ignore: undefined_prefixed_name
-      final loader = html.document.getElementById('app-loading');
-      if (loader != null) {
-        loader.remove();
-      }
-    }
+    removeAppLoadingSplash();
 
     await Future.delayed(const Duration(milliseconds: 1400));
 
