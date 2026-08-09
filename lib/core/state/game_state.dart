@@ -139,6 +139,12 @@ class GameState extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// 광고 시청 등으로 부활할 때 HP를 일부 회복시킨다.
+  void revive() {
+    playerHp = (playerMaxHp / 2).ceil().clamp(1, playerMaxHp);
+    notifyListeners();
+  }
+
   void resetProgress(String startingNodeId) {
     _currentNodeId = startingNodeId;
     _inventory.clear();

@@ -17,6 +17,7 @@ import '../../encounter/data/encounter_configs.dart';
 import '../../encounter/models/encounter_result.dart';
 import '../../encounter/pages/encounter_page.dart';
 import '../../merchant/pages/merchant_page.dart';
+import '../../revival/pages/revival_page.dart';
 import '../../wallet/pages/charge_page.dart';
 import '../data/story_nodes.dart';
 import '../models/story_choice.dart';
@@ -64,6 +65,22 @@ class _StoryPageState extends State<StoryPage> {
 
     gameState.applyBattleResult(result);
 
+    if (result.outcome == BattleOutcome.lose) {
+      final revived = await Navigator.push<bool>(
+        context,
+        MaterialPageRoute(builder: (_) => const RevivalPage()),
+      );
+
+      if (!mounted) return;
+
+      if (revived != true) {
+        // 포기하기: 라이브러리(메인 화면)로 돌아간다. 진행 상황은 그대로 남아
+        // 나중에 이어할 수 있다.
+        Navigator.popUntil(context, (route) => route.isFirst);
+        return;
+      }
+    }
+
     final nextNodeId = switch (result.outcome) {
       BattleOutcome.win => trigger.winNodeId,
       BattleOutcome.lose => trigger.loseNodeId,
@@ -81,7 +98,7 @@ class _StoryPageState extends State<StoryPage> {
     final message = switch (result.outcome) {
       BattleOutcome.win => '전투 승리. 남은 HP: ${result.remainHp} / $rewardText',
       BattleOutcome.escape => '전투에서 도망쳤다.',
-      BattleOutcome.lose => '전투에서 패배했다.',
+      BattleOutcome.lose => '전투에서 패배했지만, 부활하여 이야기를 이어간다.',
     };
 
     ScaffoldMessenger.of(context).showSnackBar(
