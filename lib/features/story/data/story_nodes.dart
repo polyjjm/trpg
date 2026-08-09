@@ -17,11 +17,24 @@ final Map<String, StoryNode> storyNodes = {
       ),
       StoryChoice(
         text: '소리가 들린 골목으로 향한다.',
-        battleTrigger: const StoryBattleTrigger(
-          battleId: 'zombie_01',
+        encounterTrigger: const StoryEncounterTrigger(
+          encounterId: 'zombie_01',
           winNodeId: 'alley_after_win',
-          loseNodeId: 'game_over',
           escapeNodeId: 'alley_after_escape',
+        ),
+      ),
+      StoryChoice(
+        text: '인기척이 느껴지는 주유소 쪽으로 다가간다.',
+        encounterTrigger: const StoryEncounterTrigger(
+          encounterId: 'raider_01',
+          winNodeId: 'raider_after_win',
+          escapeNodeId: 'raider_after_escape',
+        ),
+      ),
+      StoryChoice(
+        text: '낡은 수레를 끌고 다니는 사람을 발견한다.',
+        merchantTrigger: const StoryMerchantTrigger(
+          nextNodeId: 'after_merchant_01',
         ),
       ),
     ],
@@ -35,10 +48,9 @@ final Map<String, StoryNode> storyNodes = {
     choices: [
       StoryChoice(
         text: '통조림을 챙기고 다시 골목으로 향한다.',
-        battleTrigger: const StoryBattleTrigger(
-          battleId: 'zombie_01',
+        encounterTrigger: const StoryEncounterTrigger(
+          encounterId: 'zombie_01',
           winNodeId: 'alley_after_win',
-          loseNodeId: 'game_over',
           escapeNodeId: 'alley_after_escape',
         ),
       ),
@@ -67,6 +79,41 @@ final Map<String, StoryNode> storyNodes = {
       StoryChoice(
         text: '편의점 쪽으로 몸을 숨긴다.',
         nextNodeId: 'convenience_store_01',
+      ),
+    ],
+  ),
+
+  'raider_after_win': StoryNode(
+    id: 'raider_after_win',
+    dayLabel: 'DAY 1',
+    title: '주유소, 그 이후',
+    text:
+        '약탈자들은 더 이상 움직이지 않았다.\n좀비만이 아니라 사람도 위협이 되는 세상이었다.\n(이어지는 이야기는 다음 업데이트에서 계속됩니다.)',
+    choices: [],
+  ),
+
+  'raider_after_escape': StoryNode(
+    id: 'raider_after_escape',
+    dayLabel: 'DAY 1',
+    title: '주유소에서 물러나다',
+    text: '약탈자들의 발소리가 멀어질 때까지, 나는 몸을 숨긴 채 움직이지 않았다.',
+    choices: [
+      StoryChoice(
+        text: '다시 큰길 쪽으로 되돌아간다.',
+        nextNodeId: 'intro_01',
+      ),
+    ],
+  ),
+
+  'after_merchant_01': StoryNode(
+    id: 'after_merchant_01',
+    dayLabel: 'DAY 1',
+    title: '상인과 헤어지다',
+    text: '"또 보세, 살아있으면 말이지."\n상인은 수레를 끌고 다시 폐허 속으로 사라졌다.',
+    choices: [
+      StoryChoice(
+        text: '다시 큰길 쪽으로 돌아간다.',
+        nextNodeId: 'intro_01',
       ),
     ],
   ),

@@ -4,12 +4,14 @@ class BattleHpBar extends StatefulWidget {
   final String label;
   final int currentHp;
   final int maxHp;
+  final double width;
 
   const BattleHpBar({
     super.key,
     required this.label,
     required this.currentHp,
     required this.maxHp,
+    this.width = 220,
   });
 
   @override
@@ -41,7 +43,7 @@ class _BattleHpBarState extends State<BattleHpBar> {
     final newRatio = _calcRatio(widget.currentHp, widget.maxHp);
 
     return Container(
-      width: 220,
+      width: widget.width,
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
       decoration: BoxDecoration(
         color: Colors.black.withOpacity(0.5),

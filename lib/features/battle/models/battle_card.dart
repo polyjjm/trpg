@@ -1,3 +1,5 @@
+import '../../../core/constants/asset_paths.dart';
+
 enum BattleCardType {
   attack,
   lightAttack,
@@ -13,7 +15,7 @@ class BattleCard {
   const BattleCard({
     required this.type,
     required this.frontImagePath,
-    this.backImagePath = 'assets/images/system/backCard.png',
+    this.backImagePath = UiPaths.backCard,
   });
 
   String get label {

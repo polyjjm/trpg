@@ -1,21 +1,56 @@
 import 'package:flutter/material.dart';
+import '../../../core/constants/asset_paths.dart';
+import '../../../core/state/game_state.dart';
 import '../../../core/state/game_state_scope.dart';
+import '../../battle/inventory/data/item_catalog.dart';
+import '../../battle/inventory/models/item_effect_type.dart';
+import '../../battle/inventory/models/item_model.dart';
 import '../models/panel_menu_type.dart';
 
 const Color _panelIvory = Color(0xFFE2D4BF);
 const Color _hpColor = Color(0xFFE0524B);
 const Color _attackColor = Color(0xFFF2A93B);
 const Color _defenseColor = Color(0xFF6C93B0);
+const Color _buffColor = Color(0xFF6FB08A);
+const Color _escapeColor = Color(0xFF9B7FC7);
+
+IconData _iconForEffect(ItemEffectType effectType) {
+  switch (effectType) {
+    case ItemEffectType.heal:
+      return Icons.healing_rounded;
+    case ItemEffectType.damage:
+      return Icons.local_fire_department_rounded;
+    case ItemEffectType.buff:
+      return Icons.shield_moon_rounded;
+    case ItemEffectType.escapeBoost:
+      return Icons.directions_run_rounded;
+  }
+}
+
+Color _colorForEffect(ItemEffectType effectType) {
+  switch (effectType) {
+    case ItemEffectType.heal:
+      return _hpColor;
+    case ItemEffectType.damage:
+      return _attackColor;
+    case ItemEffectType.buff:
+      return _buffColor;
+    case ItemEffectType.escapeBoost:
+      return _escapeColor;
+  }
+}
 
 class GameBottomPanel extends StatefulWidget {
-  const GameBottomPanel({super.key});
+  final PanelMenuType initialMenu;
+
+  const GameBottomPanel({super.key, this.initialMenu = PanelMenuType.menu});
 
   @override
   State<GameBottomPanel> createState() => _GameBottomPanelState();
 }
 
 class _GameBottomPanelState extends State<GameBottomPanel> {
-  PanelMenuType currentMenu = PanelMenuType.menu;
+  late PanelMenuType currentMenu = widget.initialMenu;
 
   void changeMenu(PanelMenuType type) {
     setState(() {
@@ -57,17 +92,17 @@ class _GameBottomPanelState extends State<GameBottomPanel> {
         children: [
           _buildMenuCard(
             label: '상태',
-            imagePath: 'assets/images/system/status.png',
+            imagePath: UiPaths.statusIcon,
             onTap: () => changeMenu(PanelMenuType.status),
           ),
           _buildMenuCard(
             label: '장비',
-            imagePath: 'assets/images/system/equipment.png',
+            imagePath: UiPaths.equipmentIcon,
             onTap: () => changeMenu(PanelMenuType.equipment),
           ),
           _buildMenuCard(
             label: '인벤토리',
-            imagePath: 'assets/images/system/inventory.png',
+            imagePath: UiPaths.inventoryIcon,
             onTap: () => changeMenu(PanelMenuType.inventory),
           ),
         ],
@@ -112,16 +147,14 @@ class _GameBottomPanelState extends State<GameBottomPanel> {
 
   Widget _buildStatusView() {
     final gameState = GameStateScope.of(context);
-    final hp = gameState.playerHp;
-    final maxHp = gameState.playerMaxHp;
     final attack = gameState.playerAttack;
-    // 방어력은 아직 데이터 모델에 없는 스탯이라 표시용 기본값을 사용한다.
-    const defense = 5;
+    final defense = gameState.playerDefense;
+    final hearts = gameState.hearts;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        _StatHpCard(hp: hp, maxHp: maxHp),
+        _StatHeartsCard(hearts: hearts, maxHearts: GameState.maxHearts),
         const SizedBox(height: 12),
         Row(
           children: [
@@ -162,31 +195,28 @@ class _GameBottomPanelState extends State<GameBottomPanel> {
   }
 
   Widget _buildInventoryView() {
-    // TODO: GameState.inventory와 아이템 카탈로그가 준비되면 실제 데이터로 교체한다.
-    const items = <_InventoryItemPreview?>[
-      _InventoryItemPreview(
-        icon: Icons.healing_rounded,
-        color: _hpColor,
-        name: '붕대',
-        description: '상처를 감싸 약간의 체력을 회복한다.',
-        count: 2,
-      ),
-      _InventoryItemPreview(
-        icon: Icons.set_meal_rounded,
-        color: _attackColor,
-        name: '통조림',
-        description: '허기를 달래주는 비상식량.',
-        count: 1,
-      ),
-      _InventoryItemPreview(
-        icon: Icons.medication_rounded,
-        color: Color(0xFF6FB08A),
-        name: '해열제',
-        description: '체온을 낮추고 상태이상을 완화한다.',
-        count: 1,
-      ),
-      null, null, null, null, null, null, null, null, null,
-    ];
+    final gameState = GameStateScope.of(context);
+
+    final items = <_InventoryItemPreview?>[];
+    gameState.inventory.forEach((itemId, count) {
+      final ItemModel? item = itemCatalog[itemId];
+      if (item == null || count <= 0) return;
+
+      items.add(
+        _InventoryItemPreview(
+          icon: _iconForEffect(item.effectType),
+          color: _colorForEffect(item.effectType),
+          name: item.name,
+          description: item.description,
+          count: count,
+        ),
+      );
+    });
+
+    const slotCount = 12;
+    while (items.length < slotCount) {
+      items.add(null);
+    }
 
     return GridView.builder(
       shrinkWrap: true,
@@ -297,16 +327,14 @@ class _StatIconBadge extends StatelessWidget {
   }
 }
 
-class _StatHpCard extends StatelessWidget {
-  final int hp;
-  final int maxHp;
+class _StatHeartsCard extends StatelessWidget {
+  final int hearts;
+  final int maxHearts;
 
-  const _StatHpCard({required this.hp, required this.maxHp});
+  const _StatHeartsCard({required this.hearts, required this.maxHearts});
 
   @override
   Widget build(BuildContext context) {
-    final ratio = maxHp <= 0 ? 0.0 : (hp / maxHp).clamp(0.0, 1.0);
-
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.all(16),
@@ -315,65 +343,28 @@ class _StatHpCard extends StatelessWidget {
         borderRadius: BorderRadius.circular(16),
         border: Border.all(color: _hpColor.withOpacity(0.35)),
       ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+      child: Row(
         children: [
-          Row(
-            children: [
-              const _StatIconBadge(icon: Icons.favorite_rounded, color: _hpColor),
-              const SizedBox(width: 12),
-              const Text(
-                '체력',
-                style: TextStyle(
-                  color: _panelIvory,
-                  fontSize: 15,
-                  fontWeight: FontWeight.w700,
-                ),
-              ),
-              const Spacer(),
-              Text(
-                '$hp / $maxHp',
-                style: const TextStyle(
-                  color: _panelIvory,
-                  fontSize: 15,
-                  fontWeight: FontWeight.w700,
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 12),
-          ClipRRect(
-            borderRadius: BorderRadius.circular(8),
-            child: TweenAnimationBuilder<double>(
-              tween: Tween<double>(begin: 0, end: ratio),
-              duration: const Duration(milliseconds: 500),
-              curve: Curves.easeOutCubic,
-              builder: (context, value, _) {
-                return Stack(
-                  children: [
-                    Container(
-                      height: 14,
-                      color: Colors.white.withOpacity(0.08),
-                    ),
-                    FractionallySizedBox(
-                      widthFactor: value,
-                      child: Container(
-                        height: 14,
-                        decoration: BoxDecoration(
-                          gradient: LinearGradient(
-                            colors: [
-                              _hpColor.withOpacity(0.85),
-                              _hpColor,
-                            ],
-                          ),
-                        ),
-                      ),
-                    ),
-                  ],
-                );
-              },
+          const _StatIconBadge(icon: Icons.favorite_rounded, color: _hpColor),
+          const SizedBox(width: 12),
+          const Text(
+            '하트',
+            style: TextStyle(
+              color: _panelIvory,
+              fontSize: 15,
+              fontWeight: FontWeight.w700,
             ),
           ),
+          const Spacer(),
+          for (var i = 0; i < maxHearts; i++)
+            Padding(
+              padding: const EdgeInsets.only(left: 4),
+              child: Icon(
+                i < hearts ? Icons.favorite_rounded : Icons.favorite_border_rounded,
+                color: _hpColor,
+                size: 22,
+              ),
+            ),
         ],
       ),
     );

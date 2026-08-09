@@ -17,4 +17,9 @@ class BattleUnit {
     hp -= damage;
     if (hp < 0) hp = 0;
   }
+
+  void heal(int amount) {
+    hp += amount;
+    if (hp > maxHp) hp = maxHp;
+  }
 }

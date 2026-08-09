@@ -1,4 +1,4 @@
-# sotry_trpg
+# story_trpg
 
 A new Flutter project.
 

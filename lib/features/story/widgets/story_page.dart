@@ -1,23 +1,38 @@
 import 'package:flutter/material.dart';
-import 'package:sotry_trpg/features/panel/widgets/panel_handle_button.dart';
 import 'typewriter_text.dart';
 
+import '../../../core/auth/auth_scope.dart';
 import '../../../core/constants/asset_paths.dart';
+import '../../../core/state/game_state.dart';
 import '../../../core/state/game_state_scope.dart';
+import '../../../widgets/app_drawer.dart';
+import '../../../widgets/footer_nav_bar.dart';
+import '../../../widgets/hearts_indicator.dart';
+import '../../auth/pages/sign_in_page.dart';
 import '../../battle/data/battle_configs.dart';
 import '../../battle/models/battle_result.dart';
 import '../../battle/pages/battle_page.dart';
+import '../../catalog/models/story_pack.dart';
+import '../../encounter/data/encounter_configs.dart';
+import '../../encounter/models/encounter_result.dart';
+import '../../encounter/pages/encounter_page.dart';
+import '../../merchant/pages/merchant_page.dart';
+import '../../wallet/pages/charge_page.dart';
 import '../data/story_nodes.dart';
 import '../models/story_choice.dart';
 
 class StoryPage extends StatefulWidget {
-  const StoryPage({super.key});
+  final StoryPack pack;
+
+  const StoryPage({super.key, required this.pack});
 
   @override
   State<StoryPage> createState() => _StoryPageState();
 }
 
 class _StoryPageState extends State<StoryPage> {
+  final GlobalKey<ScaffoldState> _scaffoldKey = GlobalKey<ScaffoldState>();
+
   String? _typedNodeId;
   bool _showChoices = false;
 
@@ -55,7 +70,7 @@ class _StoryPageState extends State<StoryPage> {
       BattleOutcome.escape => trigger.escapeNodeId,
     };
 
-    gameState.goToNode(nextNodeId);
+    _goToNode(nextNodeId);
 
     if (!mounted) return;
 
@@ -74,8 +89,156 @@ class _StoryPageState extends State<StoryPage> {
     );
   }
 
+  Future<void> _handleEncounterChoice(StoryEncounterTrigger trigger) async {
+    final config = encounterConfigs[trigger.encounterId];
+    if (config == null) return;
+
+    final gameState = GameStateScope.of(context);
+
+    final result = await Navigator.push<EncounterResult>(
+      context,
+      MaterialPageRoute(
+        builder: (_) => EncounterPage(config: config),
+      ),
+    );
+
+    if (!mounted || result == null) return;
+
+    if (result.outcome == EncounterOutcome.dead) {
+      gameState.resetProgress(storyStartNodeId);
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('쓰러지고 말았다. 처음부터 다시 시작한다.')),
+      );
+      return;
+    }
+
+    final nextNodeId = result.outcome == EncounterOutcome.win
+        ? trigger.winNodeId
+        : trigger.escapeNodeId;
+
+    _goToNode(nextNodeId);
+
+    if (!mounted) return;
+
+    final message = result.outcome == EncounterOutcome.win
+        ? '${config.enemyName}을(를) 물리쳤다.'
+        : '위기에서 벗어났다.';
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(message)),
+    );
+  }
+
+  Future<void> _handleMerchantChoice(StoryMerchantTrigger trigger) async {
+    await Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => const MerchantPage(),
+      ),
+    );
+
+    if (!mounted) return;
+
+    _goToNode(trigger.nextNodeId);
+  }
+
   void _handleNodeChoice(String nextNodeId) {
-    GameStateScope.of(context).goToNode(nextNodeId);
+    _goToNode(nextNodeId);
+  }
+
+  /// 스토리 노드 이동을 한 곳에서 처리한다 — 일반 선택지든 전투/조우/상인 결과든
+  /// 다음 노드로 넘어가기 전에 항상 이 메서드를 거쳐, 유료 팩의 무료 미리보기
+  /// 한도를 일관되게 검사한다.
+  void _goToNode(String nextNodeId) {
+    final gameState = GameStateScope.of(context);
+    final pack = widget.pack;
+
+    final previewLimitReached = pack.price > 0 &&
+        !gameState.ownsPack(pack.id) &&
+        gameState.visitedNodeCount >= pack.previewNodeLimit;
+
+    if (previewLimitReached) {
+      _showPaywallDialog(gameState, nextNodeId);
+      return;
+    }
+
+    gameState.goToNode(nextNodeId);
+  }
+
+  void _showPaywallDialog(GameState gameState, String nextNodeId) {
+    showDialog<void>(
+      context: context,
+      barrierColor: Colors.black.withOpacity(0.6),
+      builder: (dialogContext) => AlertDialog(
+        backgroundColor: const Color(0xFF151515),
+        title: const Text(
+          '여기부터는 구매 후 이어볼 수 있어요',
+          style: TextStyle(color: Colors.white),
+        ),
+        content: Text(
+          '${widget.pack.title} · ₩${widget.pack.price}',
+          style: const TextStyle(color: Colors.white70),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext),
+            child: const Text('취소', style: TextStyle(color: Colors.white70)),
+          ),
+          TextButton(
+            onPressed: () {
+              Navigator.pop(dialogContext);
+              _purchaseAndContinue(gameState, nextNodeId);
+            },
+            child: const Text('구매하기', style: TextStyle(color: Colors.white)),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _purchaseAndContinue(GameState gameState, String nextNodeId) {
+    if (gameState.spendCash(widget.pack.price)) {
+      gameState.markPackOwned(widget.pack.id);
+      gameState.goToNode(nextNodeId);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('${widget.pack.title}을(를) 구매했습니다.')),
+      );
+      return;
+    }
+
+    _showInsufficientCashDialog();
+  }
+
+  void _showInsufficientCashDialog() {
+    showDialog<void>(
+      context: context,
+      barrierColor: Colors.black.withOpacity(0.6),
+      builder: (dialogContext) => AlertDialog(
+        backgroundColor: const Color(0xFF151515),
+        title: const Text('캐시 부족', style: TextStyle(color: Colors.white)),
+        content: const Text(
+          '캐시가 부족합니다. 충전하시겠어요?',
+          style: TextStyle(color: Colors.white70),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext),
+            child: const Text('취소', style: TextStyle(color: Colors.white70)),
+          ),
+          TextButton(
+            onPressed: () {
+              Navigator.pop(dialogContext);
+              Navigator.push(
+                context,
+                MaterialPageRoute(builder: (_) => const ChargePage()),
+              );
+            },
+            child: const Text('충전하기', style: TextStyle(color: Colors.white)),
+          ),
+        ],
+      ),
+    );
   }
 
   void _handleRestart() {
@@ -83,15 +246,103 @@ class _StoryPageState extends State<StoryPage> {
     Navigator.popUntil(context, (route) => route.isFirst);
   }
 
+  void _confirmRestartFromDrawer() {
+    showDialog<void>(
+      context: context,
+      barrierColor: Colors.black.withOpacity(0.6),
+      builder: (dialogContext) => AlertDialog(
+        backgroundColor: const Color(0xFF151515),
+        title: const Text(
+          '처음부터 다시 시작',
+          style: TextStyle(color: Colors.white),
+        ),
+        content: const Text(
+          '진행 상황이 모두 초기화됩니다. 계속하시겠습니까?',
+          style: TextStyle(color: Colors.white70),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext),
+            child: const Text('취소', style: TextStyle(color: Colors.white70)),
+          ),
+          TextButton(
+            onPressed: () {
+              Navigator.pop(dialogContext);
+              _handleRestart();
+            },
+            child: const Text('다시 시작', style: TextStyle(color: Colors.redAccent)),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _confirmLibraryFromDrawer() {
+    showDialog<void>(
+      context: context,
+      barrierColor: Colors.black.withOpacity(0.6),
+      builder: (dialogContext) => AlertDialog(
+        backgroundColor: const Color(0xFF151515),
+        title: const Text(
+          '라이브러리로 돌아가기',
+          style: TextStyle(color: Colors.white),
+        ),
+        content: const Text(
+          '현재 진행 상황은 자동으로 저장됩니다.\n라이브러리로 돌아가시겠습니까?',
+          style: TextStyle(color: Colors.white70),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext),
+            child: const Text('취소', style: TextStyle(color: Colors.white70)),
+          ),
+          TextButton(
+            onPressed: () {
+              Navigator.pop(dialogContext);
+              Navigator.popUntil(context, (route) => route.isFirst);
+            },
+            child: const Text('라이브러리로', style: TextStyle(color: Colors.white)),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _showSettingsPlaceholder() {
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('설정 화면은 다음 업데이트에서 제공될 예정입니다.')),
+    );
+  }
+
+  Future<void> _handleSignOut() async {
+    await AuthScope.of(context).signOut();
+    if (!mounted) return;
+
+    Navigator.popUntil(context, (route) => route.isFirst);
+    Navigator.push(
+      context,
+      MaterialPageRoute(builder: (_) => const SignInPage()),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     const Color ivory = Color(0xFFE2D4BF);
     const Color softLine = Color(0x99CDBDA7);
 
-    final currentNodeId = GameStateScope.of(context).currentNodeId;
+    final gameState = GameStateScope.of(context);
+    final currentNodeId = gameState.currentNodeId;
     final node = storyNodes[currentNodeId]!;
 
     return Scaffold(
+      key: _scaffoldKey,
+      drawer: AppDrawer(
+        onLibrary: _confirmLibraryFromDrawer,
+        onRestart: _confirmRestartFromDrawer,
+        onSettings: _showSettingsPlaceholder,
+        onSignOut: _handleSignOut,
+      ),
+      bottomNavigationBar: const FooterNavBar(),
       body: Stack(
         children: [
           Positioned.fill(
@@ -256,7 +507,11 @@ class _StoryPageState extends State<StoryPage> {
                                     textColor: ivory,
                                     onTap: choice.triggersBattle
                                         ? () => _handleBattleChoice(choice.battleTrigger!)
-                                        : () => _handleNodeChoice(choice.nextNodeId!),
+                                        : choice.triggersEncounter
+                                            ? () => _handleEncounterChoice(choice.encounterTrigger!)
+                                            : choice.triggersMerchant
+                                                ? () => _handleMerchantChoice(choice.merchantTrigger!)
+                                                : () => _handleNodeChoice(choice.nextNodeId!),
                                   ),
                                   if (choice != node.choices.last)
                                     const SizedBox(height: 14),
@@ -270,9 +525,31 @@ class _StoryPageState extends State<StoryPage> {
               ),
             ),
           ),
-          const Align(
-            alignment: Alignment.bottomCenter,
-            child: PanelHandleButton(),
+          Positioned(
+            top: 0,
+            left: 0,
+            child: SafeArea(
+              child: Padding(
+                padding: const EdgeInsets.only(top: 4, left: 4),
+                child: IconButton(
+                  onPressed: () => _scaffoldKey.currentState?.openDrawer(),
+                  icon: const Icon(Icons.menu_rounded, color: Colors.white),
+                ),
+              ),
+            ),
+          ),
+          Positioned(
+            top: 0,
+            right: 0,
+            child: SafeArea(
+              child: Padding(
+                padding: const EdgeInsets.only(top: 12, right: 16),
+                child: HeartsIndicator(
+                  hearts: gameState.hearts,
+                  maxHearts: GameState.maxHearts,
+                ),
+              ),
+            ),
           ),
         ],
       ),

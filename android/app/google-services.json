@@ -1,0 +1,54 @@
+{
+  "project_info": {
+    "project_number": "886364664177",
+    "project_id": "trpg-213c1",
+    "storage_bucket": "trpg-213c1.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:886364664177:android:1fc6d9220d0801776d06d0",
+        "android_client_info": {
+          "package_name": "com.trpg.game.story_trpg"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "886364664177-2e1vbc8asqnl7fgv8je6qhm7m7sr52g1.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.trpg.game.story_trpg",
+            "certificate_hash": "c8cebdc7b9aaf313e293bca06eed62d78b271949"
+          }
+        },
+        {
+          "client_id": "886364664177-p8nu9m1kobenc1t7ecc4rcqapg49b2qn.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDWA5RkrR6h3Su86KnAXQwrNcn0o4xwsvQ"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "886364664177-p8nu9m1kobenc1t7ecc4rcqapg49b2qn.apps.googleusercontent.com",
+              "client_type": 3
+            },
+            {
+              "client_id": "886364664177-m8v2b3o8vrfanc7gua5bu0thnk96nub7.apps.googleusercontent.com",
+              "client_type": 2,
+              "ios_info": {
+                "bundle_id": "com.trpg.game.sotryTrpg"
+              }
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

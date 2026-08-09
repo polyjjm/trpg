@@ -97,3 +97,84 @@ Chance-based encounters that can trigger during story progression:
 - **Rewarded ads**: ad-based free revival option
 - **Expansion packs**: purchasable content packs that unlock additional story chapters/content
 - (To decide later: what exactly is gated behind expansion packs — new chapters only, or also exclusive items/monsters?)
+  아, CLAUDE.md에 새로 추가할 섹션 내용만 드릴게요. 지금 작업하실 시스템들(스탯/레벨, 아이템, 다수몬스터, 상인, 확장성 시딩)을 Claude Code가 세션 넘어가도 계속 참고할 수 있게, CLAUDE.md 맨 아래에 아래 블록을 그대로 추가하시면 돼요.
+
+markdown
+## Planned expansion (in progress)
+
+The following systems are being added on top of the existing architecture. Keep these
+consistent as you implement each one — later prompts assume earlier ones are done.
+
+### Player stats / leveling
+- `GameState` gains `level`, `exp`, `playerDefense`, plus a `schemaVersion` field in
+  `toJson()` for future save-data migration.
+- `expToNextLevel()` / `addExp()` handle level-up (possibly multiple levels per call), growing
+  `playerMaxHp`/`playerAttack`/`playerDefense` and fully healing on level-up.
+- `BattleReward.exp` must actually be populated (currently always 0) and applied via
+  `GameState.applyBattleResult()`.
+
+### Combat uses real stats, not hardcoded numbers
+- Card damage in `BattlePage._resolveAttackCard()` derives from `player.attack` (multiplier
+  per card type), not fixed 15/20/25.
+- Incoming damage (`enemyAttack()`, `onDefendPressed()`) is reduced by `playerDefense`.
+- Balance (enemy hp/attack ranges, escape/drop chances, fail-card odds) is tuned as one system
+  once stats are wired in — don't hardcode numbers without checking they still make sense
+  together.
+
+### Item catalog + in-battle item use
+- `lib/features/battle/inventory/data/item_catalog.dart`: `Map<String, ItemModel>` — the
+  single source of truth for item name/effect/value, keyed by the same ids already used in
+  `battle_configs.dart` drop tables (`bandage_01`, `food_01`, `knife_01`, ...).
+- `GameBottomPanel`'s inventory view and `BattlePage`'s item-use action must both read from
+  this catalog + `GameState.inventory`, not hardcoded placeholder data.
+- Used items are tracked in `BattleResult.usedItemIds` (currently always empty).
+
+### Multiple enemies per battle
+- `BattleConfig` supports a list of enemy spawns (not just one enemy), and `BattlePage` holds
+  `List<BattleUnit> enemies` with simple tap-to-target selection. Single-enemy encounters
+  (e.g. `zombie_01`) auto-target since there's only one choice.
+- Human (non-zombie) enemies — e.g. `약탈자` raiders — are added as regular `BattleConfig`
+  entries using this same multi-enemy structure, not a separate code path.
+
+### Merchant feature (new)
+- New `lib/features/merchant/` feature (same shape as `battle`/`story`): barter (item ↔ item
+  via a predefined exchange table) and a coin-flip wager minigame (win = double the wagered
+  item, lose = item is gone).
+- Triggered from story nodes the same way `StoryBattleTrigger` triggers battles — add an
+  analogous trigger type on `StoryChoice` rather than a one-off mechanism.
+
+### Auth + cloud save (Firebase)
+- `lib/core/auth/auth_service.dart`'s `AuthService` interface now has a real implementation:
+  `GoogleAuthService` (`lib/core/auth/google_auth_service.dart`), backed by `firebase_auth` +
+  `GoogleAuthProvider` — web popup flow (`signInWithPopup`) via `kIsWeb`, `google_sign_in`
+  package flow otherwise. `LocalAuthService` remains as the always-signed-out fallback but
+  isn't wired into the app anymore.
+- `GameStateProvider` (`lib/core/state/game_state_provider.dart`) owns the `GoogleAuthService`
+  and a `CloudSyncController` (`lib/core/state/cloud_sync_controller.dart`), and exposes both
+  through `AuthScope` (`lib/core/auth/auth_scope.dart`). `CloudSyncController` listens to
+  `GameState` changes and, whenever a user is signed in, saves `GameState.toJson()` to
+  Firestore at `users/{uid}/save/current` via `CloudSaveService`
+  (`lib/core/state/cloud_save_service.dart`); on sign-in it loads that doc back into the
+  existing `GameState` instance via `GameState.loadFromJson()` (creating the doc from current
+  state if none exists yet). Signed-out/guest play keeps working purely in memory — nothing is
+  synced until `authService.userId` is non-null.
+- `MainPage`'s '이어하기' button (`lib/main.dart`) is wired to this: already-signed-in users
+  load their cloud save and go straight into `StoryPage`; signed-out users go to
+  `SignInPage` (`lib/features/auth/pages/sign_in_page.dart`), which offers "Google로 로그인"
+  or "로그인 없이 계속하기" (guest).
+
+### Extensibility seams (not real implementations yet)
+- `lib/core/monetization/`: `MonetizationService` interface + no-op default
+  (`showRewardedAd()`, `purchaseRevivalItem()` stubs), per the Death/Revival and Monetization
+  sections above. Not a real IAP/ad SDK integration yet.
+- Keep all story/battle/item content id-driven (already the case) and all asset paths routed
+  through `core/constants/*_paths.dart`, so a future remote content DB / asset pipeline can
+  slot in without restructuring.
+
+## Mobile readiness checklist (updated)
+- [x] Isolate the `dart:html` dependency to web-only
+- [ ] Verify screen size / touch UI (battle card selection, panel system, item-use UI, merchant
+  UI, and multi-enemy targeting)
+- [ ] Confirm asset paths and fonts load correctly on mobile
+- [ ] In-app purchase / ad SDK integration planned (service not yet decided — `MonetizationService`
+  seam exists but no real SDK chosen)
