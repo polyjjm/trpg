@@ -3,9 +3,12 @@ import 'dart:math';
 
 import 'package:flutter/material.dart';
 
+import '../../../core/audio/audio_service.dart';
+import '../../../core/audio/system_sfx.dart';
 import '../../../core/constants/asset_paths.dart';
 import '../../../core/state/game_state.dart';
 import '../../../core/state/game_state_scope.dart';
+import '../../../widgets/hearts_indicator.dart';
 import '../inventory/data/item_catalog.dart';
 import '../inventory/models/item_effect_type.dart';
 import '../inventory/models/item_model.dart';
@@ -35,7 +38,8 @@ class _BattlePageState extends State<BattlePage> {
   final Random _random = Random();
 
   late GameState _gameState;
-  late BattleUnit player;
+  late String _playerName;
+  late int _playerAttack;
   late List<BattleUnit> enemies;
   late BattleReward _reward;
   late List<BattleCard> _battleCards;
@@ -80,12 +84,8 @@ class _BattlePageState extends State<BattlePage> {
     final gameState = GameStateScope.of(context);
     _gameState = gameState;
 
-    player = BattleUnit(
-      name: '생존자',
-      maxHp: gameState.playerMaxHp,
-      hp: gameState.playerHp,
-      attack: gameState.playerAttack,
-    );
+    _playerName = '생존자';
+    _playerAttack = gameState.playerAttack;
     _playerDefense = gameState.playerDefense;
 
     enemies = _createEnemies(widget.config);
@@ -298,7 +298,7 @@ class _BattlePageState extends State<BattlePage> {
 
     setState(() {
       actionLock = true;
-      battleLog = '${player.name}이(가) 방어 자세를 취했다.';
+      battleLog = '$_playerName이(가) 방어 자세를 취했다.';
       playerTurn = false;
     });
 
@@ -307,7 +307,7 @@ class _BattlePageState extends State<BattlePage> {
 
     for (final foe in enemies) {
       if (foe.isDead) continue;
-      if (player.isDead) break;
+      if (_gameState.hearts <= 0) break;
 
       setState(() {
         battleLog = '${foe.name}이(가) 공격을 준비한다!';
@@ -318,12 +318,13 @@ class _BattlePageState extends State<BattlePage> {
 
       final reducedDamage = (_mitigatedDamage(foe.attack) / 2).floor();
       if (reducedDamage > 0) {
-        player.takeDamage(reducedDamage);
+        _gameState.loseHeart();
+        AudioService.instance.playSfx(SystemSfx.heartLose.assetPath);
       }
 
       setState(() {
         battleLog =
-        '${foe.name}의 공격! ${player.name}이(가) 방어로 피해를 줄여 $reducedDamage 데미지를 입었다.';
+        '${foe.name}의 공격! $_playerName이(가) 방어로 피해를 줄여 $reducedDamage 데미지를 입었다.';
       });
 
       if (reducedDamage > 0) {
@@ -334,15 +335,16 @@ class _BattlePageState extends State<BattlePage> {
         if (!mounted) return;
       }
 
-      if (player.isDead) break;
+      if (_gameState.hearts <= 0) break;
     }
 
-    if (player.isDead) {
+    if (_gameState.hearts <= 0) {
       setState(() {
         battleLog = widget.config.loseMessage;
         battleEnd = true;
         actionLock = false;
       });
+      AudioService.instance.playSfx(SystemSfx.battleLose.assetPath);
 
       await Future.delayed(const Duration(milliseconds: 700));
       if (!mounted) return;
@@ -351,7 +353,6 @@ class _BattlePageState extends State<BattlePage> {
         context,
         BattleResult(
           outcome: BattleOutcome.lose,
-          remainHp: player.hp,
           battleId: widget.config.id,
           reward: BattleReward.empty(),
           usedItemIds: _usedItemIds,
@@ -373,7 +374,7 @@ class _BattlePageState extends State<BattlePage> {
 
     setState(() {
       actionLock = true;
-      battleLog = '${player.name}이(가) 도망을 시도한다.';
+      battleLog = '$_playerName이(가) 도망을 시도한다.';
     });
 
     await Future.delayed(const Duration(milliseconds: 500));
@@ -397,7 +398,6 @@ class _BattlePageState extends State<BattlePage> {
         context,
         BattleResult(
           outcome: BattleOutcome.escape,
-          remainHp: player.hp,
           battleId: widget.config.id,
           reward: BattleReward.empty(),
           usedItemIds: _usedItemIds,
@@ -437,7 +437,7 @@ class _BattlePageState extends State<BattlePage> {
   Future<void> _resolveAttackCard(BattleCard card) async {
     if (!playerTurn || battleEnd) return;
 
-    final effectiveAttack = player.attack + _attackBuffBonus;
+    final effectiveAttack = _playerAttack + _attackBuffBonus;
 
     int damage = 0;
     String judgeText = '';
@@ -507,6 +507,7 @@ class _BattlePageState extends State<BattlePage> {
         battleEnd = true;
         actionLock = false;
       });
+      AudioService.instance.playSfx(SystemSfx.battleWin.assetPath);
 
       await Future.delayed(const Duration(milliseconds: 700));
       if (!mounted) return;
@@ -515,7 +516,6 @@ class _BattlePageState extends State<BattlePage> {
         context,
         BattleResult(
           outcome: BattleOutcome.win,
-          remainHp: player.hp,
           battleId: widget.config.id,
           reward: _reward,
           usedItemIds: _usedItemIds,
@@ -536,7 +536,7 @@ class _BattlePageState extends State<BattlePage> {
   Future<void> enemyAttack() async {
     for (final foe in enemies) {
       if (foe.isDead) continue;
-      if (player.isDead) break;
+      if (_gameState.hearts <= 0) break;
 
       setState(() {
         battleLog = '${foe.name}이(가) 공격을 준비한다!';
@@ -546,24 +546,26 @@ class _BattlePageState extends State<BattlePage> {
       if (!mounted || battleEnd) return;
 
       final damage = _mitigatedDamage(foe.attack);
-      player.takeDamage(damage);
+      _gameState.loseHeart();
+      AudioService.instance.playSfx(SystemSfx.heartLose.assetPath);
 
       setState(() {
-        battleLog = '${foe.name}의 공격! ${player.name}이(가) $damage 데미지를 입었다.';
+        battleLog = '${foe.name}의 공격! $_playerName이(가) $damage 데미지를 입었다.';
       });
 
       await _playPlayerHitMotion(damage);
       if (!mounted) return;
 
-      if (player.isDead) break;
+      if (_gameState.hearts <= 0) break;
     }
 
-    if (player.isDead) {
+    if (_gameState.hearts <= 0) {
       setState(() {
         battleLog = widget.config.loseMessage;
         battleEnd = true;
         actionLock = false;
       });
+      AudioService.instance.playSfx(SystemSfx.battleLose.assetPath);
 
       await Future.delayed(const Duration(milliseconds: 700));
       if (!mounted) return;
@@ -572,7 +574,6 @@ class _BattlePageState extends State<BattlePage> {
         context,
         BattleResult(
           outcome: BattleOutcome.lose,
-          remainHp: player.hp,
           battleId: widget.config.id,
           reward: BattleReward.empty(),
           usedItemIds: _usedItemIds,
@@ -680,9 +681,8 @@ class _BattlePageState extends State<BattlePage> {
     String logText;
     switch (item.effectType) {
       case ItemEffectType.heal:
-        final healed = min(item.value, player.maxHp - player.hp);
-        player.heal(item.value);
-        logText = '${item.name}을(를) 사용해 체력을 $healed 회복했다.';
+        _gameState.healHeart();
+        logText = '${item.name}을(를) 사용해 하트를 하나 회복했다.';
         break;
       case ItemEffectType.damage:
         final targetIndex = await _selectTargetIndex();
@@ -718,6 +718,7 @@ class _BattlePageState extends State<BattlePage> {
         battleEnd = true;
         actionLock = false;
       });
+      AudioService.instance.playSfx(SystemSfx.battleWin.assetPath);
 
       await Future.delayed(const Duration(milliseconds: 700));
       if (!mounted) return;
@@ -726,7 +727,6 @@ class _BattlePageState extends State<BattlePage> {
         context,
         BattleResult(
           outcome: BattleOutcome.win,
-          remainHp: player.hp,
           battleId: widget.config.id,
           reward: _reward,
           usedItemIds: _usedItemIds,
@@ -1063,10 +1063,9 @@ class _BattlePageState extends State<BattlePage> {
                   ),
                   Align(
                     alignment: Alignment.bottomLeft,
-                    child: BattleHpBar(
-                      label: player.name,
-                      currentHp: player.hp,
-                      maxHp: player.maxHp,
+                    child: HeartsIndicator(
+                      hearts: _gameState.hearts,
+                      maxHearts: GameState.maxHearts,
                     ),
                   ),
                   const SizedBox(height: 14),

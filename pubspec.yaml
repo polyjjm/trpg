@@ -42,8 +42,17 @@ dependencies:
   cloud_firestore: ^5.4.4
   google_sign_in: ^6.2.2
 
+  # Firebase Storage (작가 편집기 이미지 업로드 - lib/admin/)
+  firebase_storage: ^12.3.4
+
+  # 작가 편집기 이미지 업로드용 파일 선택 (웹)
+  file_picker: ^8.1.3
+
   # AdMob (리워드 광고)
   google_mobile_ads: ^5.2.0
+
+  # BGM/SFX 재생
+  audioplayers: ^6.1.0
 
 dev_dependencies:
   flutter_test:
@@ -74,6 +83,8 @@ flutter:
     - assets/images/backgrounds/story/
     - assets/images/characters/enemies/
     - assets/images/characters/player/
+    - assets/audio/sfx/
+    - assets/audio/bgm/
 
   fonts:
     - family: NotoSansKR

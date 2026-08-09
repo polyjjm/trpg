@@ -21,7 +21,8 @@ class StoryMerchantTrigger {
 }
 
 /// 카드 기반 BattlePage 대신 텍스트 조우(EncounterPage)를 여는 트리거.
-/// 사망(하트 0)은 진행 리셋으로 이어지므로 loseNodeId가 필요 없다.
+/// 사망(하트 0) 시에는 부활 화면(RevivalPage)을 거친다 — 부활하면 현재 노드에서
+/// 그대로 이어가고, 포기하면 진행 리셋으로 이어지므로 loseNodeId가 필요 없다.
 class StoryEncounterTrigger {
   final String encounterId;
   final String winNodeId;

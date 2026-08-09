@@ -15,8 +15,6 @@ class GameState extends ChangeNotifier {
   final Map<String, int> _inventory = {};
   Map<String, int> get inventory => Map.unmodifiable(_inventory);
 
-  int playerMaxHp = 30;
-  int playerHp = 30;
   int playerAttack = 8;
   int playerDefense = 5;
 
@@ -25,6 +23,10 @@ class GameState extends ChangeNotifier {
 
   static const int maxHearts = 3;
   int hearts = maxHearts;
+
+  /// 이번 회차(리셋 전까지)에 리워드 광고 부활을 이미 사용했는지.
+  /// true가 되면 RevivalPage는 광고 대신 유료 재화 부활만 제시한다.
+  bool hasUsedAdRevival = false;
 
   /// 유료 재화(캐시) 잔액. 실제 IAP 연동 전까지는 [MonetizationService.purchaseCashPackage]
   /// 성공 시 [addCash]로, 이야기 팩 구매 시 [spendCash]로만 변경된다.
@@ -90,13 +92,12 @@ class GameState extends ChangeNotifier {
       level += 1;
       leveledUp = true;
 
-      playerMaxHp += 5;
       playerAttack += 2;
       playerDefense += 1;
     }
 
     if (leveledUp) {
-      playerHp = playerMaxHp;
+      hearts = maxHearts;
     }
 
     notifyListeners();
@@ -129,7 +130,8 @@ class GameState extends ChangeNotifier {
   }
 
   void applyBattleResult(BattleResult result) {
-    playerHp = result.remainHp;
+    // 하트는 전투 중 loseHeart()/healHeart()로 이미 이 GameState에 실시간
+    // 반영되어 있으므로, 여기서는 보상(아이템/경험치)만 적용하면 된다.
     for (final itemId in result.reward.itemIds) {
       _inventory[itemId] = (_inventory[itemId] ?? 0) + 1;
     }
@@ -139,41 +141,37 @@ class GameState extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// 광고 시청 등으로 부활할 때 HP를 일부 회복시킨다.
-  void revive() {
-    playerHp = (playerMaxHp / 2).ceil().clamp(1, playerMaxHp);
-    notifyListeners();
-  }
+  /// 광고 시청 등으로 부활할 때 하트를 하나 회복시켜, 최소 하트 1개로
+  /// 다음 공격/사건을 버틸 수 있게 한다.
+  void revive() => healHeart();
 
   void resetProgress(String startingNodeId) {
     _currentNodeId = startingNodeId;
     _inventory.clear();
     level = 1;
     exp = 0;
-    playerMaxHp = 30;
     playerAttack = 8;
     playerDefense = 5;
-    playerHp = playerMaxHp;
     hearts = maxHearts;
+    hasUsedAdRevival = false;
     visitedNodeCount = 0;
     notifyListeners();
   }
 
   /// 세이브 데이터 구조 버전. 필드를 추가/변경할 때마다 올리고
   /// fromJson()에서 이전 버전 데이터도 기본값으로 채워 읽을 수 있게 한다.
-  static const int currentSchemaVersion = 3;
+  static const int currentSchemaVersion = 5;
 
   Map<String, dynamic> toJson() => {
         'schemaVersion': currentSchemaVersion,
         'currentNodeId': _currentNodeId,
         'inventory': _inventory,
-        'playerMaxHp': playerMaxHp,
-        'playerHp': playerHp,
         'playerAttack': playerAttack,
         'playerDefense': playerDefense,
         'level': level,
         'exp': exp,
         'hearts': hearts,
+        'hasUsedAdRevival': hasUsedAdRevival,
         'cashBalance': cashBalance,
         'ownedPackIds': _ownedPackIds.toList(),
         'visitedNodeCount': visitedNodeCount,
@@ -206,13 +204,12 @@ class GameState extends ChangeNotifier {
       _inventory[itemId] = count as int;
     });
 
-    playerMaxHp = json['playerMaxHp'] as int? ?? playerMaxHp;
-    playerHp = json['playerHp'] as int? ?? playerHp;
     playerAttack = json['playerAttack'] as int? ?? playerAttack;
     playerDefense = json['playerDefense'] as int? ?? playerDefense;
     level = json['level'] as int? ?? level;
     exp = json['exp'] as int? ?? exp;
     hearts = json['hearts'] as int? ?? hearts;
+    hasUsedAdRevival = json['hasUsedAdRevival'] as bool? ?? hasUsedAdRevival;
     cashBalance = json['cashBalance'] as int? ?? cashBalance;
 
     _ownedPackIds.clear();

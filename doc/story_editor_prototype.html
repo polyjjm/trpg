@@ -1,0 +1,692 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<title>작가 편집기 (프로토타입)</title>
+<style>
+  :root {
+    --bg: #0e0e10; --panel: #17171a; --panel2: #1e1e22; --border: #2a2a2f;
+    --ivory: #e2d4bf; --gold: #f0e68c; --muted: #8a8a92; --danger: #e0524b; --accent: #4b8ee0;
+    --ok: #6fbf73;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Noto Sans KR', sans-serif; background: var(--bg); color: var(--ivory); }
+  .topbar { display: flex; align-items: center; justify-content: space-between; padding: 14px 24px; background: var(--panel); border-bottom: 1px solid var(--border); }
+  .topbar h1 { font-size: 16px; margin: 0; }
+  .badge { font-size: 10px; background: #3a3a2a; color: var(--gold); padding: 2px 8px; border-radius: 999px; margin-left: 8px; }
+  .layout { display: flex; min-height: calc(100vh - 53px); }
+  .sidebar { width: 260px; background: var(--panel); border-right: 1px solid var(--border); padding: 16px; overflow-y: auto; }
+  .new-btn, .add-choice-btn, .btn-primary, .btn-ghost, .remove-btn, .trigger-tab { cursor: pointer; }
+  .new-btn { width: 100%; padding: 10px; background: var(--gold); color: #111; border: none; border-radius: 8px; font-weight: 700; font-size: 13px; margin-bottom: 16px; }
+  .node-item { padding: 10px 12px; border-radius: 8px; font-size: 13px; color: var(--muted); margin-bottom: 4px; border: 1px solid transparent; }
+  .node-item.active { background: var(--panel2); color: var(--ivory); border-color: var(--border); }
+  .node-item .id { font-size: 11px; color: #5c5c66; display: block; margin-top: 2px; }
+  .node-item .del { float: right; color: var(--danger); font-size: 11px; }
+  .main { flex: 1; padding: 24px 32px; max-width: 760px; }
+  .right { width: 380px; border-left: 1px solid var(--border); padding: 24px; background: #0c0c0e; }
+  .right h2 { font-size: 13px; color: var(--muted); margin: 0 0 10px; }
+  pre { background: var(--panel2); border: 1px solid var(--border); border-radius: 8px; padding: 12px; font-size: 11px; line-height: 1.5; white-space: pre-wrap; word-break: break-all; color: #9fdca0; max-height: 80vh; overflow-y: auto; }
+  .field-group { margin-bottom: 16px; }
+  label { display: block; font-size: 12px; color: var(--muted); margin-bottom: 6px; }
+  input[type=text], input[type=number], textarea, select { width: 100%; background: var(--panel2); border: 1px solid var(--border); border-radius: 8px; padding: 9px 11px; color: var(--ivory); font-size: 13px; font-family: inherit; }
+  textarea { resize: vertical; min-height: 60px; }
+  .row { display: flex; gap: 10px; }
+  .row > * { flex: 1; }
+  .choices-header { display: flex; justify-content: space-between; align-items: center; margin: 24px 0 10px; }
+  .choices-header h2 { font-size: 14px; margin: 0; }
+  .add-choice-btn { background: var(--panel2); border: 1px dashed var(--border); color: var(--gold); padding: 6px 12px; border-radius: 6px; font-size: 12px; }
+  .choice-card { background: var(--panel); border: 1px solid var(--border); border-radius: 10px; padding: 14px 16px; margin-bottom: 12px; }
+  .choice-card-top { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
+  .choice-num { font-size: 12px; color: var(--muted); font-weight: 700; }
+  .remove-btn { background: none; border: none; color: var(--danger); font-size: 12px; }
+  .trigger-type-tabs { display: flex; gap: 6px; margin: 8px 0; flex-wrap: wrap; }
+  .trigger-tab { font-size: 11px; padding: 5px 10px; border-radius: 999px; border: 1px solid var(--border); color: var(--muted); background: none; }
+  .trigger-tab.selected { background: var(--accent); color: white; border-color: var(--accent); }
+  .trigger-detail { background: var(--panel2); border-radius: 8px; padding: 10px 12px; margin-top: 8px; }
+  .mode-tabs { display: flex; gap: 6px; margin-bottom: 10px; }
+  .mode-tab { font-size: 11px; padding: 5px 10px; border-radius: 999px; border: 1px solid var(--border); color: var(--muted); background: none; }
+  .mode-tab.selected { background: #5c4a1f; color: var(--gold); border-color: var(--gold); }
+  .random-row { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
+  .random-row select { flex: 2; }
+  .random-row input { flex: 0 0 60px; text-align: center; }
+  .pct-total { font-size: 11px; margin-top: 6px; }
+  .pct-total.ok { color: var(--ok); }
+  .pct-total.bad { color: var(--danger); }
+  .save-bar { display: flex; gap: 10px; margin-top: 24px; padding-top: 18px; border-top: 1px solid var(--border); align-items: center; }
+  .btn-primary { background: var(--gold); color: #111; border: none; padding: 11px 20px; border-radius: 8px; font-weight: 700; font-size: 13px; }
+  .btn-ghost { background: none; border: 1px solid var(--border); color: var(--muted); padding: 11px 20px; border-radius: 8px; font-size: 13px; }
+  .toast { font-size: 12px; color: var(--ok); opacity: 0; transition: opacity .2s; }
+  .toast.show { opacity: 1; }
+  .navtabs { display: flex; gap: 4px; padding: 0 24px; background: var(--panel); border-bottom: 1px solid var(--border); }
+  .navtab { padding: 12px 16px; font-size: 13px; color: var(--muted); cursor: pointer; border-bottom: 2px solid transparent; }
+  .navtab.active { color: var(--gold); border-bottom-color: var(--gold); }
+  .img-grid { display: flex; flex-wrap: wrap; gap: 14px; margin-top: 16px; }
+  .img-card { width: 150px; background: var(--panel); border: 1px solid var(--border); border-radius: 10px; overflow: hidden; }
+  .img-card img { width: 100%; height: 90px; object-fit: cover; display: block; background: #000; }
+  .img-card .name { font-size: 11px; padding: 8px; color: var(--muted); word-break: break-all; }
+  .img-card .del { display: block; width: 100%; background: none; border: none; border-top: 1px solid var(--border); color: var(--danger); font-size: 11px; padding: 6px; cursor: pointer; }
+  .upload-box { border: 1px dashed var(--border); border-radius: 10px; padding: 20px; text-align: center; color: var(--muted); font-size: 13px; }
+  .img-picker { display: flex; align-items: center; gap: 10px; }
+  .img-picker .thumb { width: 54px; height: 40px; object-fit: cover; border-radius: 6px; border: 1px solid var(--border); background: #000; }
+  .img-picker select { flex: 1; }
+  .notice-card { background: var(--panel); border: 1px solid var(--border); border-radius: 10px; padding: 14px 16px; margin-bottom: 12px; }
+  .notice-card .date { font-size: 11px; color: var(--muted); margin-bottom: 4px; }
+  .notice-card .title { font-weight: 700; margin-bottom: 6px; }
+  .notice-card .body { font-size: 13px; color: #cfc3ae; line-height: 1.5; }
+  .nickname-input { background: var(--panel2); border: 1px solid var(--border); border-radius: 6px; padding: 5px 10px; color: var(--ivory); font-size: 12px; width: 140px; text-align: right; }
+  .pack-bar { display: flex; align-items: center; gap: 8px; padding: 10px 24px; background: #131315; border-bottom: 1px solid var(--border); flex-wrap: wrap; }
+  .pack-bar label { font-size: 11px; color: var(--muted); margin: 0; }
+  .pack-select { flex: none; width: auto; min-width: 220px; }
+  .pack-new-btn { background: none; border: 1px dashed var(--border); color: var(--gold); padding: 6px 12px; border-radius: 6px; font-size: 12px; cursor: pointer; }
+  .status-tag { font-size: 10px; padding: 2px 7px; border-radius: 999px; margin-left: 6px; }
+  .status-tag.draft { background: #3a3a2a; color: #d8c98a; }
+  .status-tag.published { background: #1f3d24; color: #7fd98a; }
+  .dirty-banner { background: #3d2f1a; border: 1px solid #6b5324; color: #e8c877; font-size: 12px; padding: 10px 14px; border-radius: 8px; margin-bottom: 16px; }
+  .status-tag.pending { background: #2a2e42; color: #9db3ff; }
+  .status-tag.pending-delete { background: #422a2a; color: #ff9d9d; }
+  .live-note { background: #1a2d3d; border: 1px solid #244a63; color: #8fc7e8; font-size: 12px; padding: 10px 14px; border-radius: 8px; margin-bottom: 16px; }
+  .approval-card { background: var(--panel); border: 1px solid var(--border); border-radius: 10px; padding: 14px 16px; margin-bottom: 12px; display: flex; justify-content: space-between; align-items: center; gap: 12px; }
+  .approval-card .meta { font-size: 12px; color: var(--muted); }
+  .approval-card .title { font-weight: 700; margin-bottom: 4px; }
+  .approval-actions { display: flex; gap: 8px; flex: none; }
+  .approve-btn { background: #1f3d24; color: #7fd98a; border: 1px solid #2c5c34; padding: 8px 14px; border-radius: 6px; font-size: 12px; cursor: pointer; }
+  .reject-btn { background: #3d1f1f; color: #ff9d9d; border: 1px solid #5c2c2c; padding: 8px 14px; border-radius: 6px; font-size: 12px; cursor: pointer; }
+</style>
+</head>
+<body>
+
+<div class="topbar">
+  <h1>작가 편집기<span class="badge">프로토타입 · 브라우저 메모리에만 저장됨</span></h1>
+  <div style="display:flex;align-items:center;gap:6px;">
+    <span style="font-size:12px;color:#8a8a92;">작가 닉네임</span>
+    <input class="nickname-input" id="nicknameInput" type="text" value="좀비작가">
+  </div>
+</div>
+
+<div class="pack-bar" id="packBar"></div>
+
+<div class="navtabs" id="navtabs"></div>
+
+<div class="layout">
+  <div class="sidebar" id="sidebar"></div>
+  <div class="main" id="main"></div>
+  <div class="right" id="rightPanel">
+    <h2>이 노드가 저장될 실제 데이터 구조 (Firestore 문서 미리보기)</h2>
+    <pre id="jsonPreview"></pre>
+  </div>
+</div>
+
+<script>
+const TYPES = ['move', 'battle', 'encounter', 'merchant', 'item'];
+const TYPE_LABEL = { move: '단순 이동', battle: '전투', encounter: '돌발 조우', merchant: '상인', item: '아이템 획득' };
+
+let packs = [
+  {
+    id: 'pack_zombie_road', title: 'ZOMBIE ROAD (본편)',
+    nodes: [
+      (() => {
+        const n = {
+          id: 'day1_start', day: 1, title: '폐허가 된 도시 외곽',
+          body: '도시는 이미 무너져 있었다. 하지만 아직 끝난 것은 아니었다.',
+          bgImageId: null, status: 'published', pendingAction: null, dirty: false,
+          choices: [
+            { text: '무너진 편의점으로 들어간다.', type: 'move', mode: 'fixed', target: 'day1_store', random: [], imageId: null },
+            { text: '소리가 들린 골목으로 향한다.', type: 'move', mode: 'fixed', target: 'day1_alley', random: [], imageId: null },
+          ],
+        };
+        // 이미 연재 중(발행됨)인 것처럼, 마지막으로 승인된 내용을 liveSnapshot으로 따로 보관.
+        n.liveSnapshot = cloneContent(n);
+        return n;
+      })(),
+      {
+        id: 'day1_store', day: 1, title: '무너진 편의점',
+        body: '선반은 대부분 비어 있었다. 하지만 구석에서 통조림 몇 개가 눈에 띄었다.',
+        bgImageId: null, status: 'draft', pendingAction: null, dirty: false, liveSnapshot: null,
+        choices: [
+          {
+            text: '통조림을 챙기고 다시 골목으로 향한다.', type: 'battle', mode: 'fixed', target: '',
+            battleId: 'zombie_01', winNode: 'day1_alley', loseNode: 'day1_alley', escapeNode: 'day1_store',
+            random: [], imageId: null,
+          },
+          { text: '조용히 밖으로 되돌아간다.', type: 'move', mode: 'random',
+            random: [
+              { node: 'day1_alley', pct: 60 },
+              { node: 'day1_station', pct: 30 },
+              { node: 'day1_merchant', pct: 10 },
+            ], imageId: null,
+          },
+        ],
+      },
+    ],
+  },
+  {
+    id: 'pack_tracker', title: '사이드 스토리: 추적자',
+    nodes: [],
+  },
+];
+
+let activePackId = packs[0].id;
+let images = []; // { id, name, url }
+let notices = [
+  { id: 'n1', title: '2화 오타 수정했어요', body: '2화 초반 대사에 있던 오타 몇 개 고쳤습니다.', date: '2026-08-05' },
+];
+let selectedIndex = 0;
+let activeTab = 'story'; // 'story' | 'images' | 'notices'
+let imgIdCounter = 1;
+
+function currentPack() { return packs.find(p => p.id === activePackId); }
+function currentNodes() { const p = currentPack(); return p ? p.nodes : []; }
+
+function cloneContent(node) {
+  return JSON.parse(JSON.stringify({ title: node.title, day: node.day, body: node.body, bgImageId: node.bgImageId, choices: node.choices }));
+}
+
+function allPendingNodes() {
+  const out = [];
+  packs.forEach(p => p.nodes.forEach(n => { if (n.pendingAction) out.push({ pack: p, node: n }); }));
+  return out;
+}
+
+function el(tag, attrs = {}, children = []) {
+  const e = document.createElement(tag);
+  for (const k in attrs) {
+    if (k === 'class') e.className = attrs[k];
+    else if (k.startsWith('on')) e.addEventListener(k.slice(2), attrs[k]);
+    else e.setAttribute(k, attrs[k]);
+  }
+  (Array.isArray(children) ? children : [children]).forEach(c => {
+    if (typeof c === 'string') e.appendChild(document.createTextNode(c));
+    else if (c) e.appendChild(c);
+  });
+  return e;
+}
+
+function renderPackBar() {
+  const bar = document.getElementById('packBar');
+  bar.innerHTML = '';
+  bar.appendChild(el('label', {}, '스토리팩'));
+  const sel = el('select', {
+    class: 'pack-select',
+    onchange: (e) => { activePackId = e.target.value; selectedIndex = 0; renderAll(); },
+  }, packs.map(p => el('option', { value: p.id }, `${p.title} (노드 ${p.nodes.length}개)`)));
+  sel.value = activePackId;
+  bar.appendChild(sel);
+  bar.appendChild(el('button', {
+    class: 'pack-new-btn',
+    onclick: () => {
+      const title = prompt('새 스토리팩 이름을 입력하세요.');
+      if (!title) return;
+      const id = 'pack_' + Date.now();
+      packs.push({ id, title, nodes: [] });
+      activePackId = id;
+      selectedIndex = 0;
+      renderAll();
+    },
+  }, '+ 새 스토리팩'));
+  bar.appendChild(el('span', { style: 'font-size:11px;color:var(--muted);margin-left:6px;' },
+    '한 계정으로 여러 스토리팩을 만들 수 있어요. 아래 노드/공지사항은 선택된 스토리팩 기준이에요.'));
+}
+
+function renderNavTabs() {
+  const nav = document.getElementById('navtabs');
+  nav.innerHTML = '';
+  const pendingCount = allPendingNodes().length;
+  const tabs = [
+    ['story', '스토리 노드'],
+    ['images', '이미지 라이브러리'],
+    ['notices', '공지사항'],
+    ['approvals', `승인 대기함 (관리자 시점 데모)${pendingCount ? ' · ' + pendingCount : ''}`],
+  ];
+  tabs.forEach(([key, label]) => {
+    nav.appendChild(el('div', {
+      class: 'navtab' + (activeTab === key ? ' active' : ''),
+      onclick: () => { activeTab = key; renderAll(); },
+    }, label));
+  });
+}
+
+function imageOptions(currentId) {
+  const opts = [el('option', { value: '' }, '(선택 안 함)')];
+  images.forEach(img => opts.push(el('option', { value: img.id }, img.name)));
+  return opts;
+}
+
+function findImage(id) { return images.find(i => i.id === id); }
+
+function renderSidebar() {
+  const sb = document.getElementById('sidebar');
+  sb.innerHTML = '';
+  if (activeTab !== 'story') { sb.style.display = 'none'; return; }
+  sb.style.display = '';
+  sb.appendChild(el('button', { class: 'new-btn', onclick: addNode }, '+ 새 스토리 노드'));
+  currentNodes().forEach((n, i) => {
+    const item = el('div', {
+      class: 'node-item' + (i === selectedIndex ? ' active' : ''),
+      onclick: () => { selectedIndex = i; renderAll(); },
+    }, [
+      el('span', { class: 'del', onclick: (e) => { e.stopPropagation(); deleteNode(i); } }, '삭제'),
+      n.title || '(제목 없음)',
+      renderStatusTag(n),
+      el('span', { class: 'id' }, n.id),
+    ]);
+    sb.appendChild(item);
+  });
+}
+
+function renderStatusTag(n) {
+  if (n.dirty) return el('span', { class: 'status-tag draft' }, '수정중(미저장)');
+  if (n.pendingAction === 'delete') return el('span', { class: 'status-tag pending-delete' }, '삭제 승인대기');
+  if (n.pendingAction === 'create') return el('span', { class: 'status-tag pending' }, '등록 승인대기');
+  if (n.pendingAction === 'edit') return el('span', { class: 'status-tag pending' }, '수정 승인대기');
+  if (n.status === 'published') return el('span', { class: 'status-tag published' }, '연재중');
+  return el('span', { class: 'status-tag draft' }, '초안');
+}
+
+function addNode() {
+  const list = currentNodes();
+  const idx = list.length + 1;
+  list.push({ id: `new_node_${idx}`, day: 1, title: '새 노드', body: '', bgImageId: null, status: 'draft', pendingAction: null, dirty: false, liveSnapshot: null, choices: [] });
+  selectedIndex = list.length - 1;
+  renderAll();
+}
+
+function deleteNode(i) {
+  const list = currentNodes();
+  const n = list[i];
+  if (!n) return;
+  if (!n.liveSnapshot) {
+    // 한 번도 연재(발행)된 적 없는 순수 초안이라, 바로 지워도 플레이어한테 영향 없음.
+    if (!confirm('아직 발행된 적 없는 초안이에요. 바로 삭제할까요?')) return;
+    list.splice(i, 1);
+    selectedIndex = Math.max(0, Math.min(selectedIndex, list.length - 1));
+    renderAll();
+    return;
+  }
+  if (!confirm('이미 연재 중인 노드예요. 삭제 요청을 보낼까요? 상위 관리자가 승인하기 전까지는 계속 플레이어에게 그대로 보여요.')) return;
+  n.pendingAction = 'delete';
+  n.dirty = false;
+  renderAll();
+}
+
+function nodeOptions(excludeSelf) {
+  return currentNodes().filter(n => n.id !== excludeSelf).map(n => el('option', { value: n.id }, `${n.title} (${n.id})`));
+}
+
+function markDirty(node) { node.dirty = true; }
+
+function renderMain() {
+  const main = document.getElementById('main');
+  main.innerHTML = '';
+  const rightPanel = document.getElementById('rightPanel');
+
+  if (activeTab === 'images') {
+    rightPanel.style.display = 'none';
+    main.style.maxWidth = '100%';
+    renderImagesMain(main);
+    return;
+  }
+  if (activeTab === 'notices') {
+    rightPanel.style.display = 'none';
+    main.style.maxWidth = '640px';
+    renderNoticesMain(main);
+    return;
+  }
+  if (activeTab === 'approvals') {
+    rightPanel.style.display = 'none';
+    main.style.maxWidth = '100%';
+    renderApprovalsMain(main);
+    return;
+  }
+  rightPanel.style.display = 'none';
+  main.style.maxWidth = '820px';
+
+  const node = currentNodes()[selectedIndex];
+  if (!node) { main.appendChild(el('div', {}, '노드를 선택하거나 새로 만들어주세요.')); return; }
+
+  if (node.pendingAction === 'delete') {
+    main.appendChild(el('div', { class: 'dirty-banner' }, '이 노드는 삭제 요청이 들어가 있어요. 상위 관리자 승인을 기다리는 중이고, 그동안 플레이어에게는 계속 원래 내용이 보여요.'));
+    main.appendChild(el('button', { class: 'btn-ghost', onclick: () => { node.pendingAction = null; renderAll(); } }, '삭제 요청 취소하기'));
+    return;
+  }
+
+  if (node.dirty) {
+    main.appendChild(el('div', { class: 'dirty-banner' },
+      '저장하지 않은 변경사항이 있어요. "임시저장"을 눌러야 다음에 다시 열었을 때 남아있고, "승인 요청"을 보내야 상위 관리자 검토 후 플레이어에게 반영돼요.'));
+  } else if (node.pendingAction === 'edit' || node.pendingAction === 'create') {
+    main.appendChild(el('div', { class: 'dirty-banner' },
+      `${node.pendingAction === 'create' ? '신규 등록' : '수정'} 승인 요청을 보냈어요. 상위 관리자가 검토 중이에요 — 승인 전까지 ${node.liveSnapshot ? '플레이어에게는 이전 버전이 그대로 보여요.' : '플레이어에게는 아직 안 보여요.'}`));
+  }
+
+  if (node.liveSnapshot && node.pendingAction !== 'edit' && node.pendingAction !== 'create') {
+    main.appendChild(el('div', { class: 'live-note' }, '이 노드는 현재 연재 중이에요. 지금 여기서 수정하면 바로 반영되는 게 아니라, "승인 요청"을 보내서 상위 관리자가 승인해야 실제 반영돼요.'));
+  }
+
+  const idInput = el('input', { type: 'text', value: node.id, oninput: (e) => { node.id = e.target.value; markDirty(node); renderSidebarKeepMain(); } });
+  main.appendChild(el('div', { class: 'field-group' }, [el('label', {}, '노드 ID'), idInput]));
+
+  const dayInput = el('input', { type: 'text', value: node.day, oninput: (e) => { node.day = e.target.value; markDirty(node); } });
+  const titleInput = el('input', { type: 'text', value: node.title, oninput: (e) => { node.title = e.target.value; markDirty(node); renderSidebarKeepMain(); } });
+  main.appendChild(el('div', { class: 'row field-group' }, [
+    el('div', {}, [el('label', {}, 'DAY / 챕터'), dayInput]),
+    el('div', {}, [el('label', {}, '제목'), titleInput]),
+  ]));
+
+  const bodyInput = el('textarea', { oninput: (e) => { node.body = e.target.value; markDirty(node); } }, node.body);
+  main.appendChild(el('div', { class: 'field-group' }, [el('label', {}, '본문'), bodyInput]));
+
+  main.appendChild(el('div', { class: 'field-group' }, [el('label', {}, '배경 이미지'), renderImagePicker(node.bgImageId, (id) => { node.bgImageId = id; markDirty(node); }, node)]));
+
+  main.appendChild(el('div', { class: 'choices-header' }, [
+    el('h2', {}, '선택지'),
+    el('button', { class: 'add-choice-btn', onclick: () => { node.choices.push({ text: '새 선택지', type: 'move', mode: 'fixed', target: '', random: [], imageId: null }); markDirty(node); renderAll(); } }, '+ 선택지 추가'),
+  ]));
+
+  node.choices.forEach((c, ci) => main.appendChild(renderChoiceCard(node, c, ci)));
+
+  const toast = el('span', { class: 'toast', id: 'toast' }, '');
+  main.appendChild(el('div', { class: 'save-bar' }, [
+    el('button', { class: 'btn-ghost', onclick: () => saveNode(node, false) }, '임시저장 (나만 보임)'),
+    el('button', { class: 'btn-primary', onclick: () => saveNode(node, true) }, '승인 요청 보내기'),
+    el('button', { class: 'btn-ghost', onclick: () => alert('실제 구현되면 여기서 바로 플레이해볼 수 있어요.') }, '미리보기'),
+    toast,
+  ]));
+}
+
+function renderApprovalsMain(main) {
+  main.appendChild(el('h2', { style: 'font-size:16px;margin:0 0 6px;' }, '승인 대기함'));
+  main.appendChild(el('div', { style: 'font-size:12px;color:var(--muted);margin-bottom:16px;' },
+    '이 탭은 원래 대리점/본사 계정에서 보이는 화면이에요. 지금은 하나의 프로토타입 안에서 승인 흐름을 같이 확인해볼 수 있게 임시로 붙여놨어요.'));
+
+  const pending = allPendingNodes();
+  if (!pending.length) {
+    main.appendChild(el('div', { style: 'font-size:13px;color:var(--muted);' }, '대기 중인 요청이 없어요.'));
+    return;
+  }
+
+  const actionLabel = { create: '신규 등록 요청', edit: '수정 요청', delete: '삭제 요청' };
+
+  pending.forEach(({ pack, node }) => {
+    main.appendChild(el('div', { class: 'approval-card' }, [
+      el('div', {}, [
+        el('div', { class: 'title' }, `[${actionLabel[node.pendingAction]}] ${node.title || '(제목 없음)'}`),
+        el('div', { class: 'meta' }, `스토리팩: ${pack.title} · 노드 ID: ${node.id}`),
+      ]),
+      el('div', { class: 'approval-actions' }, [
+        el('button', { class: 'approve-btn', onclick: () => approveNode(node) }, '승인'),
+        el('button', { class: 'reject-btn', onclick: () => rejectNode(node) }, '반려'),
+      ]),
+    ]));
+  });
+}
+
+function approveNode(node) {
+  if (node.pendingAction === 'delete') {
+    for (const p of packs) {
+      const idx = p.nodes.indexOf(node);
+      if (idx !== -1) { p.nodes.splice(idx, 1); break; }
+    }
+  } else {
+    node.liveSnapshot = cloneContent(node);
+    node.status = 'published';
+    node.pendingAction = null;
+  }
+  renderAll();
+}
+
+function rejectNode(node) {
+  if (node.pendingAction === 'delete') {
+    node.pendingAction = null; // 삭제 취소, 계속 연재중 상태 유지
+  } else if (node.pendingAction === 'create') {
+    node.status = 'draft';
+    node.pendingAction = null;
+  } else if (node.pendingAction === 'edit') {
+    node.status = 'draft'; // 라이브(liveSnapshot)는 그대로 두고, 작가가 다시 손볼 수 있게 초안으로 되돌림
+    node.pendingAction = null;
+  }
+  renderAll();
+}
+
+function renderChoiceCard(node, c, ci) {
+  const card = el('div', { class: 'choice-card' });
+  card.appendChild(el('div', { class: 'choice-card-top' }, [
+    el('span', { class: 'choice-num' }, `선택지 ${ci + 1}`),
+    el('button', { class: 'remove-btn', onclick: () => { node.choices.splice(ci, 1); markDirty(node); renderAll(); } }, '삭제'),
+  ]));
+  card.appendChild(el('label', {}, '버튼에 표시될 텍스트'));
+  card.appendChild(el('input', { type: 'text', value: c.text, oninput: (e) => { c.text = e.target.value; markDirty(node); } }));
+
+  card.appendChild(el('div', { class: 'field-group', style: 'margin-top:10px;' }, [
+    el('label', {}, '선택지 전용 이미지 (선택 사항 — 안 고르면 노드 배경 그대로 사용)'),
+    renderImagePicker(c.imageId, (id) => { c.imageId = id; markDirty(node); }, c),
+  ]));
+
+  const typeTabs = el('div', { class: 'trigger-type-tabs' });
+  TYPES.forEach(t => {
+    typeTabs.appendChild(el('button', {
+      class: 'trigger-tab' + (c.type === t ? ' selected' : ''),
+      onclick: () => { c.type = t; markDirty(node); renderAll(); },
+    }, TYPE_LABEL[t]));
+  });
+  card.appendChild(typeTabs);
+
+  card.appendChild(renderTriggerDetail(node, c));
+  return card;
+}
+
+function renderImagePicker(currentId, onChange, refreshTarget) {
+  const wrap = el('div', { class: 'img-picker' });
+  const img = findImage(currentId);
+  const thumb = el('img', { class: 'thumb', src: img ? img.url : '' });
+  if (!img) thumb.style.visibility = 'hidden';
+  const sel = el('select', {
+    onchange: (e) => { onChange(e.target.value || null); renderAll(); },
+  }, imageOptions(currentId));
+  sel.value = currentId || '';
+  wrap.appendChild(thumb);
+  wrap.appendChild(sel);
+  if (!images.length) {
+    wrap.appendChild(el('span', { style: 'font-size:11px;color:var(--muted);white-space:nowrap;' }, '→ 이미지 라이브러리에서 먼저 업로드하세요'));
+  }
+  return wrap;
+}
+
+function renderImagesMain(main) {
+  main.appendChild(el('h2', { style: 'font-size:16px;margin:0 0 6px;' }, '이미지 라이브러리'));
+  main.appendChild(el('div', { style: 'font-size:12px;color:var(--muted);margin-bottom:16px;' },
+    '여기에 업로드한 이미지를 노드 배경이나 선택지 전용 이미지로 고를 수 있어요.'));
+
+  const fileInput = el('input', { type: 'file', accept: 'image/*', multiple: true, style: 'display:none;', onchange: (e) => {
+    Array.from(e.target.files).forEach(file => {
+      const url = URL.createObjectURL(file);
+      images.push({ id: 'img_' + (imgIdCounter++), name: file.name, url });
+    });
+    renderAll();
+  }});
+  const uploadBox = el('div', { class: 'upload-box', onclick: () => fileInput.click() }, [
+    '클릭해서 이미지 업로드 (여러 장 선택 가능)', fileInput,
+  ]);
+  main.appendChild(uploadBox);
+
+  const grid = el('div', { class: 'img-grid' });
+  images.forEach(img => {
+    grid.appendChild(el('div', { class: 'img-card' }, [
+      el('img', { src: img.url }),
+      el('div', { class: 'name' }, img.name),
+      el('button', { class: 'del', onclick: () => { images = images.filter(i => i.id !== img.id); renderAll(); } }, '삭제'),
+    ]));
+  });
+  main.appendChild(grid);
+}
+
+function renderNoticesMain(main) {
+  main.appendChild(el('h2', { style: 'font-size:16px;margin:0 0 6px;' }, '작가 공지사항'));
+  main.appendChild(el('div', { style: 'font-size:12px;color:var(--muted);margin-bottom:16px;' },
+    '내 스토리팩 업데이트/새 이야기 출시 같은 소식을 올리면, 플레이어가 라이브러리에서 볼 수 있어요.'));
+
+  const titleInput = el('input', { type: 'text', placeholder: '제목 (예: 새로운 확장 이야기 \'추적자\' 공개!)' });
+  const bodyInput = el('textarea', { placeholder: '내용을 적어주세요.' });
+  main.appendChild(el('div', { class: 'field-group' }, [el('label', {}, '제목'), titleInput]));
+  main.appendChild(el('div', { class: 'field-group' }, [el('label', {}, '내용'), bodyInput]));
+  main.appendChild(el('button', {
+    class: 'btn-primary', style: 'margin-bottom:24px;',
+    onclick: () => {
+      if (!titleInput.value.trim()) { alert('제목을 입력해주세요.'); return; }
+      notices.unshift({ id: 'n' + Date.now(), title: titleInput.value, body: bodyInput.value, date: new Date().toISOString().slice(0, 10) });
+      renderAll();
+    },
+  }, '공지 올리기'));
+
+  main.appendChild(el('div', { style: 'font-size:13px;color:var(--muted);margin-bottom:10px;' }, `등록된 공지 ${notices.length}개`));
+  notices.forEach(n => {
+    main.appendChild(el('div', { class: 'notice-card' }, [
+      el('div', { class: 'date' }, n.date),
+      el('div', { class: 'title' }, n.title),
+      el('div', { class: 'body' }, n.body),
+      el('button', { class: 'remove-btn', style: 'margin-top:8px;', onclick: () => { notices = notices.filter(x => x.id !== n.id); renderAll(); } }, '삭제'),
+    ]));
+  });
+}
+
+function renderTriggerDetail(node, c) {
+  const detail = el('div', { class: 'trigger-detail' });
+
+  if (c.type === 'move') {
+    const modeTabs = el('div', { class: 'mode-tabs' }, [
+      el('button', { class: 'mode-tab' + (c.mode !== 'random' ? ' selected' : ''), onclick: () => { c.mode = 'fixed'; markDirty(node); renderAll(); } }, '고정 노드로 이동'),
+      el('button', { class: 'mode-tab' + (c.mode === 'random' ? ' selected' : ''), onclick: () => { c.mode = 'random'; if (!c.random.length) c.random = [{ node: '', pct: 100 }]; markDirty(node); renderAll(); } }, '여러 노드 중 확률로 랜덤 선택'),
+    ]);
+    detail.appendChild(modeTabs);
+
+    if (c.mode === 'random') {
+      c.random.forEach((r, ri) => {
+        const sel = el('select', { onchange: (e) => { r.node = e.target.value; markDirty(node); } }, nodeOptions(node.id));
+        sel.value = r.node;
+        const pctInput = el('input', { type: 'number', value: r.pct, oninput: (e) => { r.pct = Number(e.target.value) || 0; markDirty(node); updatePctTotal(c, detail); } });
+        detail.appendChild(el('div', { class: 'random-row' }, [
+          sel, pctInput, el('span', {}, '%'),
+          el('button', { class: 'remove-btn', onclick: () => { c.random.splice(ri, 1); markDirty(node); renderAll(); } }, '삭제'),
+        ]));
+      });
+      detail.appendChild(el('button', { class: 'add-choice-btn', onclick: () => { c.random.push({ node: '', pct: 0 }); markDirty(node); renderAll(); } }, '+ 후보 노드 추가'));
+      const pctTotal = el('div', { class: 'pct-total' });
+      detail.appendChild(pctTotal);
+      requestAnimationFrame(() => updatePctTotal(c, detail));
+    } else {
+      const sel = el('select', { onchange: (e) => { c.target = e.target.value; markDirty(node); } }, nodeOptions(node.id));
+      sel.value = c.target;
+      detail.appendChild(el('div', { class: 'field-group' }, [el('label', {}, '이동할 노드'), sel]));
+    }
+  }
+
+  if (c.type === 'battle') {
+    const battleSel = el('input', { type: 'text', value: c.battleId || '', placeholder: '예: zombie_01', oninput: (e) => { c.battleId = e.target.value; markDirty(node); } });
+    const winSel = el('select', { onchange: (e) => { c.winNode = e.target.value; markDirty(node); } }, nodeOptions(node.id)); winSel.value = c.winNode || '';
+    const loseSel = el('select', { onchange: (e) => { c.loseNode = e.target.value; markDirty(node); } }, nodeOptions(node.id)); loseSel.value = c.loseNode || '';
+    const escSel = el('select', { onchange: (e) => { c.escapeNode = e.target.value; markDirty(node); } }, nodeOptions(node.id)); escSel.value = c.escapeNode || '';
+    detail.appendChild(el('div', { class: 'field-group' }, [el('label', {}, '전투 설정 ID'), battleSel]));
+    detail.appendChild(el('div', { class: 'row' }, [
+      el('div', {}, [el('label', {}, '승리 시'), winSel]),
+      el('div', {}, [el('label', {}, '패배 시'), loseSel]),
+      el('div', {}, [el('label', {}, '도주 시'), escSel]),
+    ]));
+  }
+
+  if (c.type === 'encounter') {
+    const encId = el('input', { type: 'text', value: c.encounterId || '', placeholder: '예: risk_01', oninput: (e) => { c.encounterId = e.target.value; markDirty(node); } });
+    const winSel = el('select', { onchange: (e) => { c.winNode = e.target.value; markDirty(node); } }, nodeOptions(node.id)); winSel.value = c.winNode || '';
+    const escSel = el('select', { onchange: (e) => { c.escapeNode = e.target.value; markDirty(node); } }, nodeOptions(node.id)); escSel.value = c.escapeNode || '';
+    detail.appendChild(el('div', { class: 'field-group' }, [el('label', {}, '조우 설정 ID'), encId]));
+    detail.appendChild(el('div', { class: 'row' }, [
+      el('div', {}, [el('label', {}, '극복 시'), winSel]),
+      el('div', {}, [el('label', {}, '탈출 시'), escSel]),
+    ]));
+  }
+
+  if (c.type === 'merchant') {
+    const sel = el('select', { onchange: (e) => { c.target = e.target.value; markDirty(node); } }, nodeOptions(node.id)); sel.value = c.target || '';
+    detail.appendChild(el('div', { class: 'field-group' }, [el('label', {}, '상인 화면 끝나고 이동할 노드'), sel]));
+  }
+
+  if (c.type === 'item') {
+    const itemId = el('input', { type: 'text', value: c.itemId || '', placeholder: '예: bandage_01', oninput: (e) => { c.itemId = e.target.value; markDirty(node); } });
+    const count = el('input', { type: 'number', value: c.itemCount || 1, oninput: (e) => { c.itemCount = Number(e.target.value) || 1; markDirty(node); } });
+    const sel = el('select', { onchange: (e) => { c.target = e.target.value; markDirty(node); } }, nodeOptions(node.id)); sel.value = c.target || '';
+    detail.appendChild(el('div', { class: 'row field-group' }, [
+      el('div', {}, [el('label', {}, '아이템 ID'), itemId]),
+      el('div', {}, [el('label', {}, '개수'), count]),
+    ]));
+    detail.appendChild(el('div', { class: 'field-group' }, [el('label', {}, '획득 후 이동할 노드'), sel]));
+  }
+
+  return detail;
+}
+
+function updatePctTotal(c, detailEl) {
+  const totalEl = detailEl.querySelector('.pct-total');
+  if (!totalEl) return;
+  const total = c.random.reduce((s, r) => s + (r.pct || 0), 0);
+  totalEl.textContent = `합계 ${total}% ${total === 100 ? '· 정상' : '· 100%가 되어야 저장할 수 있어요'}`;
+  totalEl.className = 'pct-total ' + (total === 100 ? 'ok' : 'bad');
+}
+
+function renderJsonPreview() {
+  // 오른쪽 원본 데이터(JSON) 미리보기 패널은 작가 입장에서 불필요해서 뺐다.
+  // 라이브/초안 구분은 renderMain()의 배너 문구로만 안내한다.
+}
+
+function renderSidebarKeepMain() {
+  renderSidebar();
+  renderJsonPreview();
+}
+
+function renderAll() {
+  renderPackBar();
+  renderNavTabs();
+  renderSidebar();
+  renderMain();
+  renderJsonPreview();
+}
+
+function validateNode(node) {
+  for (const c of node.choices) {
+    if (c.type === 'move' && c.mode === 'random') {
+      const total = c.random.reduce((s, r) => s + (r.pct || 0), 0);
+      if (total !== 100) {
+        alert(`"${c.text}" 선택지의 확률 합계가 ${total}%예요. 100%로 맞춰주세요.`);
+        return false;
+      }
+    }
+  }
+  return true;
+}
+
+function saveNode(node, requestApproval) {
+  if (!validateNode(node)) return;
+
+  if (requestApproval) {
+    const isNew = !node.liveSnapshot;
+    const msg = isNew
+      ? '신규 등록 승인 요청을 보낼까요? 상위 관리자가 승인해야 플레이어에게 보여요.'
+      : '수정 승인 요청을 보낼까요? 상위 관리자가 승인하기 전까지는 지금 연재 중인 이전 버전이 그대로 보여요.';
+    if (!confirm(msg)) return;
+    node.pendingAction = isNew ? 'create' : 'edit';
+    if (node.status !== 'published') node.status = 'draft';
+  } else if (node.status !== 'published' && node.pendingAction === null) {
+    node.status = 'draft';
+  }
+  node.dirty = false;
+
+  renderAll();
+  const toast = document.getElementById('toast');
+  if (toast) {
+    toast.textContent = requestApproval ? '승인 요청 보냄 ✓ 상위 관리자 승인 대기 중' : '임시저장됨 ✓ (승인 요청 전까지는 아무한테도 안 보여요)';
+    toast.classList.add('show');
+    setTimeout(() => toast.classList.remove('show'), 2000);
+  }
+}
+
+renderAll();
+</script>
+
+</body>
+</html>

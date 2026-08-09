@@ -178,3 +178,49 @@ consistent as you implement each one — later prompts assume earlier ones are d
 - [ ] Confirm asset paths and fonts load correctly on mobile
 - [ ] In-app purchase / ad SDK integration planned (service not yet decided — `MonetizationService`
   seam exists but no real SDK chosen)
+
+## Writer/admin web tool (`lib/admin/`, `lib/main_admin.dart`)
+
+A second, separate Flutter entry point for a writer/admin content editor — not part of the
+game app. Same codebase and Firebase project, but a fully separate dependency graph:
+
+```bash
+flutter run -d chrome -t lib/main_admin.dart    # run the admin tool
+flutter build web -t lib/main_admin.dart        # build only the admin tool
+```
+
+`lib/main.dart`/`lib/features/**` never import anything under `lib/admin/`, so
+`flutter build apk -t lib/main.dart` (the game's mobile build) never pulls in admin code —
+verify this holds with `grep -rl "admin/" lib --include="*.dart" | grep -v ^lib/admin | grep -v main_admin.dart`
+(should be empty) whenever touching either side.
+
+- Structure mirrors `lib/features/<feature>/{pages,widgets,models,data}`, just rooted at
+  `lib/admin/` instead of `lib/features/admin/` to keep it visually distinct from the game's
+  own features.
+- Auth reuses `GoogleAuthService` (`lib/core/auth/google_auth_service.dart`) directly — no
+  separate auth system. Access is gated by a hardcoded email allowlist
+  (`lib/admin/data/admin_allowlist.dart`); there's no role hierarchy yet (single-tier: any
+  allowlisted admin can both write content and approve it). `AdminGatePage` re-evaluates
+  auth state imperatively after sign-in/out (same pattern as the game's `MainPage`/`SignInPage`
+  — no reactive auth stream).
+- Firestore schema (`storyPacks`, `storyPacks/{packId}/nodes`, `images`, `writerNotices`) is
+  documented in `lib/admin/FIRESTORE_SCHEMA.md`, including the draft → pending-approval → live
+  workflow (`status`/`pendingAction`/`liveSnapshot` fields) and a starter security-rules
+  snippet — **no `firestore.rules` file exists in this repo yet**, so right now only the
+  client-side allowlist gates writes; anyone with a valid Firebase Auth session could otherwise
+  write to these collections directly via the SDK.
+- The game itself does not read these collections yet — `lib/features/story/data/story_nodes.dart`
+  is still the hardcoded source of truth for gameplay. Wiring the game to read published
+  content from `storyPacks` is a future data-migration step, same as the catalog's hardcoded
+  `storyPacks` list in `lib/features/catalog/data/story_packs.dart` (unrelated Dart model of
+  the same name — don't confuse `lib/admin/models/admin_story_pack.dart` with
+  `lib/features/catalog/models/story_pack.dart`).
+- Editing session state lives in plain mutable Dart objects (`AdminStoryNode`, `AdminChoice`,
+  ...) loaded once per node selection and written back explicitly via "임시저장"/"승인 요청
+  보내기" — deliberately not a live Firestore stream bound straight to the form, so incoming
+  snapshot updates don't clobber in-progress typing. When editing widgets in `lib/admin/widgets/`,
+  never derive a `Key` from a field's own live value (e.g. `ValueKey('id_${node.id}')` on the
+  very TextFormField that edits `node.id`) — that recreates the field on every keystroke and
+  breaks focus/cursor position. Key dynamic list items (choices, random-move candidates) by
+  stable object identity (`ObjectKey(item)`), and key the whole editor subtree by the
+  session's original selection id, not any live-edited field.

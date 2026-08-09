@@ -2,6 +2,8 @@ import 'dart:math';
 
 import 'package:flutter/material.dart';
 
+import '../../../core/audio/audio_service.dart';
+import '../../../core/audio/system_sfx.dart';
 import '../../../core/constants/asset_paths.dart';
 import '../../../core/state/game_state.dart';
 import '../../../core/state/game_state_scope.dart';
@@ -67,6 +69,7 @@ class _MerchantPageState extends State<MerchantPage> {
     final removed = _gameState.removeItem(giveItemId, 1);
     if (!removed) return;
     _gameState.addItem(offer.receiveItemId, 1);
+    AudioService.instance.playSfx(SystemSfx.itemPickup.assetPath);
 
     final giveName = itemCatalog[giveItemId]?.name ?? giveItemId;
     final receiveName =
@@ -100,6 +103,7 @@ class _MerchantPageState extends State<MerchantPage> {
 
     if (win) {
       _gameState.addItem(itemId, 1);
+      AudioService.instance.playSfx(SystemSfx.itemPickup.assetPath);
     } else {
       _gameState.removeItem(itemId, 1);
     }

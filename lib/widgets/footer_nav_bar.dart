@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import '../core/audio/audio_service.dart';
+import '../core/audio/system_sfx.dart';
 import '../features/panel/models/panel_menu_type.dart';
 import '../features/panel/widgets/game_bottom_panel.dart';
 
@@ -85,7 +87,10 @@ class _FooterNavBarState extends State<FooterNavBar> {
     required VoidCallback onTap,
   }) {
     return InkWell(
-      onTap: onTap,
+      onTap: () {
+        AudioService.instance.playSfx(SystemSfx.buttonClick.assetPath);
+        onTap();
+      },
       borderRadius: BorderRadius.circular(12),
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 4),

@@ -96,7 +96,7 @@ class _StoryPageState extends State<StoryPage> {
         : '획득 아이템: ${result.reward.itemIds.join(', ')}';
 
     final message = switch (result.outcome) {
-      BattleOutcome.win => '전투 승리. 남은 HP: ${result.remainHp} / $rewardText',
+      BattleOutcome.win => '전투 승리. 남은 하트: ${gameState.hearts} / $rewardText',
       BattleOutcome.escape => '전투에서 도망쳤다.',
       BattleOutcome.lose => '전투에서 패배했지만, 부활하여 이야기를 이어간다.',
     };
@@ -122,10 +122,26 @@ class _StoryPageState extends State<StoryPage> {
     if (!mounted || result == null) return;
 
     if (result.outcome == EncounterOutcome.dead) {
-      gameState.resetProgress(storyStartNodeId);
+      final revived = await Navigator.push<bool>(
+        context,
+        MaterialPageRoute(builder: (_) => const RevivalPage()),
+      );
 
+      if (!mounted) return;
+
+      if (revived != true) {
+        // 포기하기: 진행 상황을 초기화하고 처음부터 다시 시작한다.
+        gameState.resetProgress(storyStartNodeId);
+
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('쓰러지고 말았다. 처음부터 다시 시작한다.')),
+        );
+        return;
+      }
+
+      // 부활: 진행 상황은 그대로 두고 현재 노드에서 이어간다.
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('쓰러지고 말았다. 처음부터 다시 시작한다.')),
+        const SnackBar(content: Text('쓰러졌지만, 부활하여 이야기를 이어간다.')),
       );
       return;
     }

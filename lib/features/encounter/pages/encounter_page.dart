@@ -2,6 +2,8 @@ import 'dart:math';
 
 import 'package:flutter/material.dart';
 
+import '../../../core/audio/audio_service.dart';
+import '../../../core/audio/system_sfx.dart';
 import '../../../core/auth/auth_scope.dart';
 import '../../../core/state/game_state.dart';
 import '../../../core/state/game_state_scope.dart';
@@ -156,6 +158,7 @@ class _EncounterPageState extends State<EncounterPage>
     if (!mounted) return;
 
     final dead = _gameState.loseHeart();
+    AudioService.instance.playSfx(SystemSfx.heartLose.assetPath);
     if (dead) {
       setState(() {
         _message = '더 이상 버틸 수 없었다...';

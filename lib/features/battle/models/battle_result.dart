@@ -8,14 +8,12 @@ enum BattleOutcome {
 
 class BattleResult {
   final BattleOutcome outcome;
-  final int remainHp;
   final String battleId;
   final BattleReward reward;
   final List<String> usedItemIds;
 
   const BattleResult({
     required this.outcome,
-    required this.remainHp,
     required this.battleId,
     required this.reward,
     required this.usedItemIds,

@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
+import 'package:google_mobile_ads/google_mobile_ads.dart';
 
+import '../../../core/ads/ad_ids.dart';
 import '../../../core/state/game_state_scope.dart';
 import '../../wallet/pages/charge_page.dart';
 import '../data/notices.dart';
@@ -24,9 +26,46 @@ class _CatalogPageState extends State<CatalogPage> {
   final TextEditingController _searchController = TextEditingController();
   String _query = '';
 
+  BannerAd? _bannerAd;
+  bool _isBannerLoaded = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadBannerAd();
+  }
+
+  void _loadBannerAd() {
+    final bannerAd = BannerAd(
+      adUnitId: AdIds.banner,
+      size: AdSize.banner,
+      request: const AdRequest(),
+      listener: BannerAdListener(
+        onAdLoaded: (ad) {
+          if (!mounted) {
+            ad.dispose();
+            return;
+          }
+          setState(() {
+            _isBannerLoaded = true;
+          });
+        },
+        onAdFailedToLoad: (ad, error) {
+          debugPrint('배너 광고 로드 실패: $error');
+          ad.dispose();
+          _bannerAd = null;
+        },
+      ),
+    );
+
+    _bannerAd = bannerAd;
+    bannerAd.load();
+  }
+
   @override
   void dispose() {
     _searchController.dispose();
+    _bannerAd?.dispose();
     super.dispose();
   }
 
@@ -53,6 +92,7 @@ class _CatalogPageState extends State<CatalogPage> {
             children: [
               _buildHeader(context, cashBalance),
               const SizedBox(height: 20),
+              _buildBannerAd(),
               _buildSearchField(),
               const SizedBox(height: 28),
               _buildSectionTitle('공지사항'),
@@ -174,6 +214,24 @@ class _CatalogPageState extends State<CatalogPage> {
               ),
             ),
           ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildBannerAd() {
+    final bannerAd = _bannerAd;
+    if (!_isBannerLoaded || bannerAd == null) {
+      return const SizedBox.shrink();
+    }
+
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 16),
+      child: Center(
+        child: SizedBox(
+          width: bannerAd.size.width.toDouble(),
+          height: bannerAd.size.height.toDouble(),
+          child: AdWidget(ad: bannerAd),
         ),
       ),
     );
