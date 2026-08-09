@@ -1,7 +1,9 @@
 import 'package:firebase_core/firebase_core.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'widgets/loading.dart';
 import 'core/auth/auth_scope.dart';
+import 'core/monetization/admob_monetization_service.dart';
 import 'core/platform/remove_app_loading.dart';
 import 'core/state/game_state_provider.dart';
 import 'features/auth/pages/sign_in_page.dart';
@@ -11,6 +13,10 @@ import 'firebase_options.dart';
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
+  // 웹 빌드에서는 google_mobile_ads(모바일 전용 플러그인)를 초기화하지 않는다.
+  if (!kIsWeb) {
+    await AdMobMonetizationService.initialize();
+  }
   runApp(const MyApp());
 }
 

@@ -42,6 +42,9 @@ dependencies:
   cloud_firestore: ^5.4.4
   google_sign_in: ^6.2.2
 
+  # AdMob (리워드 광고)
+  google_mobile_ads: ^5.2.0
+
 dev_dependencies:
   flutter_test:
     sdk: flutter
