@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:google_mobile_ads/google_mobile_ads.dart';
 
 import '../../../core/ads/ad_ids.dart';
+import '../../../core/constants/external_links.dart';
+import '../../../core/platform/open_external_link.dart';
 import '../../../core/state/game_state_scope.dart';
 import '../../wallet/pages/charge_page.dart';
 import '../data/notices.dart';
@@ -16,7 +18,11 @@ const Color _gold = Color(0xFFF0E68C);
 /// 공지사항과 이야기 팩 표지 그리드를 보여주고, 검색으로 좁혀볼 수 있다.
 /// 팩을 고르면 상세 화면으로 넘어간다. 로그인 직후 항상 이 화면으로 들어온다.
 class CatalogPage extends StatefulWidget {
-  const CatalogPage({super.key});
+  /// 웹에서 author/admin 계정으로 열었을 때만 true — 나머지 계정(reader가
+  /// 대부분)은 이 링크 자체가 존재하지 않는 것처럼 화면에서 완전히 빠진다.
+  final bool showAuthorModeLink;
+
+  const CatalogPage({super.key, this.showAuthorModeLink = false});
 
   @override
   State<CatalogPage> createState() => _CatalogPageState();
@@ -159,6 +165,16 @@ class _CatalogPageState extends State<CatalogPage> {
                 '오늘은 어떤 이야기를 만나볼까요?',
                 style: TextStyle(fontSize: 12.5, color: _ivory.withOpacity(0.60)),
               ),
+              if (widget.showAuthorModeLink) ...[
+                const SizedBox(height: 4),
+                InkWell(
+                  onTap: () => openExternalLink(ExternalLinks.authorToolUrl),
+                  child: Text(
+                    '작가 모드로 전환',
+                    style: TextStyle(fontSize: 11, color: _ivory.withOpacity(0.38)),
+                  ),
+                ),
+              ],
             ],
           ),
         ),

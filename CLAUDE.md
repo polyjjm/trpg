@@ -108,17 +108,26 @@ verify this holds with `grep -rl "admin/" lib --include="*.dart" | grep -v ^lib/
   `lib/admin/` instead of `lib/features/admin/` to keep it visually distinct from the game's
   own features.
 - Auth reuses `GoogleAuthService` (`lib/core/auth/google_auth_service.dart`) directly — no
-  separate auth system. Access is gated by a hardcoded email allowlist
-  (`lib/admin/data/admin_allowlist.dart`); there's no role hierarchy yet (single-tier: any
-  allowlisted admin can both write content and approve it). `AdminGatePage` re-evaluates
-  auth state imperatively after sign-in/out (same pattern as the game's `MainPage`/`SignInPage`
-  — no reactive auth stream).
-- Firestore schema (`storyPacks`, `storyPacks/{packId}/nodes`, `images`, `writerNotices`) is
-  documented in `lib/admin/FIRESTORE_SCHEMA.md`, including the draft → pending-approval → live
-  workflow (`status`/`pendingAction`/`liveSnapshot` fields) and a starter security-rules
-  snippet — **no `firestore.rules` file exists in this repo yet**, so right now only the
-  client-side allowlist gates writes; anyone with a valid Firebase Auth session could otherwise
-  write to these collections directly via the SDK.
+  separate auth system. Access is gated by `users/{uid}.role` (`'reader' | 'author' | 'admin'`,
+  `lib/core/user/`), not a hardcoded email list — the old
+  `lib/admin/data/admin_allowlist.dart` allowlist has been removed. `'author'` and `'admin'`
+  both unlock the editor; only `'admin'` gets approval authority (author-application review,
+  once built, plus the existing node-approval tab). How an account gets promoted to
+  `'author'` in the first place (the application/review flow) is being built incrementally —
+  see the "Planned expansion" section below. `AdminGatePage` re-evaluates auth state
+  imperatively after sign-in/out (same pattern as the game's `MainPage`/`SignInPage` — no
+  reactive auth stream).
+- Firestore schema (`storyPacks`, `storyPacks/{packId}/nodes`, `images`, `writerNotices`,
+  `users`, `authorApplications`, `genres`) is documented in `lib/admin/FIRESTORE_SCHEMA.md`,
+  including the draft → pending-approval → live workflow (`status`/`pendingAction`/
+  `liveSnapshot` fields) and a role-based security-rules snippet (`users/{uid}.role`, not a
+  hardcoded email) covering every collection above plus a matching Storage-rules snippet for
+  `admin/story_images/**`. **Neither has actually been deployed — no `firestore.rules` or
+  `storage.rules` file exists in this repo, and nothing has been pushed via the Firebase
+  console or `firebase deploy` yet.** Until one of those happens, Firestore itself still lets
+  any authenticated user read/write these collections directly via the SDK, regardless of what
+  the documented rules say — the client-side role checks are the only thing currently gating
+  access.
 - The game itself does not read these collections yet — `lib/features/story/data/story_nodes.dart`
   is still the hardcoded source of truth for gameplay. Wiring the game to read published
   content from `storyPacks` is a future data-migration step, same as the catalog's hardcoded

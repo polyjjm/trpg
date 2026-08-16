@@ -1,3 +1,4 @@
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
@@ -6,6 +7,7 @@ import 'core/auth/auth_scope.dart';
 import 'core/monetization/admob_monetization_service.dart';
 import 'core/platform/remove_app_loading.dart';
 import 'core/state/game_state_provider.dart';
+import 'core/user/user_profile_repository.dart';
 import 'features/auth/pages/sign_in_page.dart';
 import 'features/catalog/pages/catalog_page.dart';
 import 'firebase_options.dart';
@@ -81,9 +83,26 @@ class _MainPageState extends State<MainPage> {
 
     if (!mounted) return;
 
+    // author/admin 계정이 웹에서 열었을 때만 "작가 모드로 전환" 링크를 보여준다 —
+    // 대부분의 계정(role: reader)은 이 조회 결과와 무관하게 아무 것도 안 보인다.
+    var showAuthorModeLink = false;
+    if (kIsWeb) {
+      final uid = authService.userId;
+      if (uid != null) {
+        final profile = await UserProfileRepository().ensureProfile(
+          uid: uid,
+          displayName: FirebaseAuth.instance.currentUser?.displayName,
+          email: FirebaseAuth.instance.currentUser?.email,
+        );
+        showAuthorModeLink = profile.canAccessAuthorTool;
+      }
+    }
+
+    if (!mounted) return;
+
     await Navigator.pushReplacement(
       context,
-      MaterialPageRoute(builder: (context) => const CatalogPage()),
+      MaterialPageRoute(builder: (context) => CatalogPage(showAuthorModeLink: showAuthorModeLink)),
     );
   }
 

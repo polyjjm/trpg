@@ -5,9 +5,10 @@ import '../models/pending_action.dart';
 import '../models/pending_node_ref.dart';
 import '../widgets/admin_theme.dart';
 
-/// "승인 대기함" 탭 — 모든 스토리팩을 통틀어 pendingAction이 걸린 노드를 모아
-/// 보여주고, 승인/반려를 처리한다. 지금은 역할 구분이 없어 이 화면 자체가
-/// "관리자 시점 데모"를 겸한다(본사/대리점 역할은 나중 단계에서 분리한다).
+/// "승인 대기함" 탭 — admin 전용(AdminShellPage에서 role 기반으로 이 탭 자체를
+/// author에게는 렌더링하지 않는다). 모든 스토리팩을 통틀어 pendingAction이 걸린
+/// 노드를 모아 보여주고, 승인/반려를 처리한다. "작가 신청" 탭(작가 자격 심사)과는
+/// 완전히 별개의 검토 흐름이다 — 여기서 승인하는 건 콘텐츠 하나하나다.
 class ApprovalsTab extends StatelessWidget {
   final AdminStoryRepository repository;
   final Map<String, String> packTitles;
@@ -24,8 +25,7 @@ class ApprovalsTab extends StatelessWidget {
           const Text('승인 대기함', style: TextStyle(fontSize: 16, color: AdminColors.ivory, fontWeight: FontWeight.w700)),
           const SizedBox(height: 6),
           const Text(
-            '이 탭은 원래 대리점/본사 계정에서 보이는 화면이에요. 지금은 하나의 편집기 안에서 '
-            '승인 흐름을 같이 확인해볼 수 있게 임시로 붙여놨어요.',
+            '모든 작가의 스토리팩을 통틀어 등록/수정/삭제 요청을 검토해요.',
             style: TextStyle(fontSize: 12, color: AdminColors.muted),
           ),
           const SizedBox(height: 16),

@@ -5,6 +5,7 @@ import '../models/admin_story_node_summary.dart';
 import '../models/admin_story_pack.dart';
 import '../models/pending_action.dart';
 import '../models/pending_node_ref.dart';
+import '../models/story_pack_type.dart';
 
 /// storyPacks / storyPacks/{packId}/nodes 컬렉션을 다루는 저장소.
 ///
@@ -24,6 +25,7 @@ class AdminStoryRepository {
   CollectionReference<Map<String, dynamic>> _nodes(String packId) =>
       _packs.doc(packId).collection('nodes');
 
+  /// 모든 스토리팩(작가 구분 없이) — admin 시점 목록.
   Stream<List<AdminStoryPack>> watchPacks() {
     return _packs.orderBy('title').snapshots().map(
           (snapshot) => snapshot.docs
@@ -32,9 +34,25 @@ class AdminStoryRepository {
         );
   }
 
-  Future<AdminStoryPack> createPack(String title) async {
-    final doc = await _packs.add({'title': title});
-    return AdminStoryPack(id: doc.id, title: title);
+  /// 특정 작가 소유의 스토리팩만 — author 시점 목록. authorId 동등 필터 +
+  /// title 정렬 조합이라 복합 색인 없이도 동작한다.
+  Stream<List<AdminStoryPack>> watchPacksForAuthor(String authorId) {
+    return _packs.where('authorId', isEqualTo: authorId).orderBy('title').snapshots().map(
+          (snapshot) => snapshot.docs
+              .map((doc) => AdminStoryPack.fromFirestore(doc.id, doc.data()))
+              .toList(),
+        );
+  }
+
+  Future<AdminStoryPack> createPack({
+    required String title,
+    required String authorId,
+    required StoryPackType type,
+    required List<String> genres,
+  }) async {
+    final pack = AdminStoryPack(id: '', title: title, authorId: authorId, type: type, genres: genres);
+    final doc = await _packs.add(pack.toJson());
+    return AdminStoryPack(id: doc.id, title: title, authorId: authorId, type: type, genres: genres);
   }
 
   Stream<List<AdminStoryNodeSummary>> watchNodeSummaries(String packId) {

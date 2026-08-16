@@ -61,7 +61,7 @@ class _AdminSignInPageState extends State<AdminSignInPage> {
                 ),
                 const SizedBox(height: 8),
                 const Text(
-                  '허용된 작가/관리자 계정으로 로그인하세요.',
+                  'Google 계정으로 로그인하세요.',
                   textAlign: TextAlign.center,
                   style: TextStyle(fontSize: 13, color: AdminColors.muted),
                 ),
