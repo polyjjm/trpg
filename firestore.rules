@@ -1,0 +1,201 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function myUid() {
+      return request.auth.uid;
+    }
+
+    function myRole() {
+      return isSignedIn() && exists(/databases/$(database)/documents/users/$(myUid()))
+        ? get(/databases/$(database)/documents/users/$(myUid())).data.role
+        : 'reader';
+    }
+
+    function isAdmin() {
+      return myRole() == 'admin';
+    }
+
+    function isAuthorOrAdmin() {
+      return myRole() == 'author' || myRole() == 'admin';
+    }
+
+    function isPackOwnedBy(packId) {
+      return isSignedIn()
+        && get(/databases/$(database)/documents/storyPacks/$(packId)).data.authorId == myUid();
+    }
+
+    // 기존 게임 세이브 데이터 — 본인만 읽고 쓴다.
+    match /users/{userId}/save/{saveDocId} {
+      allow read, write: if isSignedIn() && myUid() == userId;
+    }
+
+    // users/{uid} — 신원/권한 문서. role/authorApplicationStatus는 본인이 함부로
+    // 못 바꾼다(승인/반려 흐름을 통해서만 바뀐다).
+    match /users/{userId} {
+      allow read: if isSignedIn() && (myUid() == userId || isAdmin());
+
+      // 최초 로그인(ensureProfile) — 본인이 자기 문서를 reader로 처음 만드는 것만.
+      allow create: if isSignedIn() && myUid() == userId
+        && request.resource.data.role == 'reader'
+        && request.resource.data.authorApplicationStatus == 'none';
+
+      // admin은 승인/반려 처리를 위해 role/authorApplicationStatus를 자유롭게 갱신.
+      allow update: if isAdmin();
+
+      // 본인 갱신은 신청 제출(submitApplication)뿐 — role은 절대 못 바꾸고,
+      // authorApplicationStatus는 none/rejected → pending으로만 바뀔 수 있다.
+      allow update: if isSignedIn() && myUid() == userId
+        && request.resource.data.role == resource.data.role
+        && request.resource.data.displayName == resource.data.displayName
+        && request.resource.data.email == resource.data.email
+        && resource.data.authorApplicationStatus in ['none', 'rejected']
+        && request.resource.data.authorApplicationStatus == 'pending';
+    }
+
+    // authorApplications/{uid} — 문서 id == 신청자 uid.
+    match /authorApplications/{applicantId} {
+      allow read: if isSignedIn() && (myUid() == applicantId || isAdmin());
+
+      // 신규 제출/반려 후 재신청 — 본인만, 항상 pending으로, 검토 필드는 비운 채로.
+      allow create, update: if isSignedIn() && myUid() == applicantId
+        && request.resource.data.uid == applicantId
+        && request.resource.data.status == 'pending'
+        && request.resource.data.reviewedBy == null
+        && request.resource.data.reviewedAt == null
+        && request.resource.data.rejectionReason == null;
+
+      // 승인/반려 — admin만, 신청 내용 자체(uid/displayName/bio/portfolioLinks/
+      // submittedAt)는 건드리지 않는다. 점(.) 표기 대신 get(key, null)을 쓴다 —
+      // 필드가 아예 없는 문서(예: 콘솔에서 손으로 만든 테스트 문서)에 점 표기로
+      // 접근하면 "속성을 찾을 수 없음" 에러로 요청 전체가 거부된다.
+      allow update: if isAdmin()
+        && request.resource.data.get('uid', null) == resource.data.get('uid', null)
+        && request.resource.data.get('displayName', null) == resource.data.get('displayName', null)
+        && request.resource.data.get('bio', null) == resource.data.get('bio', null)
+        && request.resource.data.get('portfolioLinks', null) == resource.data.get('portfolioLinks', null)
+        && request.resource.data.get('submittedAt', null) == resource.data.get('submittedAt', null);
+    }
+
+    // genres/{genreId} — admin이 관리하는 참고 데이터. 앱 재배포 없이 admin이
+    // 콘솔이나(나중에 생길) 관리 UI로 추가/수정한다.
+    match /genres/{genreId} {
+      allow read: if isSignedIn();
+      allow write: if isAdmin();
+    }
+
+    match /storyPacks/{packId} {
+      allow read: if isSignedIn();
+
+      // 생성: author/admin이 자기 자신을 authorId로 지정해서만. 항상 draft로
+      // 시작한다 — 연재 시작 승인을 직접 approved로 건너뛸 수 없다.
+      allow create: if isAuthorOrAdmin()
+        && request.resource.data.authorId == myUid()
+        && request.resource.data.serializationStatus == 'draft';
+
+      // 작가 본인의 팩 설정 저장/승인 요청(saveDraftPackSettings,
+      // requestSerialization, requestMetadataEdit) — liveMetadata와 검토
+      // 관련 필드(reviewedBy/reviewedAt)는 이 경로로 절대 못 바꾼다. 그 필드는
+      // 오직 admin의 승인/반려에서만 바뀐다. serializationStatus는 자기 자신을
+      // 유지하거나 'pending'으로 넘어가는 것만 허용한다 — 'approved'/'rejected'로
+      // 직접 바꿀 수는 없다(그건 아래 admin 규칙의 몫). pendingMetadataAction의
+      // 정확한 전이(null -> 'edit'만 허용)까지는 강제하지 않는다 — 작가가 자기
+      // 팩의 pending 플래그를 스스로 지우는 것 자체는 검토를 우회하는 게
+      // 아니라서(라이브 상태엔 영향 없음) 규칙을 단순하게 유지하는 쪽을 택했다.
+      allow update: if isSignedIn() && resource.data.authorId == myUid()
+        && request.resource.data.authorId == resource.data.authorId
+        && request.resource.data.type == resource.data.type
+        && request.resource.data.get('authorName', null) == resource.data.get('authorName', null)
+        && (request.resource.data.serializationStatus == resource.data.serializationStatus
+            || request.resource.data.serializationStatus == 'pending')
+        && request.resource.data.get('liveMetadata', null) == resource.data.get('liveMetadata', null)
+        && request.resource.data.get('serializationReviewedBy', null) == resource.data.get('serializationReviewedBy', null)
+        && request.resource.data.get('serializationReviewedAt', null) == resource.data.get('serializationReviewedAt', null)
+        && request.resource.data.get('metadataReviewedBy', null) == resource.data.get('metadataReviewedBy', null)
+        && request.resource.data.get('metadataReviewedAt', null) == resource.data.get('metadataReviewedAt', null);
+
+      // admin의 연재 시작/메타데이터 승인·반려(approveSerialization/
+      // rejectSerialization/approveMetadataEdit/rejectMetadataEdit) — 이 네
+      // 액션 전부 상태/검토/liveMetadata 필드만 바꾸고, 작가가 쓴
+      // title/genres/description/coverImageId 자체는 건드리지 않는다(반려 시
+      // 작가가 재신청 때 그대로 다시 손볼 수 있어야 한다).
+      allow update: if isAdmin()
+        && request.resource.data.title == resource.data.title
+        && request.resource.data.genres == resource.data.genres
+        && request.resource.data.description == resource.data.description
+        && request.resource.data.get('coverImageId', null) == resource.data.get('coverImageId', null)
+        && request.resource.data.authorId == resource.data.authorId;
+
+      allow delete: if isAdmin();
+
+      match /nodes/{nodeId} {
+        allow read: if isSignedIn();
+
+        // 작가 자신의 저장(임시저장/승인요청 제출, saveNode) — status/liveSnapshot은
+        // 절대 못 건드린다. 이 두 필드는 오직 admin의 승인/반려에서만 바뀐다.
+        allow create: if (isPackOwnedBy(packId) || isAdmin())
+          && request.resource.data.status == 'draft'
+          && request.resource.data.liveSnapshot == null
+          && request.resource.data.pendingAction in ['create', null];
+
+        allow update: if (isPackOwnedBy(packId) || isAdmin())
+          && request.resource.data.status == resource.data.status
+          && request.resource.data.liveSnapshot == resource.data.liveSnapshot;
+
+        // admin의 승인/반려(approveNode/rejectNode) — status/liveSnapshot/
+        // pendingAction만 바뀌고 콘텐츠 필드는 그대로 둔다.
+        allow update: if isAdmin()
+          && request.resource.data.title == resource.data.title
+          && request.resource.data.day == resource.data.day
+          && request.resource.data.body == resource.data.body
+          && request.resource.data.bgImageId == resource.data.bgImageId
+          && request.resource.data.choices == resource.data.choices;
+
+        // 삭제: 작가는 한 번도 발행된 적 없는(liveSnapshot == null) 자기 노드만
+        // 즉시 지울 수 있다(deleteNodeDoc). 이미 발행된 노드의 삭제는 admin이
+        // 삭제 요청을 승인(approveNode)하는 경로로만 이뤄진다.
+        allow delete: if (isPackOwnedBy(packId) && resource.data.liveSnapshot == null) || isAdmin();
+      }
+    }
+
+    // storyPacks/*/nodes 컬렉션 그룹 조회 전용 규칙 — admin 쪽
+    // AdminStoryRepository.watchPendingNodes(collectionGroup('nodes').where
+    // ('pendingAction', ...))뿐 아니라, 리더 쪽 StoryPackRepository.
+    // watchVisiblePacks()가 "발행된 노드가 있는 팩" 집합을 구하려고 쓰는
+    // collectionGroup('nodes').where('status', '==', 'published')도 이 규칙으로
+    // 커버된다(firestore.indexes.json에 status 필드의 COLLECTION_GROUP
+    // fieldOverrides도 같이 추가했다 — pendingAction 때와 같은 이유).
+    //
+    // 위 중첩 match(/storyPacks/{packId}/nodes/{nodeId})는 packId를 아는 직접
+    // 접근(문서 참조, 특정 팩으로 좁힌 구독)에만 적용되고, collectionGroup()처럼
+    // 상위 경로를 모르는 채로 여러 팩을 가로질러 조회하는 쿼리에는 적용되지
+    // 않는다 — Firestore는 collection group 쿼리를 오직 {path=**} 형태의
+    // 재귀 와일드카드 규칙으로만 허용한다. 이 규칙이 없으면 승인 대기함 탭이
+    // permission-denied로 즉시 실패한다(실제로 겪은 버그).
+    //
+    // 읽기 전용이다 — 쓰기(saveNode/approveNode/rejectNode/deleteNodeDoc)는
+    // 전부 직접 문서 참조로만 이뤄지므로 위 중첩 match의 쓰기 규칙만으로 충분하다.
+    match /{path=**}/nodes/{nodeId} {
+      allow read: if isSignedIn();
+    }
+
+    // images/{imageId} — 색인 문서. 실제 파일은 Storage(아래 별도 규칙)에 있다.
+    // 업로더를 추적하는 필드가 아직 없어 모든 author/admin이 공유하는
+    // 라이브러리다 — uploaderId가 생기면 그때 좁힐 수 있다.
+    match /images/{imageId} {
+      allow read: if isSignedIn();
+      allow create, delete: if isAuthorOrAdmin();
+    }
+
+    // writerNotices/{noticeId} — packId로 소유 스토리팩을 가리킨다.
+    match /writerNotices/{noticeId} {
+      allow read: if isSignedIn();
+      allow create: if isAdmin() || isPackOwnedBy(request.resource.data.packId);
+      allow delete: if isAdmin() || isPackOwnedBy(resource.data.packId);
+    }
+  }
+}

@@ -102,13 +102,18 @@ class _PackSettingsPageState extends State<PackSettingsPage> {
 
   Future<void> _handleSaveDraft() async {
     setState(() => _saving = true);
-    await widget.repository.saveDraftPackSettings(
-      widget.packId,
-      title: _titleController.text.trim(),
-      genres: _selectedGenreSlugs.toList(),
-      description: _descriptionController.text.trim(),
-      coverImageId: _coverImageId,
-    );
+    try {
+      await widget.repository.saveDraftPackSettings(
+        widget.packId,
+        title: _titleController.text.trim(),
+        genres: _selectedGenreSlugs.toList(),
+        description: _descriptionController.text.trim(),
+        coverImageId: _coverImageId,
+      );
+    } catch (e) {
+      _handleError(e);
+      return;
+    }
     if (!mounted) return;
     setState(() {
       _saving = false;
@@ -121,21 +126,19 @@ class _PackSettingsPageState extends State<PackSettingsPage> {
 
   Future<void> _handleRequestSerialization() async {
     setState(() => _saving = true);
-    // 승인 요청 전에 지금 폼 내용부터 저장해서, admin이 검토하는 값이 화면에
-    // 보이는 값과 항상 같도록 한다.
-    await widget.repository.saveDraftPackSettings(
-      widget.packId,
-      title: _titleController.text.trim(),
-      genres: _selectedGenreSlugs.toList(),
-      description: _descriptionController.text.trim(),
-      coverImageId: _coverImageId,
-    );
     try {
+      // 승인 요청 전에 지금 폼 내용부터 저장해서, admin이 검토하는 값이 화면에
+      // 보이는 값과 항상 같도록 한다.
+      await widget.repository.saveDraftPackSettings(
+        widget.packId,
+        title: _titleController.text.trim(),
+        genres: _selectedGenreSlugs.toList(),
+        description: _descriptionController.text.trim(),
+        coverImageId: _coverImageId,
+      );
       await widget.repository.requestSerialization(widget.packId);
-    } on PackRequestSerializationError catch (e) {
-      if (!mounted) return;
-      setState(() => _saving = false);
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('$e')));
+    } catch (e) {
+      _handleError(e);
       return;
     }
     await _reload();
@@ -143,14 +146,28 @@ class _PackSettingsPageState extends State<PackSettingsPage> {
 
   Future<void> _handleRequestMetadataEdit() async {
     setState(() => _saving = true);
-    await widget.repository.requestMetadataEdit(
-      widget.packId,
-      title: _titleController.text.trim(),
-      genres: _selectedGenreSlugs.toList(),
-      description: _descriptionController.text.trim(),
-      coverImageId: _coverImageId,
-    );
+    try {
+      await widget.repository.requestMetadataEdit(
+        widget.packId,
+        title: _titleController.text.trim(),
+        genres: _selectedGenreSlugs.toList(),
+        description: _descriptionController.text.trim(),
+        coverImageId: _coverImageId,
+      );
+    } catch (e) {
+      _handleError(e);
+      return;
+    }
     await _reload();
+  }
+
+  /// Firestore 쓰기가 실패했을 때(권한 거부 등) 화면이 아무 반응 없이 멈춘 것처럼
+  /// 보이는 대신 스낵바로 드러낸다 — 예전엔 이 예외들이 잡히지 않고 조용히
+  /// 사라져서, 실패했는데도 성공한 것처럼 보이는 버그가 있었다.
+  void _handleError(Object error) {
+    if (!mounted) return;
+    setState(() => _saving = false);
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('저장에 실패했어요: $error')));
   }
 
   Future<void> _reload() async {

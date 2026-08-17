@@ -1,10 +1,12 @@
-/// 이야기 팩의 형식. 그리드 카드/상세 화면에 표시되는 배지에 쓰인다.
-enum StoryPackFormat { novel, trpg }
+/// 이야기 팩의 형식 — admin 쪽 StoryPackType(interactive/linear)을 그대로
+/// 반영한다(StoryPackRepository가 storyPacks.type에서 그대로 옮겨 담는다).
+/// 그리드 카드/상세 화면 배지에 쓰인다.
+enum StoryPackFormat { interactive, linear }
 
 extension StoryPackFormatLabel on StoryPackFormat {
   String get label => switch (this) {
-        StoryPackFormat.novel => '노벨',
-        StoryPackFormat.trpg => 'TRPG',
+        StoryPackFormat.interactive => '인터랙티브',
+        StoryPackFormat.linear => '선형',
       };
 }
 

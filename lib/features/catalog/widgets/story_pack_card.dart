@@ -2,14 +2,16 @@ import 'package:flutter/material.dart';
 
 import '../models/genre_style.dart';
 import '../models/story_pack.dart';
-import 'story_pack_preview_sheet.dart';
+import '../pages/story_pack_detail_page.dart';
 
 const Color _ivory = Color(0xFFE2D4BF);
 
 /// 라이브러리에 표시되는 이야기 팩 카드. 작가가 표지를 골랐으면 그 이미지를,
 /// 아니면 로고와 같은 코랄→앰버 브랜드 그라디언트 위에 장르 아이콘을 얹은
 /// placeholder를 보여준다 — 표지가 없는 팩도 깨져 보이지 않게 하는 fallback이지,
-/// 유일한 표현 방식이 아니다. 탭하면 미리보기 시트가 뜬다(StoryPackPreviewSheet).
+/// 유일한 표현 방식이 아니다. 탭하면 전체 화면 상세 페이지로 들어간다(예전의
+/// 작은 미리보기 시트는 없앴다 — StoryPackDetailPage 자체가 미리보기 역할까지
+/// 겸한다).
 class StoryPackCard extends StatelessWidget {
   final StoryPack pack;
 
@@ -22,7 +24,10 @@ class StoryPackCard extends StatelessWidget {
 
     return InkWell(
       borderRadius: BorderRadius.circular(14),
-      onTap: () => showStoryPackPreviewSheet(context, pack),
+      onTap: () => Navigator.push(
+        context,
+        MaterialPageRoute(builder: (_) => StoryPackDetailPage(pack: pack)),
+      ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [

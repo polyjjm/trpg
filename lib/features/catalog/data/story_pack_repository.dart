@@ -48,7 +48,7 @@ class StoryPackRepository {
         authorName: data['authorName'] as String? ?? '알 수 없음',
         coverImageUrl: coverImageId != null ? coverUrls[coverImageId] : null,
         price: 0,
-        format: (data['type'] as String?) == 'linear' ? StoryPackFormat.novel : StoryPackFormat.trpg,
+        format: (data['type'] as String?) == 'linear' ? StoryPackFormat.linear : StoryPackFormat.interactive,
         genres: (live?['genres'] as List<dynamic>?)?.cast<String>() ?? const [],
       );
     }).toList();
