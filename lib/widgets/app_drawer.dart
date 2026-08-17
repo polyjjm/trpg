@@ -29,7 +29,7 @@ class AppDrawer extends StatelessWidget {
             const Padding(
               padding: EdgeInsets.fromLTRB(20, 24, 20, 16),
               child: Text(
-                'ZOMBIE ROAD',
+                'Telo',
                 style: TextStyle(
                   color: _ivory,
                   fontSize: 20,

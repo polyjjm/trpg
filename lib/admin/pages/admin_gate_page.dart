@@ -9,10 +9,10 @@ import '../../core/user/user_profile_repository.dart';
 import '../data/author_application_repository.dart';
 import '../models/author_application.dart';
 import '../widgets/admin_theme.dart';
-import 'admin_shell_page.dart';
 import 'admin_sign_in_page.dart';
 import 'author_application_page.dart';
 import 'author_application_status_page.dart';
+import 'author_tool_page.dart';
 
 /// 앱 진입점. 로그인 여부와 users/{uid}.role / authorApplicationStatus를 확인해
 /// 화면을 가른다 — 미로그인(로그인 화면) / 로그인했지만 author·admin이 아님(신청
@@ -113,7 +113,7 @@ class _AdminGatePageState extends State<AdminGatePage> {
         final (profile, application) = snapshot.data!;
 
         if (profile.canAccessAuthorTool) {
-          return AdminShellPage(
+          return AuthorToolPage(
             authService: _authService,
             email: user.email ?? '',
             isAdmin: profile.isAdmin,

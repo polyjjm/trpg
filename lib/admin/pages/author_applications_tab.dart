@@ -9,19 +9,29 @@ import '../widgets/admin_theme.dart';
 /// 여기서 하는 승인은 "작가 자격"만 판단한다 — 이 계정이 실제로 쓴 이야기는
 /// 여전히 "승인 대기함" 탭의 노드 승인 흐름(status/pendingAction/liveSnapshot)을
 /// 그대로 거쳐야 한다. 두 검토는 완전히 별개다.
-class AuthorApplicationsTab extends StatelessWidget {
+class AuthorApplicationsTab extends StatefulWidget {
   final AuthorApplicationRepository repository;
   final String reviewerUid;
 
   const AuthorApplicationsTab({super.key, required this.repository, required this.reviewerUid});
 
+  @override
+  State<AuthorApplicationsTab> createState() => _AuthorApplicationsTabState();
+}
+
+class _AuthorApplicationsTabState extends State<AuthorApplicationsTab> {
+  /// ApprovalsTab에서 겪은 것과 같은 이유로 State에 한 번만 만든다 — build()가
+  /// 다시 돌 때마다 watchPendingApplications()를 새로 부르면 승인/반려 직후
+  /// 목록이 나타났다 사라지는 것처럼 깜빡인다.
+  late final Stream<List<AuthorApplication>> _pendingStream = widget.repository.watchPendingApplications();
+
   Future<void> _handleReject(BuildContext context, AuthorApplication application) async {
     final reason = await _promptRejectionReason(context);
     if (reason == null) return;
 
-    await repository.rejectApplication(
+    await widget.repository.rejectApplication(
       application,
-      reviewerUid: reviewerUid,
+      reviewerUid: widget.reviewerUid,
       reason: reason.isEmpty ? null : reason,
     );
   }
@@ -44,8 +54,15 @@ class AuthorApplicationsTab extends StatelessWidget {
             ),
             const SizedBox(height: 16),
             StreamBuilder<List<AuthorApplication>>(
-              stream: repository.watchPendingApplications(),
+              stream: _pendingStream,
               builder: (context, snapshot) {
+                if (snapshot.hasError) {
+                  return SelectableText(
+                    '작가 신청 목록을 불러오지 못했어요: ${snapshot.error}',
+                    style: const TextStyle(fontSize: 12, color: AdminColors.danger),
+                  );
+                }
+
                 final applications = snapshot.data ?? const <AuthorApplication>[];
                 if (applications.isEmpty) {
                   return const Text('대기 중인 신청이 없어요.', style: TextStyle(fontSize: 13, color: AdminColors.muted));
@@ -55,7 +72,8 @@ class AuthorApplicationsTab extends StatelessWidget {
                     for (final application in applications)
                       _ApplicationCard(
                         application: application,
-                        onApprove: () => repository.approveApplication(application, reviewerUid: reviewerUid),
+                        onApprove: () =>
+                            widget.repository.approveApplication(application, reviewerUid: widget.reviewerUid),
                         onReject: () => _handleReject(context, application),
                       ),
                   ],

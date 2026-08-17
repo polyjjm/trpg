@@ -1,13 +1,15 @@
 import 'package:flutter/material.dart';
 
+import '../models/genre_style.dart';
 import '../models/story_pack.dart';
-import '../pages/story_pack_detail_page.dart';
+import 'story_pack_preview_sheet.dart';
 
 const Color _ivory = Color(0xFFE2D4BF);
-const Color _gold = Color(0xFFF0E68C);
 
-/// 라이브러리 그리드에 표시되는 이야기 팩 표지 카드.
-/// 탭하면 [StoryPackDetailPage]로 이동한다.
+/// 라이브러리에 표시되는 이야기 팩 카드. 작가가 표지를 골랐으면 그 이미지를,
+/// 아니면 로고와 같은 코랄→앰버 브랜드 그라디언트 위에 장르 아이콘을 얹은
+/// placeholder를 보여준다 — 표지가 없는 팩도 깨져 보이지 않게 하는 fallback이지,
+/// 유일한 표현 방식이 아니다. 탭하면 미리보기 시트가 뜬다(StoryPackPreviewSheet).
 class StoryPackCard extends StatelessWidget {
   final StoryPack pack;
 
@@ -15,14 +17,12 @@ class StoryPackCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final genreStyle = genreStyleFor(pack.primaryGenre);
+    final coverImageUrl = pack.coverImageUrl;
+
     return InkWell(
       borderRadius: BorderRadius.circular(14),
-      onTap: () {
-        Navigator.push(
-          context,
-          MaterialPageRoute(builder: (_) => StoryPackDetailPage(pack: pack)),
-        );
-      },
+      onTap: () => showStoryPackPreviewSheet(context, pack),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -32,32 +32,18 @@ class StoryPackCard extends StatelessWidget {
               child: Stack(
                 fit: StackFit.expand,
                 children: [
-                  Image.asset(pack.coverImage, fit: BoxFit.cover),
-                  DecoratedBox(
-                    decoration: BoxDecoration(
-                      gradient: LinearGradient(
-                        begin: Alignment.topCenter,
-                        end: Alignment.bottomCenter,
-                        colors: [
-                          Colors.transparent,
-                          Colors.black.withOpacity(0.55),
-                        ],
-                        stops: const [0.5, 1.0],
-                      ),
-                    ),
-                  ),
+                  if (coverImageUrl != null && coverImageUrl.isNotEmpty)
+                    Image.network(
+                      coverImageUrl,
+                      fit: BoxFit.cover,
+                      errorBuilder: (_, _, _) => _CoverPlaceholder(genreStyle: genreStyle),
+                    )
+                  else
+                    _CoverPlaceholder(genreStyle: genreStyle),
                   Positioned(
-                    left: 10,
-                    bottom: 10,
-                    child: Text(
-                      pack.format.label,
-                      style: const TextStyle(
-                        fontSize: 11,
-                        color: _gold,
-                        fontWeight: FontWeight.w700,
-                        letterSpacing: 0.5,
-                      ),
-                    ),
+                    left: 8,
+                    top: 8,
+                    child: _GenreTag(style: genreStyle),
                   ),
                 ],
               ),
@@ -75,11 +61,72 @@ class StoryPackCard extends StatelessWidget {
             ),
           ),
           const SizedBox(height: 2),
-          Text(
-            pack.isFree ? '무료' : '₩${pack.price}',
-            style: TextStyle(fontSize: 12, color: _ivory.withOpacity(0.62)),
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  pack.isFree ? '무료' : '₩${pack.price}',
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(fontSize: 12, color: _ivory.withOpacity(0.62)),
+                ),
+              ),
+              Text(
+                pack.format.label,
+                style: TextStyle(fontSize: 10.5, color: _ivory.withOpacity(0.40), fontWeight: FontWeight.w600),
+              ),
+            ],
           ),
         ],
+      ),
+    );
+  }
+}
+
+/// 표지 이미지가 없거나(coverImageUrl == null) 로드에 실패했을 때 쓰는
+/// fallback — 브랜드 그라디언트 위에 장르 아이콘.
+class _CoverPlaceholder extends StatelessWidget {
+  final GenreStyle genreStyle;
+
+  const _CoverPlaceholder({required this.genreStyle});
+
+  @override
+  Widget build(BuildContext context) {
+    return Stack(
+      fit: StackFit.expand,
+      children: [
+        const DecoratedBox(
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+              colors: [Color(0xFFFF6B4A), Color(0xFFFFB648)],
+            ),
+          ),
+        ),
+        Center(
+          child: Icon(genreStyle.icon, color: Colors.white.withOpacity(0.92), size: 40),
+        ),
+      ],
+    );
+  }
+}
+
+class _GenreTag extends StatelessWidget {
+  final GenreStyle style;
+
+  const _GenreTag({required this.style});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+      decoration: BoxDecoration(
+        color: style.color.withOpacity(0.85),
+        borderRadius: BorderRadius.circular(999),
+      ),
+      child: Text(
+        style.label,
+        style: const TextStyle(fontSize: 10, color: Colors.white, fontWeight: FontWeight.w700),
       ),
     );
   }

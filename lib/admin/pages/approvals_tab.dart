@@ -5,15 +5,29 @@ import '../models/pending_action.dart';
 import '../models/pending_node_ref.dart';
 import '../widgets/admin_theme.dart';
 
-/// "승인 대기함" 탭 — admin 전용(AdminShellPage에서 role 기반으로 이 탭 자체를
-/// author에게는 렌더링하지 않는다). 모든 스토리팩을 통틀어 pendingAction이 걸린
+/// "승인 대기함" — admin 전용 페이지(AdminDashboardPage) 안에서만 쓰인다,
+/// author가 쓰는 AuthorToolPage에는 아예 없다. 모든 스토리팩을 통틀어 pendingAction이 걸린
 /// 노드를 모아 보여주고, 승인/반려를 처리한다. "작가 신청" 탭(작가 자격 심사)과는
 /// 완전히 별개의 검토 흐름이다 — 여기서 승인하는 건 콘텐츠 하나하나다.
-class ApprovalsTab extends StatelessWidget {
+class ApprovalsTab extends StatefulWidget {
   final AdminStoryRepository repository;
   final Map<String, String> packTitles;
 
   const ApprovalsTab({super.key, required this.repository, required this.packTitles});
+
+  @override
+  State<ApprovalsTab> createState() => _ApprovalsTabState();
+}
+
+class _ApprovalsTabState extends State<ApprovalsTab> {
+  /// State에 한 번만 만든다 — StatelessWidget이었을 때는 이 위젯의 부모가
+  /// 재빌드될 때마다(팩 목록 스트림이 새 이벤트를 받을 때마다) build()가
+  /// 다시 돌면서 watchPendingNodes()를 매번 새로 호출했다.
+  /// 그러면 StreamBuilder가 매번 "다른 스트림"을 받아 구독을 끊었다 다시
+  /// 맺었고, 그 사이 잠깐 이전 스냅샷이 그대로 보이다(깜빡 나타났다) 새
+  /// 구독이 첫 이벤트를 받기 전까지 빈 상태로 리셋됐다(사라짐) — 승인/반려
+  /// 직후에도 이 재빌드가 일어나 목록이 나타났다 사라지는 것처럼 보였다.
+  late final Stream<List<PendingNodeRef>> _pendingStream = widget.repository.watchPendingNodes();
 
   @override
   Widget build(BuildContext context) {
@@ -30,8 +44,21 @@ class ApprovalsTab extends StatelessWidget {
           ),
           const SizedBox(height: 16),
           StreamBuilder<List<PendingNodeRef>>(
-            stream: repository.watchPendingNodes(),
+            stream: _pendingStream,
             builder: (context, snapshot) {
+              if (snapshot.hasError) {
+                // 캐시된 streaming 픽스만으로는 안 잡히는 경우 — 스트림 자체가
+                // 에러 이벤트를 낸 것이다(예: 색인 문제). AsyncSnapshot은 에러가
+                // 나면 data를 null로 리셋하기 때문에, 이 체크 없이는 방금까지
+                // 보이던 목록이 "그냥 비어 보임"으로 조용히 사라진다 — 새
+                // 스토리팩 다이얼로그의 장르 목록에서 겪은 것과 같은 종류의
+                // 버그다.
+                return SelectableText(
+                  '승인 대기 목록을 불러오지 못했어요: ${snapshot.error}',
+                  style: const TextStyle(fontSize: 12, color: AdminColors.danger),
+                );
+              }
+
               final pending = snapshot.data ?? const <PendingNodeRef>[];
               if (pending.isEmpty) {
                 return const Text('대기 중인 요청이 없어요.', style: TextStyle(fontSize: 13, color: AdminColors.muted));
@@ -41,9 +68,9 @@ class ApprovalsTab extends StatelessWidget {
                   for (final ref in pending)
                     _ApprovalCard(
                       ref: ref,
-                      packTitle: packTitles[ref.packId] ?? ref.packId,
-                      onApprove: () => repository.approveNode(ref.packId, ref.node),
-                      onReject: () => repository.rejectNode(ref.packId, ref.node),
+                      packTitle: widget.packTitles[ref.packId] ?? ref.packId,
+                      onApprove: () => widget.repository.approveNode(ref.packId, ref.node),
+                      onReject: () => widget.repository.rejectNode(ref.packId, ref.node),
                     ),
                 ],
               );

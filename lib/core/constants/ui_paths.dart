@@ -1,4 +1,7 @@
 class UiPaths {
+  // Telo 로고
+  static const String logo = 'assets/images/telo_logo.svg';
+
   // 스토리 선택지 버튼 배경
   static const String choiceBg =
       'assets/images/system/selectButtonbg.png';

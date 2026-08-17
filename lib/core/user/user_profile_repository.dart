@@ -21,6 +21,17 @@ class UserProfileRepository {
     return UserProfile.fromFirestore(uid, data);
   }
 
+  /// role == 'author'인 계정 전부 — 관리자 화면의 "작가 관리"/개요 카드 전용.
+  /// 단일 동등 필터만 쓰고 orderBy가 없어 복합 색인이 필요 없다(정렬은
+  /// 호출부에서 클라이언트 쪽에 한다).
+  Stream<List<UserProfile>> watchAuthors() {
+    return _firestore
+        .collection('users')
+        .where('role', isEqualTo: UserRole.author.wireValue)
+        .snapshots()
+        .map((snapshot) => snapshot.docs.map((doc) => UserProfile.fromFirestore(doc.id, doc.data())).toList());
+  }
+
   Stream<UserProfile?> watchProfile(String uid) {
     return _doc(uid).snapshots().map((snapshot) {
       final data = snapshot.data();

@@ -9,7 +9,7 @@ import 'core/platform/remove_app_loading.dart';
 import 'core/state/game_state_provider.dart';
 import 'core/user/user_profile_repository.dart';
 import 'features/auth/pages/sign_in_page.dart';
-import 'features/catalog/pages/catalog_page.dart';
+import 'features/catalog/pages/catalog_shell_page.dart';
 import 'firebase_options.dart';
 
 void main() async {
@@ -30,7 +30,7 @@ class MyApp extends StatelessWidget {
   Widget build(BuildContext context) {
     return GameStateProvider(
       child: MaterialApp(
-        title: 'Zombie Story Game',
+        title: 'Telo',
         debugShowCheckedModeBanner: false,
         theme: ThemeData(
           brightness: Brightness.dark,
@@ -102,7 +102,7 @@ class _MainPageState extends State<MainPage> {
 
     await Navigator.pushReplacement(
       context,
-      MaterialPageRoute(builder: (context) => CatalogPage(showAuthorModeLink: showAuthorModeLink)),
+      MaterialPageRoute(builder: (context) => CatalogShellPage(showAuthorModeLink: showAuthorModeLink)),
     );
   }
 

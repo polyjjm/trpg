@@ -20,4 +20,47 @@ class GenreRepository {
         .map((snapshot) =>
             snapshot.docs.map((doc) => Genre.fromFirestore(doc.id, doc.data())).toList());
   }
+
+  /// 관리자 화면 전용 — 비활성 장르까지 전부 보여준다. 정렬 필드 하나만 쓰는
+  /// orderBy라 복합 색인이 필요 없다.
+  Stream<List<Genre>> watchAllGenres() {
+    return _firestore
+        .collection('genres')
+        .orderBy('sortOrder')
+        .snapshots()
+        .map((snapshot) =>
+            snapshot.docs.map((doc) => Genre.fromFirestore(doc.id, doc.data())).toList());
+  }
+
+  Future<void> createGenre({
+    required String name,
+    required String slug,
+    required int sortOrder,
+    required bool active,
+  }) async {
+    await _firestore.collection('genres').add({
+      'name': name,
+      'slug': slug,
+      'sortOrder': sortOrder,
+      'active': active,
+    });
+  }
+
+  /// 이름/슬러그/정렬/활성 여부를 통째로 갱신한다. 삭제는 의도적으로 없다 —
+  /// 이미 이 slug를 참조하는 storyPack이 있을 수 있어서, 안 쓰게 하려면
+  /// active를 false로 내리는 것만 지원한다(genres/{genreId} 문서 주석 참고).
+  Future<void> updateGenre(
+    String genreId, {
+    required String name,
+    required String slug,
+    required int sortOrder,
+    required bool active,
+  }) async {
+    await _firestore.collection('genres').doc(genreId).update({
+      'name': name,
+      'slug': slug,
+      'sortOrder': sortOrder,
+      'active': active,
+    });
+  }
 }

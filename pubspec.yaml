@@ -54,6 +54,9 @@ dependencies:
   # BGM/SFX 재생
   audioplayers: ^6.1.0
 
+  # 로고(assets/images/telo_logo.svg) 렌더링 — Image.asset은 SVG를 못 그린다.
+  flutter_svg: ^2.0.10+1
+
 dev_dependencies:
   flutter_test:
     sdk: flutter

@@ -1,7 +1,10 @@
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 
 import '../../../core/auth/auth_scope.dart';
-import '../../catalog/pages/catalog_page.dart';
+import '../../../core/user/user_profile_repository.dart';
+import '../../catalog/pages/catalog_shell_page.dart';
 
 /// Google 로그인 화면. 로그인은 필수이며, 로그인 없이 넘어갈 방법은 없다.
 /// 로그인에 성공하면 클라우드 세이브를 불러와(없으면 새로 생성) 라이브러리
@@ -38,9 +41,28 @@ class _SignInPageState extends State<SignInPage> {
 
     if (!mounted) return;
 
+    // MainPage의 초기 로딩 경로와 동일한 계산 — 이미 로그인된 상태로 앱을
+    // 여는 경우(MainPage)와 방금 로그인한 경우(여기) 둘 다 author/admin
+    // 계정이면 "작가 모드로 전환" 링크가 나와야 한다. 예전엔 여기서 이 계산을
+    // 안 해서, 방금 로그인한 author/admin 계정에는 링크가 안 보였다.
+    var showAuthorModeLink = false;
+    if (kIsWeb) {
+      final uid = authService.userId;
+      if (uid != null) {
+        final profile = await UserProfileRepository().ensureProfile(
+          uid: uid,
+          displayName: FirebaseAuth.instance.currentUser?.displayName,
+          email: FirebaseAuth.instance.currentUser?.email,
+        );
+        showAuthorModeLink = profile.canAccessAuthorTool;
+      }
+    }
+
+    if (!mounted) return;
+
     Navigator.pushReplacement(
       context,
-      MaterialPageRoute(builder: (_) => const CatalogPage()),
+      MaterialPageRoute(builder: (_) => CatalogShellPage(showAuthorModeLink: showAuthorModeLink)),
     );
   }
 
@@ -55,7 +77,7 @@ class _SignInPageState extends State<SignInPage> {
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
               Text(
-                'ZOMBIE ROAD',
+                'Telo',
                 style: TextStyle(
                   fontSize: 26,
                   fontWeight: FontWeight.w800,

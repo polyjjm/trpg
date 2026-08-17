@@ -140,9 +140,9 @@ class NodeEditor extends StatelessWidget {
               label: '본문',
               child: TextFormField(
                 initialValue: node.body,
-                maxLines: 5,
-                minLines: 3,
-                style: const TextStyle(color: AdminColors.ivory, fontSize: 13),
+                minLines: 14,
+                maxLines: 28,
+                style: const TextStyle(color: AdminColors.ivory, fontSize: 13, height: 1.6),
                 decoration: adminInputDecoration(),
                 onChanged: (value) {
                   node.body = value;

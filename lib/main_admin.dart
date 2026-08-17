@@ -27,7 +27,7 @@ class AdminApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'ZOMBIE ROAD 작가 편집기',
+      title: 'Telo 작가 편집기',
       debugShowCheckedModeBanner: false,
       theme: ThemeData(
         brightness: Brightness.dark,

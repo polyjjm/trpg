@@ -1,36 +1,39 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_svg/flutter_svg.dart';
 import 'package:google_mobile_ads/google_mobile_ads.dart';
 
 import '../../../core/ads/ad_ids.dart';
+import '../../../core/constants/asset_paths.dart';
 import '../../../core/constants/external_links.dart';
 import '../../../core/platform/open_external_link.dart';
 import '../../../core/state/game_state_scope.dart';
 import '../../wallet/pages/charge_page.dart';
-import '../data/notices.dart';
-import '../data/story_packs.dart';
-import '../widgets/notice_card.dart';
+import '../data/story_pack_repository.dart';
+import '../models/story_pack.dart';
 import '../widgets/story_pack_card.dart';
 
 const Color _ivory = Color(0xFFE2D4BF);
 const Color _gold = Color(0xFFF0E68C);
 
-/// 게임 진입 전 라이브러리(카탈로그) 화면 — 밀리의서재류 서재 앱처럼
-/// 공지사항과 이야기 팩 표지 그리드를 보여주고, 검색으로 좁혀볼 수 있다.
-/// 팩을 고르면 상세 화면으로 넘어간다. 로그인 직후 항상 이 화면으로 들어온다.
-class CatalogPage extends StatefulWidget {
+/// 하단 탭의 "홈" — 이야기 팩을 둘러보고 검색하는 화면. 공지사항은
+/// 별도 탭(NoticeListTab)으로 옮겨갔다. 팩을 고르면 상세 화면으로 넘어간다.
+class HomeTab extends StatefulWidget {
   /// 웹에서 author/admin 계정으로 열었을 때만 true — 나머지 계정(reader가
   /// 대부분)은 이 링크 자체가 존재하지 않는 것처럼 화면에서 완전히 빠진다.
   final bool showAuthorModeLink;
 
-  const CatalogPage({super.key, this.showAuthorModeLink = false});
+  const HomeTab({super.key, this.showAuthorModeLink = false});
 
   @override
-  State<CatalogPage> createState() => _CatalogPageState();
+  State<HomeTab> createState() => _HomeTabState();
 }
 
-class _CatalogPageState extends State<CatalogPage> {
+class _HomeTabState extends State<HomeTab> {
   final TextEditingController _searchController = TextEditingController();
   String _query = '';
+
+  final StoryPackRepository _packRepository = StoryPackRepository();
+  late final Stream<List<StoryPack>> _packsStream = _packRepository.watchVisiblePacks();
 
   BannerAd? _bannerAd;
   bool _isBannerLoaded = false;
@@ -77,53 +80,52 @@ class _CatalogPageState extends State<CatalogPage> {
 
   @override
   Widget build(BuildContext context) {
-    final query = _query.trim().toLowerCase();
-    final filteredPacks = query.isEmpty
-        ? storyPacks
-        : storyPacks
-            .where((pack) =>
-                pack.title.toLowerCase().contains(query) ||
-                pack.authorName.toLowerCase().contains(query))
-            .toList();
-
     final cashBalance = GameStateScope.of(context).cashBalance;
 
-    return Scaffold(
-      backgroundColor: Colors.black,
-      body: SafeArea(
+    // CatalogShellPage가 유일한 Scaffold(+ 하단 탭바)를 갖고, 각 탭은 그
+    // body 콘텐츠만 반환한다 — 탭마다 Scaffold를 중첩하지 않는다.
+    return ColoredBox(
+      color: Colors.black,
+      child: SafeArea(
         child: Padding(
           padding: const EdgeInsets.fromLTRB(22, 20, 22, 0),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               _buildHeader(context, cashBalance),
-              const SizedBox(height: 20),
+              const SizedBox(height: 18),
               _buildBannerAd(),
               _buildSearchField(),
-              const SizedBox(height: 28),
-              _buildSectionTitle('공지사항'),
-              const SizedBox(height: 10),
-              _buildNoticeRow(),
-              const SizedBox(height: 28),
-              _buildSectionTitle('스토리 둘러보기'),
-              const SizedBox(height: 14),
+              const SizedBox(height: 24),
               Expanded(
-                child: filteredPacks.isEmpty
-                    ? _buildEmptyResult()
-                    : GridView.builder(
-                        padding: const EdgeInsets.only(bottom: 20),
-                        itemCount: filteredPacks.length,
-                        gridDelegate:
-                            const SliverGridDelegateWithFixedCrossAxisCount(
-                          crossAxisCount: 2,
-                          mainAxisSpacing: 18,
-                          crossAxisSpacing: 16,
-                          childAspectRatio: 0.62,
+                child: StreamBuilder<List<StoryPack>>(
+                  stream: _packsStream,
+                  builder: (context, snapshot) {
+                    if (snapshot.hasError) {
+                      return Center(
+                        child: Text(
+                          '스토리팩 목록을 불러오지 못했어요',
+                          style: TextStyle(fontSize: 14, color: _ivory.withOpacity(0.55)),
                         ),
-                        itemBuilder: (context, index) {
-                          return StoryPackCard(pack: filteredPacks[index]);
-                        },
-                      ),
+                      );
+                    }
+
+                    final packs = snapshot.data ?? const <StoryPack>[];
+                    final query = _query.trim().toLowerCase();
+                    final filteredPacks = query.isEmpty
+                        ? packs
+                        : packs
+                            .where((pack) =>
+                                pack.title.toLowerCase().contains(query) ||
+                                pack.authorName.toLowerCase().contains(query))
+                            .toList();
+
+                    if (query.isEmpty) {
+                      return _buildBrowseSections(packs);
+                    }
+                    return filteredPacks.isEmpty ? _buildEmptyResult() : _buildSearchResults(filteredPacks);
+                  },
+                ),
               ),
             ],
           ),
@@ -133,53 +135,47 @@ class _CatalogPageState extends State<CatalogPage> {
   }
 
   Widget _buildHeader(BuildContext context, int cashBalance) {
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.center,
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Container(
-          width: 42,
-          height: 42,
-          decoration: BoxDecoration(
-            color: _gold.withOpacity(0.14),
-            shape: BoxShape.circle,
-            border: Border.all(color: _gold.withOpacity(0.40)),
-          ),
-          child: const Icon(Icons.menu_book_rounded, color: _gold, size: 20),
-        ),
-        const SizedBox(width: 12),
-        Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              const Text(
-                'ZOMBIE ROAD 라이브러리',
-                style: TextStyle(
-                  fontSize: 19,
-                  fontWeight: FontWeight.w800,
-                  letterSpacing: 0.4,
-                  color: _ivory,
-                ),
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.center,
+          children: [
+            Container(
+              width: 34,
+              height: 34,
+              padding: const EdgeInsets.all(6),
+              decoration: BoxDecoration(
+                color: _gold.withOpacity(0.14),
+                shape: BoxShape.circle,
+                border: Border.all(color: _gold.withOpacity(0.40)),
               ),
-              const SizedBox(height: 3),
-              Text(
-                '오늘은 어떤 이야기를 만나볼까요?',
-                style: TextStyle(fontSize: 12.5, color: _ivory.withOpacity(0.60)),
+              child: SvgPicture.asset(UiPaths.logo),
+            ),
+            const SizedBox(width: 10),
+            const Text(
+              'TELO',
+              style: TextStyle(
+                fontSize: 18,
+                fontWeight: FontWeight.w800,
+                letterSpacing: 3.0,
+                color: _ivory,
               ),
-              if (widget.showAuthorModeLink) ...[
-                const SizedBox(height: 4),
-                InkWell(
-                  onTap: () => openExternalLink(ExternalLinks.authorToolUrl),
-                  child: Text(
-                    '작가 모드로 전환',
-                    style: TextStyle(fontSize: 11, color: _ivory.withOpacity(0.38)),
-                  ),
-                ),
-              ],
-            ],
-          ),
+            ),
+            const Spacer(),
+            _buildCashChip(context, cashBalance),
+          ],
         ),
-        const SizedBox(width: 10),
-        _buildCashChip(context, cashBalance),
+        if (widget.showAuthorModeLink) ...[
+          const SizedBox(height: 6),
+          InkWell(
+            onTap: () => openExternalLink(ExternalLinks.authorToolUrl),
+            child: Text(
+              '작가 모드로 전환',
+              style: TextStyle(fontSize: 11, color: _ivory.withOpacity(0.38)),
+            ),
+          ),
+        ],
       ],
     );
   }
@@ -288,22 +284,55 @@ class _CatalogPageState extends State<CatalogPage> {
     );
   }
 
-  Widget _buildNoticeRow() {
-    if (notices.isEmpty) {
-      return Text(
-        '등록된 공지사항이 없습니다',
-        style: TextStyle(fontSize: 13, color: _ivory.withOpacity(0.55)),
+  /// 검색 중이 아닐 때 보여주는 가로 스크롤 섹션들. "인기"/"신작"처럼 실제
+  /// 근거 없는 구분을 만들지 않고 "전체 스토리" 한 섹션에 전부 담는다 —
+  /// 콘텐츠가 늘어나면 여기서 실제 기준으로 나누면 된다.
+  Widget _buildBrowseSections(List<StoryPack> packs) {
+    if (packs.isEmpty) {
+      return Center(
+        child: Text(
+          '아직 연재 중인 스토리가 없어요',
+          style: TextStyle(fontSize: 14, color: _ivory.withOpacity(0.55)),
+        ),
       );
     }
 
+    return ListView(
+      padding: const EdgeInsets.only(bottom: 20),
+      children: [
+        _buildSectionTitle('전체 스토리'),
+        const SizedBox(height: 14),
+        _buildHorizontalPackRow(packs),
+      ],
+    );
+  }
+
+  Widget _buildHorizontalPackRow(List<StoryPack> packs) {
     return SizedBox(
-      height: 92,
+      height: 250,
       child: ListView.separated(
         scrollDirection: Axis.horizontal,
-        itemCount: notices.length,
-        separatorBuilder: (context, index) => const SizedBox(width: 12),
-        itemBuilder: (context, index) => NoticeCard(notice: notices[index]),
+        itemCount: packs.length,
+        separatorBuilder: (_, _) => const SizedBox(width: 14),
+        itemBuilder: (context, index) => SizedBox(
+          width: 148,
+          child: StoryPackCard(pack: packs[index]),
+        ),
       ),
+    );
+  }
+
+  Widget _buildSearchResults(List<StoryPack> packs) {
+    return GridView.builder(
+      padding: const EdgeInsets.only(bottom: 20),
+      itemCount: packs.length,
+      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+        crossAxisCount: 2,
+        mainAxisSpacing: 18,
+        crossAxisSpacing: 16,
+        childAspectRatio: 0.62,
+      ),
+      itemBuilder: (context, index) => StoryPackCard(pack: packs[index]),
     );
   }
 

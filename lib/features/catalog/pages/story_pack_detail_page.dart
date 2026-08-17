@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../../../core/state/game_state_scope.dart';
 import '../../story/data/story_nodes.dart';
 import '../../story/widgets/story_page.dart';
+import '../models/genre_style.dart';
 import '../models/story_pack.dart';
 
 const Color _ivory = Color(0xFFE2D4BF);
@@ -23,13 +24,20 @@ class StoryPackDetailPage extends StatelessWidget {
     final hasProgress = gameState.currentNodeId != storyStartNodeId;
     final currentNode = storyNodes[gameState.currentNodeId];
     final owned = pack.isFree || gameState.ownsPack(pack.id);
+    final coverImageUrl = pack.coverImageUrl;
 
     return Scaffold(
       backgroundColor: Colors.black,
       body: Stack(
         children: [
           Positioned.fill(
-            child: Image.asset(pack.coverImage, fit: BoxFit.cover),
+            child: coverImageUrl != null && coverImageUrl.isNotEmpty
+                ? Image.network(
+                    coverImageUrl,
+                    fit: BoxFit.cover,
+                    errorBuilder: (_, _, _) => _CoverFallback(genreStyle: genreStyleFor(pack.primaryGenre)),
+                  )
+                : _CoverFallback(genreStyle: genreStyleFor(pack.primaryGenre)),
           ),
           Positioned.fill(
             child: DecoratedBox(
@@ -159,6 +167,30 @@ class StoryPackDetailPage extends StatelessWidget {
     Navigator.push(
       context,
       MaterialPageRoute(builder: (_) => StoryPage(pack: pack)),
+    );
+  }
+}
+
+/// 표지 이미지가 없거나 로드에 실패했을 때 쓰는 fallback — StoryPackCard/
+/// StoryPackPreviewSheet와 같은 브랜드 그라디언트 + 장르 아이콘.
+class _CoverFallback extends StatelessWidget {
+  final GenreStyle genreStyle;
+
+  const _CoverFallback({required this.genreStyle});
+
+  @override
+  Widget build(BuildContext context) {
+    return DecoratedBox(
+      decoration: const BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [Color(0xFFFF6B4A), Color(0xFFFFB648)],
+        ),
+      ),
+      child: Center(
+        child: Icon(genreStyle.icon, color: Colors.white.withOpacity(0.5), size: 96),
+      ),
     );
   }
 }

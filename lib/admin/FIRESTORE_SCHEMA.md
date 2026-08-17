@@ -8,24 +8,68 @@ CLAUDE.md에서 말하는 "이후 데이터 마이그레이션 단계"의 몫이
 ## storyPacks/{packId}
 
 ```
-title: string
+title: string                     // "지금 편집 중인" 값 — draft 콘텐츠와 같은 성격.
 authorId: string                  // 소유 작가의 Firebase Auth uid. users/{uid} 참조.
+authorName: string                // 생성 시점 작가 표시 이름 스냅샷(users/{uid}.displayName
+                                   // 조인이 아니다 — 리더는 다른 사람의 users 문서를 읽을
+                                   // 권한이 없어서, 팩 문서에 직접 박아 둔다. 작가가 나중에
+                                   // 프로필 이름을 바꿔도 여기는 갱신되지 않는다).
 type: 'interactive' | 'linear'    // 생성 시 작가가 고르는 값. 노드(interactive)/챕터
                                    // (linear)가 하나라도 생기면 편집기가 변경을 막는다
                                    // — 두 타입은 하위 콘텐츠 구조 자체가 달라서, 도중에
                                    // 바꾸면 이미 만든 콘텐츠가 갈 곳을 잃는다.
 genres: array<string>             // genres/{genreId}의 slug 참조 배열(장르 자체 데이터는
                                    // genres 컬렉션에 있고, 여기는 slug 문자열만 담는다).
+description: string               // "지금 편집 중인" 값.
+coverImageId: string?             // images/{imageId} 참조. "지금 편집 중인" 값.
+
+// 1단계 승인 — 연재 시작. 팩이 독자 라이브러리에 존재 자체를 드러내도 되는지
+// 가르는, 한 번만 통과하면 되는 게이트. 아래 2단계 메타데이터 승인과는 완전히
+// 별개다.
+//
+// requestSerialization()은 발행된(status == 'published') 노드가 최소 1개
+// 있어야만 draft/rejected -> pending 전이를 허용한다(AdminStoryRepository의
+// 앱 계층 체크 — Firestore 규칙은 "서브컬렉션에 조건을 만족하는 문서가
+// 하나라도 있는지"를 표현하지 못해 규칙으로는 강제할 수 없다). 제목/장르/설명뿐인
+// 빈 팩을 admin이 검토하게 하지 않으려는 의도적인 순서다 — 노드 작성·승인
+// 자체는 이 팩의 serializationStatus와 무관하게 언제든 가능하다.
+serializationStatus: 'draft' | 'pending' | 'approved' | 'rejected'
+serializationSubmittedAt: timestamp?
+serializationReviewedBy: string?     // 검토한 admin의 uid
+serializationReviewedAt: timestamp?
+serializationRejectionReason: string?
+
+// 2단계 승인 — 메타데이터 수정. serializationStatus == 'approved' 이후,
+// title/genres/description/coverImageId를 바꿀 때마다 반복되는 게이트.
+// 개별 노드 콘텐츠 승인(아래 nodes의 status/pendingAction/liveSnapshot)과는
+// 완전히 별개의 흐름이다.
+pendingMetadataAction: 'edit' | null
+liveMetadata: { title, genres, description, coverImageId } | null
+  // 마지막으로 승인된 메타데이터 스냅샷 — 독자 앱은 이 값을 읽는다(위 top-level
+  // title/genres/description/coverImageId가 아니라). 연재 시작 승인 전까지는 null.
+metadataSubmittedAt: timestamp?
+metadataReviewedBy: string?
+metadataReviewedAt: timestamp?
+metadataRejectionReason: string?
 ```
 
-`authorId`/`type`/`genres`는 다중 작가 구조로 가면서 새로 추가되는 필드다(작가별
-소유권, 인터랙티브/선형 구분, 장르 태그). 기존에 만들어진 스토리팩 문서(예: 좀비
-이야기 팩)는 이 필드가 없으므로, 읽을 때 없음을 각각 "소유자 미지정" /
-`'interactive'` / `[]`로 취급해야 하고, 실제로는 한 번 수동 백필이 필요하다.
+`authorId`/`authorName`/`type`/`genres`/`description`/`coverImageId`/승인 관련
+필드는 다중 작가 구조로 가면서 새로 추가되는 필드다. 기존에 만들어진 스토리팩
+문서(예: 좀비 이야기 팩)는 이 필드가 없으므로, 읽을 때 없음을 각각 "소유자
+미지정"/""/`'interactive'`/`[]`/""/null/`'draft'`로 취급해야 하고, 실제로는 한 번
+수동 백필이 필요하다(백필하지 않으면 `serializationStatus`가 `'draft'`로
+읽혀 독자 라이브러리에도 계속 보이지 않는다).
+
+독자 라이브러리 노출 조건은 `serializationStatus == 'approved'` **그리고**
+발행된(`status == 'published'`) 노드가 최소 1개 있어야 한다. `requestSerialization()`이
+이미 발행된 노드를 요구하기 때문에 승인 시점엔 이 조건이 구조적으로 항상
+참이지만, 나중에 그 노드가 반려/삭제되어 발행된 노드가 하나도 안 남는 엣지
+케이스에 대비한 방어적 이중 체크로 유지한다. 리더 쪽 `StoryPackRepository`
+(lib/features/catalog/data/story_pack_repository.dart)가 이 AND 조건을
+클라이언트에서 조합한다.
 
 게임 쪽 `StoryPack`(lib/features/catalog/models/story_pack.dart)과 이름을 맞춰,
-나중에 `price`(int, 원 단위) / `coverImage`(images/{imageId} 참조) / `format` 같은
-필드를 추가할 여지도 남겨 둔다.
+나중에 `price`(int, 원 단위) 필드를 추가할 여지도 남겨 둔다.
 
 ## storyPacks/{packId}/nodes/{nodeId}
 
@@ -186,6 +230,37 @@ active: bool         // true→false로 바꿔 목록에서만 숨긴다(삭제 
 만들어야 한다 — 쿼리를 처음 실행하면 콘솔 링크가 포함된 에러가 뜨고, 그 링크를
 따라가면 바로 만들 수 있다.
 
+## 복합 색인이 필요한 쿼리 (`firestore.indexes.json`)
+
+동등 필터(`where(field, isEqualTo: ...)`)와 다른 필드의 `orderBy`를 함께 쓰는
+쿼리는 Firestore 자동 단일 필드 색인만으로는 안 되고 복합 색인이 필요하다.
+지금 코드베이스에서 여기 해당하는 쿼리 둘을 저장소 루트의 `firestore.indexes.json`에
+정의해 뒀다:
+
+- `genres`: `GenreRepository.watchActiveGenres()` — `where('active', isEqualTo: true).orderBy('sortOrder')`
+- `storyPacks`: `AdminStoryRepository.watchPacksForAuthor(authorId)` — `where('authorId', isEqualTo: authorId).orderBy('title')`
+
+`fieldOverrides`에는 별도로 하나 더 있다 — `nodes` 컬렉션의 `pendingAction`
+필드를 `COLLECTION_GROUP` 범위에서도 쿼리할 수 있게 하는 오버라이드다.
+`AdminStoryRepository.watchPendingNodes()`의 `collectionGroup('nodes').where('pendingAction', whereIn: [...])`가
+여기 해당한다 — 이건 앞서 추가한 `{path=**}/nodes/{nodeId}` 보안 규칙과는
+완전히 별개의 요구사항이다: 보안 규칙은 "이 요청을 허용할지"를 정하고, 필드
+색인 범위(`queryScope`)는 "이 필드를 collection-group 범위에서 필터링할 수
+있는지"를 정한다 — 규칙만 고치고 이 오버라이드가 없으면, 승인 대기함 목록이
+잠깐 보였다 사라지는 것처럼 보일 수 있다(캐시된 결과가 먼저 그려졌다가,
+서버가 색인 부족으로 쿼리를 거부하면서 스트림이 에러 상태로 리셋되기 때문).
+
+색인/필드 범위가 없이 이 쿼리들을 실행하면 Firestore가 `FAILED_PRECONDITION`
+에러를 던지는데,
+관련 화면들의 `StreamBuilder`가 `snapshot.data ?? []`만 보고 에러 여부는 따로
+확인하지 않아서 "결과가 진짜 비어 있다"와 "쿼리 자체가 실패했다"가 화면에서는
+똑같이 보인다 — 새 스토리팩 다이얼로그의 장르 목록에서 실제로 겪은 문제다.
+
+`.firebaserc`(프로젝트: `trpg-213c1`)와 `firebase.json`의 `firestore.indexes` 항목이
+이미 이 파일을 가리키고 있어서, `firebase deploy --only firestore:indexes`로
+바로 배포할 수 있다 — 위 "승인 대기함" collection-group 색인처럼 콘솔에서 수동으로
+만들어도 되지만, 이 둘은 파일로 관리해 재현 가능하게 남겨 뒀다.
+
 ## 보안 규칙 (아직 이 저장소에 firestore.rules로 관리되지 않음)
 
 클라이언트 쪽 접근 제어는 `users/{uid}.role`을 읽어 판단한다
@@ -278,13 +353,15 @@ service cloud.firestore {
         && request.resource.data.rejectionReason == null;
 
       // 승인/반려 — admin만, 신청 내용 자체(uid/displayName/bio/portfolioLinks/
-      // submittedAt)는 건드리지 않는다.
+      // submittedAt)는 건드리지 않는다. 점(.) 표기 대신 get(key, null)을 쓴다 —
+      // 필드가 아예 없는 문서(예: 콘솔에서 손으로 만든 테스트 문서)에 점 표기로
+      // 접근하면 "속성을 찾을 수 없음" 에러로 요청 전체가 거부된다.
       allow update: if isAdmin()
-        && request.resource.data.uid == resource.data.uid
-        && request.resource.data.displayName == resource.data.displayName
-        && request.resource.data.bio == resource.data.bio
-        && request.resource.data.portfolioLinks == resource.data.portfolioLinks
-        && request.resource.data.submittedAt == resource.data.submittedAt;
+        && request.resource.data.get('uid', null) == resource.data.get('uid', null)
+        && request.resource.data.get('displayName', null) == resource.data.get('displayName', null)
+        && request.resource.data.get('bio', null) == resource.data.get('bio', null)
+        && request.resource.data.get('portfolioLinks', null) == resource.data.get('portfolioLinks', null)
+        && request.resource.data.get('submittedAt', null) == resource.data.get('submittedAt', null);
     }
 
     // genres/{genreId} — admin이 관리하는 참고 데이터. 앱 재배포 없이 admin이
@@ -297,13 +374,46 @@ service cloud.firestore {
     match /storyPacks/{packId} {
       allow read: if isSignedIn();
 
-      // 생성: author/admin이 자기 자신을 authorId로 지정해서만.
-      allow create: if isAuthorOrAdmin() && request.resource.data.authorId == myUid();
+      // 생성: author/admin이 자기 자신을 authorId로 지정해서만. 항상 draft로
+      // 시작한다 — 연재 시작 승인을 직접 approved로 건너뛸 수 없다.
+      allow create: if isAuthorOrAdmin()
+        && request.resource.data.authorId == myUid()
+        && request.resource.data.serializationStatus == 'draft';
 
-      // 지금 코드베이스엔 스토리팩 문서 자체(title/type/genres)를 만든 뒤
-      // 수정·삭제하는 기능이 없다 — 생기기 전까지는 admin만 콘솔에서 직접
-      // 손볼 수 있게 남겨둔다.
-      allow update, delete: if isAdmin();
+      // 작가 본인의 팩 설정 저장/승인 요청(saveDraftPackSettings,
+      // requestSerialization, requestMetadataEdit) — liveMetadata와 검토
+      // 관련 필드(reviewedBy/reviewedAt)는 이 경로로 절대 못 바꾼다. 그 필드는
+      // 오직 admin의 승인/반려에서만 바뀐다. serializationStatus는 자기 자신을
+      // 유지하거나 'pending'으로 넘어가는 것만 허용한다 — 'approved'/'rejected'로
+      // 직접 바꿀 수는 없다(그건 아래 admin 규칙의 몫). pendingMetadataAction의
+      // 정확한 전이(null -> 'edit'만 허용)까지는 강제하지 않는다 — 작가가 자기
+      // 팩의 pending 플래그를 스스로 지우는 것 자체는 검토를 우회하는 게
+      // 아니라서(라이브 상태엔 영향 없음) 규칙을 단순하게 유지하는 쪽을 택했다.
+      allow update: if isSignedIn() && resource.data.authorId == myUid()
+        && request.resource.data.authorId == resource.data.authorId
+        && request.resource.data.type == resource.data.type
+        && request.resource.data.get('authorName', null) == resource.data.get('authorName', null)
+        && (request.resource.data.serializationStatus == resource.data.serializationStatus
+            || request.resource.data.serializationStatus == 'pending')
+        && request.resource.data.get('liveMetadata', null) == resource.data.get('liveMetadata', null)
+        && request.resource.data.get('serializationReviewedBy', null) == resource.data.get('serializationReviewedBy', null)
+        && request.resource.data.get('serializationReviewedAt', null) == resource.data.get('serializationReviewedAt', null)
+        && request.resource.data.get('metadataReviewedBy', null) == resource.data.get('metadataReviewedBy', null)
+        && request.resource.data.get('metadataReviewedAt', null) == resource.data.get('metadataReviewedAt', null);
+
+      // admin의 연재 시작/메타데이터 승인·반려(approveSerialization/
+      // rejectSerialization/approveMetadataEdit/rejectMetadataEdit) — 이 네
+      // 액션 전부 상태/검토/liveMetadata 필드만 바꾸고, 작가가 쓴
+      // title/genres/description/coverImageId 자체는 건드리지 않는다(반려 시
+      // 작가가 재신청 때 그대로 다시 손볼 수 있어야 한다).
+      allow update: if isAdmin()
+        && request.resource.data.title == resource.data.title
+        && request.resource.data.genres == resource.data.genres
+        && request.resource.data.description == resource.data.description
+        && request.resource.data.get('coverImageId', null) == resource.data.get('coverImageId', null)
+        && request.resource.data.authorId == resource.data.authorId;
+
+      allow delete: if isAdmin();
 
       match /nodes/{nodeId} {
         allow read: if isSignedIn();
@@ -333,6 +443,27 @@ service cloud.firestore {
         // 삭제 요청을 승인(approveNode)하는 경로로만 이뤄진다.
         allow delete: if (isPackOwnedBy(packId) && resource.data.liveSnapshot == null) || isAdmin();
       }
+    }
+
+    // storyPacks/*/nodes 컬렉션 그룹 조회 전용 규칙 — admin 쪽
+    // AdminStoryRepository.watchPendingNodes(collectionGroup('nodes').where
+    // ('pendingAction', ...))뿐 아니라, 리더 쪽 StoryPackRepository.
+    // watchVisiblePacks()가 "발행된 노드가 있는 팩" 집합을 구하려고 쓰는
+    // collectionGroup('nodes').where('status', '==', 'published')도 이 규칙으로
+    // 커버된다(firestore.indexes.json에 status 필드의 COLLECTION_GROUP
+    // fieldOverrides도 같이 추가했다 — pendingAction 때와 같은 이유).
+    //
+    // 위 중첩 match(/storyPacks/{packId}/nodes/{nodeId})는 packId를 아는 직접
+    // 접근(문서 참조, 특정 팩으로 좁힌 구독)에만 적용되고, collectionGroup()처럼
+    // 상위 경로를 모르는 채로 여러 팩을 가로질러 조회하는 쿼리에는 적용되지
+    // 않는다 — Firestore는 collection group 쿼리를 오직 {path=**} 형태의
+    // 재귀 와일드카드 규칙으로만 허용한다. 이 규칙이 없으면 승인 대기함 탭이
+    // permission-denied로 즉시 실패한다(실제로 겪은 버그).
+    //
+    // 읽기 전용이다 — 쓰기(saveNode/approveNode/rejectNode/deleteNodeDoc)는
+    // 전부 직접 문서 참조로만 이뤄지므로 위 중첩 match의 쓰기 규칙만으로 충분하다.
+    match /{path=**}/nodes/{nodeId} {
+      allow read: if isSignedIn();
     }
 
     // images/{imageId} — 색인 문서. 실제 파일은 Storage(아래 별도 규칙)에 있다.

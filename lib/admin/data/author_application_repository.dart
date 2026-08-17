@@ -79,14 +79,15 @@ class AuthorApplicationRepository {
       'reviewedAt': FieldValue.serverTimestamp(),
     });
 
-    batch.set(
-      _firestore.collection('users').doc(application.uid),
-      {
-        'role': UserRole.author.wireValue,
-        'authorApplicationStatus': AuthorApplicationStatus.approved.wireValue,
-      },
-      SetOptions(merge: true),
-    );
+    // .set(merge: true)가 아니라 .update()를 쓴다 — 신청서가 존재한다는 건 이미
+    // ensureProfile()을 거쳐 users/{uid}가 만들어져 있다는 뜻이라, 이건 항상
+    // "기존 사용자 갱신"이지 "새 사용자 생성"이 아니다. merge-set은 문서가 없을
+    // 때 Firestore 규칙상 create로 취급되는데, users/{userId}의 create 규칙은
+    // 본인만 허용해서 admin이 남의 문서에 쓰면 permission-denied가 난다.
+    batch.update(_firestore.collection('users').doc(application.uid), {
+      'role': UserRole.author.wireValue,
+      'authorApplicationStatus': AuthorApplicationStatus.approved.wireValue,
+    });
 
     await batch.commit();
   }
@@ -108,11 +109,12 @@ class AuthorApplicationRepository {
       'reviewedAt': FieldValue.serverTimestamp(),
     });
 
-    batch.set(
-      _firestore.collection('users').doc(application.uid),
-      {'authorApplicationStatus': AuthorApplicationStatus.rejected.wireValue},
-      SetOptions(merge: true),
-    );
+    // approveApplication과 같은 이유로 .set(merge: true) 대신 .update() —
+    // users/{uid}는 항상 이미 존재하는 문서이므로 update가 맞고, merge-set은
+    // Firestore 규칙상 create로 오인되어 admin의 쓰기가 막힐 수 있었다.
+    batch.update(_firestore.collection('users').doc(application.uid), {
+      'authorApplicationStatus': AuthorApplicationStatus.rejected.wireValue,
+    });
 
     await batch.commit();
   }

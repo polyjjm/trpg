@@ -1,39 +1,42 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_svg/flutter_svg.dart';
 
 import '../../core/auth/google_auth_service.dart';
+import '../../core/constants/asset_paths.dart';
 import '../../core/constants/external_links.dart';
 import '../../core/platform/open_external_link.dart';
+import '../../core/user/user_profile_repository.dart';
 import '../data/admin_notice_repository.dart';
 import '../data/admin_image_repository.dart';
 import '../data/admin_story_repository.dart';
-import '../data/author_application_repository.dart';
-import '../data/genre_repository.dart';
 import '../models/admin_story_pack.dart';
-import '../models/author_application.dart';
-import '../models/genre.dart';
-import '../models/pending_node_ref.dart';
 import '../models/story_pack_type.dart';
 import '../widgets/admin_theme.dart';
+import 'admin_dashboard_page.dart';
 import 'admin_gate_page.dart';
-import 'approvals_tab.dart';
-import 'author_applications_tab.dart';
 import 'image_library_tab.dart';
 import 'notices_tab.dart';
+import 'pack_settings_page.dart';
 import 'story_tab_view.dart';
 
-enum _AdminTab { story, images, notices, approvals, authorApplications }
+enum _AdminTab { story, images, notices }
 
-/// 로그인 + 역할 확인(author/admin) 통과 후 보이는 편집기 본체.
+/// 로그인 + 역할 확인(author/admin) 통과 후 보이는 "작가 도구" 본체 —
+/// 콘텐츠 편집(스토리 노드/이미지 라이브러리/공지사항)만 다룬다. author와
+/// admin 둘 다 여기로 들어온다. 플랫폼 운영 기능(승인 대기함/작가 신청/장르
+/// 관리 등)은 별도의 AdminDashboardPage로 분리됐다 — admin 계정만 "관리자
+/// 페이지로" 링크로 그쪽에 들어갈 수 있다.
+///
 /// topbar(닉네임) → pack-bar(스토리팩 전환/생성) → navtabs → 탭별 본문
 /// 순서로, story_editor_prototype.html의 레이아웃을 그대로 따른다.
-class AdminShellPage extends StatefulWidget {
+class AuthorToolPage extends StatefulWidget {
   final GoogleAuthService authService;
   final String email;
 
-  /// author는 콘텐츠 편집만, admin은 여기에 더해 "작가 신청" 검토 탭까지 본다.
+  /// author는 콘텐츠 편집만, admin은 여기에 더해 "관리자 페이지로" 링크도 본다.
   final bool isAdmin;
 
-  const AdminShellPage({
+  const AuthorToolPage({
     super.key,
     required this.authService,
     required this.email,
@@ -41,15 +44,14 @@ class AdminShellPage extends StatefulWidget {
   });
 
   @override
-  State<AdminShellPage> createState() => _AdminShellPageState();
+  State<AuthorToolPage> createState() => _AuthorToolPageState();
 }
 
-class _AdminShellPageState extends State<AdminShellPage> {
+class _AuthorToolPageState extends State<AuthorToolPage> {
   final AdminStoryRepository _storyRepository = AdminStoryRepository();
   final AdminImageRepository _imageRepository = AdminImageRepository();
   final AdminNoticeRepository _noticeRepository = AdminNoticeRepository();
-  final AuthorApplicationRepository _authorApplicationRepository = AuthorApplicationRepository();
-  final GenreRepository _genreRepository = GenreRepository();
+  final UserProfileRepository _userProfileRepository = UserProfileRepository();
 
   final TextEditingController _nicknameController = TextEditingController(text: '좀비작가');
 
@@ -72,29 +74,61 @@ class _AdminShellPageState extends State<AdminShellPage> {
     );
   }
 
+  void _openAdminDashboard() {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => AdminDashboardPage(authService: widget.authService, email: widget.email),
+      ),
+    );
+  }
+
   Future<void> _handleNewPack() async {
     final authorId = widget.authService.userId;
     if (authorId == null) return;
 
-    final result = await showDialog<(String, StoryPackType, List<String>)>(
+    final result = await showDialog<(String, StoryPackType)>(
       context: context,
-      builder: (_) => _NewPackDialog(genreRepository: _genreRepository),
+      builder: (_) => const _NewPackDialog(),
     );
     if (result == null) return;
 
-    final (title, type, genres) = result;
+    final profile = await _userProfileRepository.fetchProfile(authorId);
+    final (title, type) = result;
     final pack = await _storyRepository.createPack(
       title: title,
       authorId: authorId,
+      authorName: profile?.displayName ?? '',
       type: type,
-      genres: genres,
     );
     if (!mounted) return;
     setState(() => _activePackId = pack.id);
+    _openPackSettings(pack.id);
+  }
+
+  void _openPackSettings(String packId) {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => PackSettingsPage(
+          packId: packId,
+          repository: _storyRepository,
+          imageRepository: _imageRepository,
+        ),
+      ),
+    );
   }
 
   /// admin은 전체 스토리팩을, author는 자기 소유 스토리팩만 본다.
-  Stream<List<AdminStoryPack>> get _packsStream {
+  ///
+  /// `late final`로 State가 살아있는 동안 딱 한 번만 만든다 — 예전엔 getter라
+  /// build()가 돌 때마다(탭 전환, 팩 전환 등 아무 setState에서나) 새 Stream을
+  /// 만들어 반환했고, 그러면 이 Stream을 구독하는 바깥 StreamBuilder가 "다른
+  /// 스트림으로 바뀌었다"고 보고 구독을 끊었다 다시 맺으면서 화면 전체가
+  /// 매번 깜빡였다.
+  late final Stream<List<AdminStoryPack>> _packsStream = _createPacksStream();
+
+  Stream<List<AdminStoryPack>> _createPacksStream() {
     final authorId = widget.authService.userId;
     if (widget.isAdmin || authorId == null) {
       return _storyRepository.watchPacks();
@@ -119,6 +153,8 @@ class _AdminShellPageState extends State<AdminShellPage> {
               _TopBar(
                 nicknameController: _nicknameController,
                 email: widget.email,
+                isAdmin: widget.isAdmin,
+                onOpenAdminDashboard: _openAdminDashboard,
                 onSignOut: _handleSignOut,
               ),
               _PackBar(
@@ -126,15 +162,13 @@ class _AdminShellPageState extends State<AdminShellPage> {
                 activePackId: activePackId,
                 onPackChanged: (id) => setState(() => _activePackId = id),
                 onNewPack: _handleNewPack,
+                onOpenSettings: activePackId == null ? null : () => _openPackSettings(activePackId),
               ),
               _NavTabs(
                 active: _activeTab,
-                repository: _storyRepository,
-                isAdmin: widget.isAdmin,
-                authorApplicationRepository: widget.isAdmin ? _authorApplicationRepository : null,
                 onSelected: (tab) => setState(() => _activeTab = tab),
               ),
-              Expanded(child: _buildBody(activePackId, packs)),
+              Expanded(child: _buildBody(activePackId)),
             ],
           );
         },
@@ -142,15 +176,17 @@ class _AdminShellPageState extends State<AdminShellPage> {
     );
   }
 
-  Widget _buildBody(String? activePackId, List<AdminStoryPack> packs) {
-    if (activePackId == null) {
-      return const Center(
-        child: Text('먼저 "+ 새 스토리팩"으로 스토리팩을 만들어주세요.', style: TextStyle(color: AdminColors.muted, fontSize: 13)),
-      );
-    }
+  /// 스토리팩 선택이 꼭 있어야 하는 탭(스토리 노드/공지사항)에서만 쓰는 안내문.
+  Widget _noPackSelectedPlaceholder() {
+    return const Center(
+      child: Text('먼저 "+ 새 스토리팩"으로 스토리팩을 만들어주세요.', style: TextStyle(color: AdminColors.muted, fontSize: 13)),
+    );
+  }
 
+  Widget _buildBody(String? activePackId) {
     switch (_activeTab) {
       case _AdminTab.story:
+        if (activePackId == null) return _noPackSelectedPlaceholder();
         return StoryTabView(
           key: ValueKey('story_$activePackId'),
           packId: activePackId,
@@ -160,20 +196,11 @@ class _AdminShellPageState extends State<AdminShellPage> {
       case _AdminTab.images:
         return ImageLibraryTab(repository: _imageRepository);
       case _AdminTab.notices:
+        if (activePackId == null) return _noPackSelectedPlaceholder();
         return NoticesTab(
           key: ValueKey('notices_$activePackId'),
           packId: activePackId,
           repository: _noticeRepository,
-        );
-      case _AdminTab.approvals:
-        return ApprovalsTab(
-          repository: _storyRepository,
-          packTitles: {for (final p in packs) p.id: p.title},
-        );
-      case _AdminTab.authorApplications:
-        return AuthorApplicationsTab(
-          repository: _authorApplicationRepository,
-          reviewerUid: widget.authService.userId ?? '',
         );
     }
   }
@@ -182,9 +209,17 @@ class _AdminShellPageState extends State<AdminShellPage> {
 class _TopBar extends StatelessWidget {
   final TextEditingController nicknameController;
   final String email;
+  final bool isAdmin;
+  final VoidCallback onOpenAdminDashboard;
   final VoidCallback onSignOut;
 
-  const _TopBar({required this.nicknameController, required this.email, required this.onSignOut});
+  const _TopBar({
+    required this.nicknameController,
+    required this.email,
+    required this.isAdmin,
+    required this.onOpenAdminDashboard,
+    required this.onSignOut,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -196,7 +231,9 @@ class _TopBar extends StatelessWidget {
       ),
       child: Row(
         children: [
-          const Text('작가 편집기', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700, color: AdminColors.ivory)),
+          SvgPicture.asset(UiPaths.logo, width: 20, height: 20),
+          const SizedBox(width: 8),
+          const Text('작가 도구', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700, color: AdminColors.ivory)),
           const SizedBox(width: 8),
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
@@ -225,6 +262,13 @@ class _TopBar extends StatelessWidget {
             ),
           ),
           const SizedBox(width: 14),
+          if (isAdmin) ...[
+            InkWell(
+              onTap: onOpenAdminDashboard,
+              child: const Text('관리자 페이지로', style: TextStyle(fontSize: 12, color: AdminColors.muted)),
+            ),
+            const SizedBox(width: 14),
+          ],
           InkWell(
             onTap: () => openExternalLink(ExternalLinks.readerAppUrl),
             child: const Text('독자로 보기', style: TextStyle(fontSize: 12, color: AdminColors.muted)),
@@ -245,12 +289,14 @@ class _PackBar extends StatelessWidget {
   final String? activePackId;
   final ValueChanged<String> onPackChanged;
   final VoidCallback onNewPack;
+  final VoidCallback? onOpenSettings;
 
   const _PackBar({
     required this.packs,
     required this.activePackId,
     required this.onPackChanged,
     required this.onNewPack,
+    required this.onOpenSettings,
   });
 
   @override
@@ -302,6 +348,16 @@ class _PackBar extends StatelessWidget {
             ),
             child: const Text('+ 새 스토리팩', style: TextStyle(fontSize: 12)),
           ),
+          OutlinedButton(
+            onPressed: onOpenSettings,
+            style: OutlinedButton.styleFrom(
+              foregroundColor: AdminColors.ivory,
+              side: const BorderSide(color: AdminColors.border, style: BorderStyle.solid),
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
+            ),
+            child: const Text('팩 설정', style: TextStyle(fontSize: 12)),
+          ),
           const Text(
             '한 계정으로 여러 스토리팩을 만들 수 있어요. 아래 노드/공지사항은 선택된 스토리팩 기준이에요.',
             style: TextStyle(fontSize: 11, color: AdminColors.muted),
@@ -314,27 +370,12 @@ class _PackBar extends StatelessWidget {
 
 class _NavTabs extends StatelessWidget {
   final _AdminTab active;
-  final AdminStoryRepository repository;
-
-  /// author는 콘텐츠 승인 권한이 없어 "승인 대기함" 탭 자체를 못 본다.
-  final bool isAdmin;
-
-  /// null이면(author, admin이 아님) "작가 신청" 탭 자체를 렌더링하지 않는다.
-  final AuthorApplicationRepository? authorApplicationRepository;
   final ValueChanged<_AdminTab> onSelected;
 
-  const _NavTabs({
-    required this.active,
-    required this.repository,
-    required this.isAdmin,
-    required this.authorApplicationRepository,
-    required this.onSelected,
-  });
+  const _NavTabs({required this.active, required this.onSelected});
 
   @override
   Widget build(BuildContext context) {
-    final applicationRepository = authorApplicationRepository;
-
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 20),
       decoration: const BoxDecoration(
@@ -346,30 +387,6 @@ class _NavTabs extends StatelessWidget {
           _NavTab(label: '스토리 노드', selected: active == _AdminTab.story, onTap: () => onSelected(_AdminTab.story)),
           _NavTab(label: '이미지 라이브러리', selected: active == _AdminTab.images, onTap: () => onSelected(_AdminTab.images)),
           _NavTab(label: '공지사항', selected: active == _AdminTab.notices, onTap: () => onSelected(_AdminTab.notices)),
-          if (isAdmin)
-            StreamBuilder<List<PendingNodeRef>>(
-              stream: repository.watchPendingNodes(),
-              builder: (context, snapshot) {
-                final pendingCount = snapshot.data?.length ?? 0;
-                return _NavTab(
-                  label: pendingCount > 0 ? '승인 대기함 · $pendingCount' : '승인 대기함',
-                  selected: active == _AdminTab.approvals,
-                  onTap: () => onSelected(_AdminTab.approvals),
-                );
-              },
-            ),
-          if (applicationRepository != null)
-            StreamBuilder<List<AuthorApplication>>(
-              stream: applicationRepository.watchPendingApplications(),
-              builder: (context, appSnapshot) {
-                final applicationCount = appSnapshot.data?.length ?? 0;
-                return _NavTab(
-                  label: applicationCount > 0 ? '작가 신청 · $applicationCount' : '작가 신청',
-                  selected: active == _AdminTab.authorApplications,
-                  onTap: () => onSelected(_AdminTab.authorApplications),
-                );
-              },
-            ),
         ],
       ),
     );
@@ -401,13 +418,12 @@ class _NavTab extends StatelessWidget {
   }
 }
 
-/// "새 스토리팩" 다이얼로그 — 제목/타입/장르를 한 번에 받는다. 타입은 만든
-/// 뒤에는 바꿀 수 없어서(인터랙티브/선형이 하위 구조부터 다르다) 여기서만
-/// 고른다. 장르는 genres 컬렉션에서 실시간으로 불러온 활성 장르 중 다중 선택.
+/// "새 스토리팩" 다이얼로그 — 제목/타입만 받는다. 타입은 만든 뒤에는 바꿀 수
+/// 없어서(인터랙티브/선형이 하위 구조부터 다르다) 여기서만 고른다. 장르/설명/
+/// 표지 같은 나머지 메타데이터는 생성 직후 이동하는 PackSettingsPage에서
+/// 채운다 — 그래야 나중에 같은 화면에서 다시 수정할 수 있다.
 class _NewPackDialog extends StatefulWidget {
-  final GenreRepository genreRepository;
-
-  const _NewPackDialog({required this.genreRepository});
+  const _NewPackDialog();
 
   @override
   State<_NewPackDialog> createState() => _NewPackDialogState();
@@ -416,7 +432,6 @@ class _NewPackDialog extends StatefulWidget {
 class _NewPackDialogState extends State<_NewPackDialog> {
   final TextEditingController _titleController = TextEditingController();
   StoryPackType _type = StoryPackType.interactive;
-  final Set<String> _selectedGenreSlugs = {};
 
   @override
   void initState() {
@@ -430,14 +445,6 @@ class _NewPackDialogState extends State<_NewPackDialog> {
   void dispose() {
     _titleController.dispose();
     super.dispose();
-  }
-
-  void _toggleGenre(String slug) {
-    setState(() {
-      if (!_selectedGenreSlugs.remove(slug)) {
-        _selectedGenreSlugs.add(slug);
-      }
-    });
   }
 
   @override
@@ -490,29 +497,10 @@ class _NewPackDialogState extends State<_NewPackDialog> {
                 '만든 뒤에는 바꿀 수 없어요 — 노드/챕터 구조가 서로 달라요.',
                 style: TextStyle(fontSize: 11, color: AdminColors.muted),
               ),
-              const SizedBox(height: 20),
-              const Text('장르 (선택)', style: TextStyle(fontSize: 12, color: AdminColors.muted)),
-              const SizedBox(height: 8),
-              StreamBuilder<List<Genre>>(
-                stream: widget.genreRepository.watchActiveGenres(),
-                builder: (context, snapshot) {
-                  final genres = snapshot.data ?? const <Genre>[];
-                  if (genres.isEmpty) {
-                    return const Text('등록된 장르가 없어요.', style: TextStyle(fontSize: 12, color: AdminColors.muted));
-                  }
-                  return Wrap(
-                    spacing: 8,
-                    runSpacing: 8,
-                    children: [
-                      for (final genre in genres)
-                        _GenreChip(
-                          label: genre.name,
-                          selected: _selectedGenreSlugs.contains(genre.slug),
-                          onTap: () => _toggleGenre(genre.slug),
-                        ),
-                    ],
-                  );
-                },
+              const SizedBox(height: 6),
+              const Text(
+                '장르/설명/표지는 다음 화면(팩 설정)에서 채워요.',
+                style: TextStyle(fontSize: 11, color: AdminColors.muted),
               ),
             ],
           ),
@@ -526,7 +514,7 @@ class _NewPackDialogState extends State<_NewPackDialog> {
         TextButton(
           onPressed: _titleController.text.trim().isEmpty
               ? null
-              : () => Navigator.pop(context, (_titleController.text.trim(), _type, _selectedGenreSlugs.toList())),
+              : () => Navigator.pop(context, (_titleController.text.trim(), _type)),
           child: const Text('만들기', style: TextStyle(color: AdminColors.gold)),
         ),
       ],
@@ -555,34 +543,6 @@ class _TypeOption extends StatelessWidget {
           borderRadius: BorderRadius.circular(8),
         ),
         child: Text(label, style: TextStyle(fontSize: 13, color: selected ? AdminColors.gold : AdminColors.ivory)),
-      ),
-    );
-  }
-}
-
-class _GenreChip extends StatelessWidget {
-  final String label;
-  final bool selected;
-  final VoidCallback onTap;
-
-  const _GenreChip({required this.label, required this.selected, required this.onTap});
-
-  @override
-  Widget build(BuildContext context) {
-    return InkWell(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(999),
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-        decoration: BoxDecoration(
-          color: selected ? AdminColors.statusPendingBg : AdminColors.panel2,
-          border: Border.all(color: selected ? AdminColors.statusPendingText : AdminColors.border),
-          borderRadius: BorderRadius.circular(999),
-        ),
-        child: Text(
-          label,
-          style: TextStyle(fontSize: 12, color: selected ? AdminColors.statusPendingText : AdminColors.muted),
-        ),
       ),
     );
   }
