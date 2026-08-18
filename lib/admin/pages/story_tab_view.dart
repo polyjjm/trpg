@@ -1,12 +1,12 @@
 import 'package:flutter/material.dart';
 
+import '../../core/story/background_image_inheritance.dart';
 import '../data/admin_image_repository.dart';
 import '../data/admin_story_repository.dart';
 import '../models/admin_image.dart';
 import '../models/admin_story_node.dart';
 import '../models/admin_story_node_summary.dart';
-import '../models/choice_type.dart';
-import '../models/move_mode.dart';
+import '../models/admin_story_pack.dart';
 import '../models/pending_action.dart';
 import '../widgets/admin_theme.dart';
 import '../widgets/node_editor.dart';
@@ -21,12 +21,21 @@ import '../widgets/story_node_sidebar.dart';
 /// 브라우저 메모리 하나만 썼던 것과 같은 이유).
 class StoryTabView extends StatefulWidget {
   final String packId;
+
+  /// pack.type에 따라 NodeEditor 하단이 선택지 목록/다음 노드 입력으로
+  /// 갈리고, pack.defaultBackgroundImage는 어떤 노드도 배경을 명시적으로
+  /// 안 골랐을 때의 최종 폴백이다(lib/core/story/
+  /// background_image_inheritance.dart). 부모(AuthorToolPage)가 이미 들고
+  /// 있는 AdminStoryPack을 통째로 내려받는다 — 팩 목록 스트림이 갱신되면
+  /// 부모가 새 pack 값으로 이 위젯을 다시 만들어 준다.
+  final AdminStoryPack pack;
   final AdminStoryRepository repository;
   final AdminImageRepository imageRepository;
 
   const StoryTabView({
     super.key,
     required this.packId,
+    required this.pack,
     required this.repository,
     required this.imageRepository,
   });
@@ -36,6 +45,21 @@ class StoryTabView extends StatefulWidget {
 }
 
 class _StoryTabViewState extends State<StoryTabView> {
+  /// State가 살아있는 동안(= 지금 이 packId로 고정된 동안, StoryTabView는
+  /// author_tool_page.dart에서 packId별로 다른 Key를 받아 팩을 바꿀 때마다
+  /// 통째로 재생성된다) 딱 한 번만 만든다. build()에서 매번 새로 호출하면
+  /// (예전 코드가 그랬다) 키 입력 한 번마다(onChanged → setState(_dirty))
+  /// watchNodeSummaries가 새 Firestore 리스너를 새로 열고 StreamBuilder가
+  /// 구독을 끊었다 다시 맺으면서 사이드바가 깜빡였다 — author_tool_page.dart의
+  /// _packsStream, approvals_tab.dart의 _pendingStream과 같은 이유로 같은
+  /// 패턴을 따른다.
+  late final Stream<List<AdminStoryNodeSummary>> _nodeSummariesStream =
+      widget.repository.watchNodeSummaries(widget.packId);
+
+  /// 이미지 라이브러리는 팩과 무관하게 공유되지만(FIRESTORE_SCHEMA.md), 같은
+  /// 이유로 build()에서 매번 새로 구독하지 않는다.
+  late final Stream<List<AdminImage>> _imagesStream = widget.imageRepository.watchImages();
+
   String? _selectedNodeId;
   AdminStoryNode? _editingNode;
   bool _dirty = false;
@@ -66,7 +90,12 @@ class _StoryTabViewState extends State<StoryTabView> {
       candidateId = 'new_node_$_newNodeCounter';
     }
 
-    final node = AdminStoryNode(id: candidateId);
+    // 새 노드는 기본적으로 맨 뒤에 이어 쓰는 경우가 대부분이라, 다음 순서로
+    // 자동 배정한다 — 배경 이미지 인계가 바로 동작하게 하려는 것(0으로
+    // 고정하면 항상 맨 앞으로 끼어들어 인계 규칙이 매번 어긋난다).
+    final nextOrder = existing.isEmpty ? 0 : existing.map((n) => n.order).reduce((a, b) => a > b ? a : b) + 1;
+
+    final node = AdminStoryNode(id: candidateId, order: nextOrder);
     setState(() {
       _selectedNodeId = node.id;
       _editingNode = node;
@@ -126,28 +155,11 @@ class _StoryTabViewState extends State<StoryTabView> {
     }
   }
 
-  String? _validate(AdminStoryNode node) {
-    for (final choice in node.choices) {
-      if (choice.type == ChoiceType.move && choice.mode == MoveMode.random) {
-        final total = choice.random.fold<int>(0, (sum, r) => sum + r.pct);
-        if (total != 100) {
-          return '"${choice.text}" 선택지의 확률 합계가 $total%예요. 100%로 맞춰주세요.';
-        }
-      }
-    }
-    return null;
-  }
-
   Future<void> _handleSaveDraft() async {
     final node = _editingNode;
     if (node == null) return;
 
-    final error = _validate(node);
-    if (error != null) {
-      _showAlert(context, error);
-      return;
-    }
-
+    node.applyBodyTextToBlocks();
     node.dirty = false;
 
     await widget.repository.saveNode(widget.packId, node);
@@ -165,12 +177,6 @@ class _StoryTabViewState extends State<StoryTabView> {
     final node = _editingNode;
     if (node == null) return;
 
-    final error = _validate(node);
-    if (error != null) {
-      _showAlert(context, error);
-      return;
-    }
-
     final isNew = node.isNew;
     final message = isNew
         ? '신규 등록 승인 요청을 보낼까요? 상위 관리자가 승인해야 플레이어에게 보여요.'
@@ -179,6 +185,7 @@ class _StoryTabViewState extends State<StoryTabView> {
     if (!confirmed || !mounted) return;
 
     node.pendingAction = isNew ? PendingAction.create : PendingAction.edit;
+    node.applyBodyTextToBlocks();
     node.dirty = false;
 
     await widget.repository.saveNode(widget.packId, node);
@@ -205,7 +212,7 @@ class _StoryTabViewState extends State<StoryTabView> {
   @override
   Widget build(BuildContext context) {
     return StreamBuilder<List<AdminStoryNodeSummary>>(
-      stream: widget.repository.watchNodeSummaries(widget.packId),
+      stream: _nodeSummariesStream,
       builder: (context, snapshot) {
         final summaries = List<AdminStoryNodeSummary>.from(snapshot.data ?? const []);
 
@@ -224,13 +231,21 @@ class _StoryTabViewState extends State<StoryTabView> {
         if (_isNewUnsaved && editingNode != null && !summaries.any((s) => s.id == editingNode.id)) {
           summaries.add(AdminStoryNodeSummary(
             id: editingNode.id,
-            title: editingNode.title,
+            preview: editingNode.previewText,
             status: editingNode.status,
             pendingAction: editingNode.pendingAction,
+            order: editingNode.order,
+            backgroundImageId: editingNode.backgroundImageId,
           ));
         }
 
-        final nodeOptions = summaries.where((s) => s.id != _selectedNodeId).toList();
+        final inheritedBackgroundImageId = editingNode == null
+            ? null
+            : resolveInheritedBackgroundImage(
+                nodes: summaries.map((s) => (order: s.order, backgroundImage: s.backgroundImageId)),
+                targetOrder: editingNode.order,
+                packDefaultBackgroundImage: widget.pack.defaultBackgroundImage,
+              );
 
         return Row(
           crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -253,7 +268,7 @@ class _StoryTabViewState extends State<StoryTabView> {
                       child: Text('노드를 선택하거나 새로 만들어주세요.', style: TextStyle(color: AdminColors.muted)),
                     )
                   : StreamBuilder<List<AdminImage>>(
-                      stream: widget.imageRepository.watchImages(),
+                      stream: _imagesStream,
                       builder: (context, imgSnapshot) {
                         final images = imgSnapshot.data ?? const <AdminImage>[];
                         return NodeEditor(
@@ -262,7 +277,8 @@ class _StoryTabViewState extends State<StoryTabView> {
                           dirty: _dirty,
                           isIdEditable: _isNewUnsaved,
                           images: images,
-                          nodeOptions: nodeOptions,
+                          packType: widget.pack.type,
+                          inheritedBackgroundImageId: inheritedBackgroundImageId,
                           onChanged: () => setState(() => _dirty = true),
                           onSaveDraft: _handleSaveDraft,
                           onRequestApproval: _handleRequestApproval,
@@ -297,22 +313,6 @@ Future<bool> _confirm(BuildContext context, String message) async {
     ),
   );
   return result ?? false;
-}
-
-void _showAlert(BuildContext context, String message) {
-  showDialog<void>(
-    context: context,
-    builder: (dialogContext) => AlertDialog(
-      backgroundColor: AdminColors.panel,
-      content: Text(message, style: const TextStyle(color: AdminColors.ivory)),
-      actions: [
-        TextButton(
-          onPressed: () => Navigator.pop(dialogContext),
-          child: const Text('확인', style: TextStyle(color: AdminColors.gold)),
-        ),
-      ],
-    ),
-  );
 }
 
 void _showToast(BuildContext context, String message) {

@@ -38,6 +38,15 @@ class StoryPack {
   /// 무료 팩(price == 0)은 이 값을 아예 쓰지 않는다.
   final int previewNodeLimit;
 
+  /// 이 팩의 노드에 TTS 재생을 허용할지 — SceneFrame 하단 시트의 TTS
+  /// 토글은 이 값이 true일 때만 보인다(readerPrefs.ttsEnabled와는 별개로,
+  /// 팩 단위로 아예 끌 수 있는 스위치).
+  final bool ttsEnabled;
+
+  /// 노드에 bgmOverride가 없을 때 재생할 기본 배경음 트랙 id. null이면
+  /// 이 팩에 기본 BGM이 없다는 뜻.
+  final String? ambientBgm;
+
   const StoryPack({
     required this.id,
     required this.title,
@@ -48,6 +57,8 @@ class StoryPack {
     required this.format,
     required this.genres,
     this.previewNodeLimit = 3,
+    this.ttsEnabled = false,
+    this.ambientBgm,
   });
 
   bool get isFree => price <= 0;

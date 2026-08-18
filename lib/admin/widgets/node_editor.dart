@@ -1,25 +1,34 @@
 import 'package:flutter/material.dart';
 
-import '../models/admin_choice.dart';
 import '../models/admin_image.dart';
 import '../models/admin_story_node.dart';
-import '../models/admin_story_node_summary.dart';
 import '../models/pending_action.dart';
+import '../models/story_pack_type.dart';
 import 'admin_theme.dart';
-import 'choice_card.dart';
 import 'image_picker_field.dart';
 import 'info_banner.dart';
 import 'labeled_field.dart';
+import 'node_body_editor.dart';
+import 'node_choice_editor.dart';
 
-/// main — 선택된 노드 한 편을 편집하는 폼. renderMain()의 스토리 노드 분기를
-/// 그대로 옮겼다: 삭제 대기 노드는 배너 + 취소 버튼만 보여주고, 그 외에는
-/// 필드 + 선택지 목록 + 저장 바를 보여준다.
+/// main — 선택된 노드 한 편을 편집하는 폼. 삭제 대기 노드는 배너 + 취소
+/// 버튼만 보여주고, 그 외에는 필드 + 본문 + (팩 타입에 따라) 선택지 목록
+/// 또는 다음 노드 입력 + 저장 바를 보여준다.
+///
+/// [packType]에 따라 아래쪽 분기 UI가 갈린다 — interactive면 선택지 목록,
+/// linear면 "다음 노드" 입력 한 줄만.
 class NodeEditor extends StatelessWidget {
   final AdminStoryNode node;
   final bool dirty;
   final bool isIdEditable;
   final List<AdminImage> images;
-  final List<AdminStoryNodeSummary> nodeOptions;
+  final StoryPackType packType;
+
+  /// 이 노드가 배경 이미지를 명시적으로 안 골랐을 때 실제로 쓰일 값
+  /// (lib/core/story/background_image_inheritance.dart로 미리 계산해 전달됨).
+  /// null이면 이어받을 값도 없다는 뜻.
+  final String? inheritedBackgroundImageId;
+
   final VoidCallback onChanged;
   final VoidCallback onSaveDraft;
   final VoidCallback onRequestApproval;
@@ -31,7 +40,8 @@ class NodeEditor extends StatelessWidget {
     required this.dirty,
     required this.isIdEditable,
     required this.images,
-    required this.nodeOptions,
+    required this.packType,
+    required this.inheritedBackgroundImageId,
     required this.onChanged,
     required this.onSaveDraft,
     required this.onRequestApproval,
@@ -100,102 +110,64 @@ class NodeEditor extends StatelessWidget {
                 ),
               ),
             const SizedBox(height: 16),
-            Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Expanded(
-                  child: LabeledField(
-                    label: 'DAY / 챕터',
-                    child: TextFormField(
-                      initialValue: '${node.day}',
-                      keyboardType: TextInputType.number,
-                      style: const TextStyle(color: AdminColors.ivory, fontSize: 13),
-                      decoration: adminInputDecoration(),
-                      onChanged: (value) {
-                        node.day = int.tryParse(value) ?? node.day;
-                        onChanged();
-                      },
-                    ),
-                  ),
-                ),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: LabeledField(
-                    label: '제목',
-                    child: TextFormField(
-                      initialValue: node.title,
-                      style: const TextStyle(color: AdminColors.ivory, fontSize: 13),
-                      decoration: adminInputDecoration(),
-                      onChanged: (value) {
-                        node.title = value;
-                        onChanged();
-                      },
-                    ),
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 16),
             LabeledField(
-              label: '본문',
-              child: TextFormField(
-                initialValue: node.body,
-                minLines: 14,
-                maxLines: 28,
-                style: const TextStyle(color: AdminColors.ivory, fontSize: 13, height: 1.6),
-                decoration: adminInputDecoration(),
-                onChanged: (value) {
-                  node.body = value;
-                  onChanged();
-                },
+              label: '순서 (배경 이미지 인계 기준 — 작은 값이 앞선 노드)',
+              child: SizedBox(
+                width: 120,
+                child: TextFormField(
+                  initialValue: '${node.order}',
+                  keyboardType: TextInputType.number,
+                  style: const TextStyle(color: AdminColors.ivory, fontSize: 13),
+                  decoration: adminInputDecoration(),
+                  onChanged: (value) {
+                    node.order = int.tryParse(value) ?? node.order;
+                    onChanged();
+                  },
+                ),
               ),
             ),
             const SizedBox(height: 16),
             LabeledField(
               label: '배경 이미지',
               child: ImagePickerField(
-                currentId: node.bgImageId,
+                currentId: node.backgroundImageId,
                 images: images,
                 onChanged: (id) {
-                  node.bgImageId = id;
+                  node.backgroundImageId = id;
                   onChanged();
                 },
               ),
             ),
+            if (node.backgroundImageId == null) ...[
+              const SizedBox(height: 6),
+              Text(
+                _inheritanceHint(),
+                style: const TextStyle(fontSize: 11, color: AdminColors.gold),
+              ),
+            ],
             const SizedBox(height: 24),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                const Text('선택지', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: AdminColors.ivory)),
-                TextButton(
-                  onPressed: () {
-                    node.choices.add(AdminChoice());
+            NodeBodyEditor(
+              bodyText: node.bodyText,
+              onChanged: (value) {
+                node.bodyText = value;
+                onChanged();
+              },
+            ),
+            const SizedBox(height: 24),
+            if (packType == StoryPackType.interactive)
+              NodeChoiceEditor(choices: node.choices, onChanged: onChanged)
+            else
+              LabeledField(
+                label: '다음 노드 ID',
+                child: TextFormField(
+                  initialValue: node.nextNodeId ?? '',
+                  style: const TextStyle(color: AdminColors.ivory, fontSize: 13),
+                  decoration: adminInputDecoration(hintText: '마지막 노드면 비워두세요.'),
+                  onChanged: (value) {
+                    node.nextNodeId = value.isEmpty ? null : value;
                     onChanged();
                   },
-                  style: TextButton.styleFrom(
-                    foregroundColor: AdminColors.gold,
-                    backgroundColor: AdminColors.panel2,
-                    side: const BorderSide(color: AdminColors.border, style: BorderStyle.solid),
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
-                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                  ),
-                  child: const Text('+ 선택지 추가', style: TextStyle(fontSize: 12)),
                 ),
-              ],
-            ),
-            const SizedBox(height: 10),
-            for (var i = 0; i < node.choices.length; i++)
-              ChoiceCard(
-                key: ObjectKey(node.choices[i]),
-                index: i,
-                choice: node.choices[i],
-                images: images,
-                nodeOptions: nodeOptions,
-                onChanged: onChanged,
-                onRemove: () {
-                  node.choices.removeAt(i);
-                  onChanged();
-                },
               ),
             const SizedBox(height: 12),
             _SaveBar(onSaveDraft: onSaveDraft, onRequestApproval: onRequestApproval),
@@ -238,6 +210,23 @@ class NodeEditor extends StatelessWidget {
 
     return banners;
   }
+
+  /// 배경 이미지를 안 골랐을 때 보여줄 안내 문구 — 실제로 무엇이 이어지는지
+  /// (이미지 이름, 없으면 id 그대로) 보여줘서 "다시 안 골라도 된다"는 걸
+  /// 작가가 알 수 있게 한다.
+  String _inheritanceHint() {
+    final inherited = inheritedBackgroundImageId;
+    if (inherited == null) {
+      return '(기본값 없음 — 이 노드부터 배경 이미지가 표시되지 않아요)';
+    }
+    final matchingImage = images.where((img) => img.id == inherited).firstOrNull;
+    final label = matchingImage?.name ?? inherited;
+    return '(기본값 사용 · 이전 노드에서 이어짐: $label)';
+  }
+}
+
+extension _FirstOrNull<T> on Iterable<T> {
+  T? get firstOrNull => isEmpty ? null : first;
 }
 
 class _SaveBar extends StatelessWidget {

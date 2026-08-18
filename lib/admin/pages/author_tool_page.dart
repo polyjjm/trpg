@@ -168,7 +168,7 @@ class _AuthorToolPageState extends State<AuthorToolPage> {
                 active: _activeTab,
                 onSelected: (tab) => setState(() => _activeTab = tab),
               ),
-              Expanded(child: _buildBody(activePackId)),
+              Expanded(child: _buildBody(activePackId, packs)),
             ],
           );
         },
@@ -183,13 +183,17 @@ class _AuthorToolPageState extends State<AuthorToolPage> {
     );
   }
 
-  Widget _buildBody(String? activePackId) {
+  Widget _buildBody(String? activePackId, List<AdminStoryPack> packs) {
     switch (_activeTab) {
       case _AdminTab.story:
         if (activePackId == null) return _noPackSelectedPlaceholder();
+        final activePackMatches = packs.where((p) => p.id == activePackId);
+        if (activePackMatches.isEmpty) return _noPackSelectedPlaceholder();
+        final activePack = activePackMatches.first;
         return StoryTabView(
           key: ValueKey('story_$activePackId'),
           packId: activePackId,
+          pack: activePack,
           repository: _storyRepository,
           imageRepository: _imageRepository,
         );

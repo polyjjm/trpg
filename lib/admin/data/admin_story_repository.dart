@@ -93,18 +93,24 @@ class AdminStoryRepository {
   }
 
   /// 팩 설정을 직접 저장한다("임시저장") — 상태 전이 없이 언제나 가능하다.
+  ///
+  /// defaultBackgroundImage는 title/genres/description/coverImageId와 달리
+  /// liveMetadata 승인 게이트를 거치지 않는다 — 순수 렌더링 기본값이라
+  /// 저장하는 즉시 바로 반영된다(검토가 필요한 "콘텐츠"가 아니라는 판단).
   Future<void> saveDraftPackSettings(
     String packId, {
     required String title,
     required List<String> genres,
     required String description,
     required String? coverImageId,
+    required String? defaultBackgroundImage,
   }) async {
     await _packs.doc(packId).update({
       'title': title,
       'genres': genres,
       'description': description,
       'coverImageId': coverImageId,
+      'defaultBackgroundImage': defaultBackgroundImage,
     });
   }
 

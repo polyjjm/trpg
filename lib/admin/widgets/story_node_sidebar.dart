@@ -98,7 +98,7 @@ class _NodeItem extends StatelessWidget {
                     children: [
                       Flexible(
                         child: Text(
-                          node.title.isEmpty ? '(제목 없음)' : node.title,
+                          node.preview.isEmpty ? '(내용 없음)' : node.preview,
                           style: TextStyle(
                             fontSize: 13,
                             color: active ? AdminColors.ivory : AdminColors.muted,

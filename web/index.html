@@ -13,7 +13,7 @@
   #app-loading {
     position: fixed;
     inset: 0;
-    background: #000;
+    background: linear-gradient(to bottom, #1A1610, #000);
     display: flex;
     align-items: center;
     justify-content: center;
@@ -24,17 +24,17 @@
     width: 280px;
     padding: 20px;
     border-radius: 20px;
-    background: rgba(20, 20, 20, 0.88);
-    border: 1px solid rgba(255, 255, 255, 0.1);
+    background: rgba(30, 26, 20, 0.72);
+    border: 1px solid rgba(240, 230, 140, 0.18);
     text-align: center;
-    color: white;
+    color: #E2D4BF;
     font-family: Arial, sans-serif;
   }
 
   .loading-text {
     font-size: 14px;
     margin-bottom: 16px;
-    color: rgba(255, 255, 255, 0.9);
+    color: rgba(226, 212, 191, 0.92);
   }
 
   .loading-bar {
@@ -97,7 +97,7 @@
 <body>
 <div id="app-loading">
   <div class="loading-box">
-    <div class="loading-text">세상을 불러오는 중...</div>
+    <div class="loading-text">이야기를 불러오는 중...</div>
     <div class="loading-bar">
       <div class="loading-bar-inner"></div>
     </div>

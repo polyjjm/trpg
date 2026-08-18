@@ -6,10 +6,6 @@ class UiPaths {
   static const String choiceBg =
       'assets/images/system/selectButtonbg.png';
 
-  // 메인/시스템 공통 이미지
-  static const String mainBg =
-      'assets/images/main.png';
-
   // 전투 카드 이미지
   static const String failCard =
       'assets/images/system/failCard.png';

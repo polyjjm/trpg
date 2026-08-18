@@ -50,6 +50,8 @@ class StoryPackRepository {
         price: 0,
         format: (data['type'] as String?) == 'linear' ? StoryPackFormat.linear : StoryPackFormat.interactive,
         genres: (live?['genres'] as List<dynamic>?)?.cast<String>() ?? const [],
+        ttsEnabled: data['ttsEnabled'] as bool? ?? false,
+        ambientBgm: data['ambientBgm'] as String?,
       );
     }).toList();
   }

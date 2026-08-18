@@ -2,8 +2,10 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
+import 'package:flutter_svg/flutter_svg.dart';
 import 'widgets/loading.dart';
 import 'core/auth/auth_scope.dart';
+import 'core/constants/asset_paths.dart';
 import 'core/monetization/admob_monetization_service.dart';
 import 'core/platform/remove_app_loading.dart';
 import 'core/state/game_state_provider.dart';
@@ -112,17 +114,20 @@ class _MainPageState extends State<MainPage> {
       body: Stack(
         children: [
           Positioned.fill(
-            child: Image.asset(
-              'assets/images/main.png',
-              fit: BoxFit.cover,
+            child: DecoratedBox(
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.topCenter,
+                  end: Alignment.bottomCenter,
+                  colors: [Color(0xFF1A1610), Colors.black],
+                ),
+              ),
             ),
           ),
-          Positioned.fill(
-            child: Container(
-              color: Colors.black.withOpacity(0.55),
-            ),
+          Center(
+            child: SvgPicture.asset(UiPaths.logo, width: 88, height: 88),
           ),
-          const Loading(message: '세상을 불러오는 중...'),
+          const Loading(message: '이야기를 불러오는 중...'),
         ],
       ),
     );

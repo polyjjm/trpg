@@ -36,6 +36,13 @@ class AdminStoryPack {
   final String description;
   final String? coverImageId;
 
+  /// 노드가 배경 이미지를 명시적으로 고르지 않았을 때 팩 전체의 최종
+  /// 폴백으로 쓰이는 images/{imageId} 참조(lib/core/story/
+  /// background_image_inheritance.dart). liveMetadata 승인 흐름과는
+  /// 무관한, 언제든 바로 저장되는 설정값이다 — 순수 렌더링 기본값일 뿐
+  /// 검토가 필요한 "콘텐츠"로 보지 않는다.
+  final String? defaultBackgroundImage;
+
   final PackSerializationStatus serializationStatus;
   final DateTime? serializationSubmittedAt;
   final String? serializationReviewedBy;
@@ -62,6 +69,7 @@ class AdminStoryPack {
     required this.genres,
     required this.description,
     required this.coverImageId,
+    this.defaultBackgroundImage,
     required this.serializationStatus,
     this.serializationSubmittedAt,
     this.serializationReviewedBy,
@@ -85,6 +93,7 @@ class AdminStoryPack {
       genres: (json['genres'] as List<dynamic>?)?.cast<String>() ?? const [],
       description: json['description'] as String? ?? '',
       coverImageId: json['coverImageId'] as String?,
+      defaultBackgroundImage: json['defaultBackgroundImage'] as String?,
       serializationStatus: PackSerializationStatusJson.fromWire(json['serializationStatus'] as String?),
       serializationSubmittedAt: (json['serializationSubmittedAt'] as Timestamp?)?.toDate(),
       serializationReviewedBy: json['serializationReviewedBy'] as String?,
@@ -109,6 +118,7 @@ class AdminStoryPack {
         'genres': genres,
         'description': description,
         'coverImageId': coverImageId,
+        'defaultBackgroundImage': defaultBackgroundImage,
         'serializationStatus': serializationStatus.wireValue,
       };
 

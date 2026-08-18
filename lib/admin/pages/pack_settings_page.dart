@@ -62,6 +62,7 @@ class _PackSettingsPageState extends State<PackSettingsPage> {
   final TextEditingController _descriptionController = TextEditingController();
   final Set<String> _selectedGenreSlugs = {};
   String? _coverImageId;
+  String? _defaultBackgroundImageId;
 
   AdminStoryPack? _pack;
   bool _initialized = false;
@@ -76,6 +77,7 @@ class _PackSettingsPageState extends State<PackSettingsPage> {
     _descriptionController.text = pack.description;
     _selectedGenreSlugs.addAll(pack.genres);
     _coverImageId = pack.coverImageId;
+    _defaultBackgroundImageId = pack.defaultBackgroundImage;
     _titleController.addListener(_markDirty);
     _descriptionController.addListener(_markDirty);
   }
@@ -109,6 +111,7 @@ class _PackSettingsPageState extends State<PackSettingsPage> {
         genres: _selectedGenreSlugs.toList(),
         description: _descriptionController.text.trim(),
         coverImageId: _coverImageId,
+        defaultBackgroundImage: _defaultBackgroundImageId,
       );
     } catch (e) {
       _handleError(e);
@@ -135,6 +138,7 @@ class _PackSettingsPageState extends State<PackSettingsPage> {
         genres: _selectedGenreSlugs.toList(),
         description: _descriptionController.text.trim(),
         coverImageId: _coverImageId,
+        defaultBackgroundImage: _defaultBackgroundImageId,
       );
       await widget.repository.requestSerialization(widget.packId);
     } catch (e) {
@@ -311,6 +315,24 @@ class _PackSettingsPageState extends State<PackSettingsPage> {
                     images: images,
                     onChanged: (id) => setState(() {
                       _coverImageId = id;
+                      _dirty = true;
+                    }),
+                  );
+                },
+              ),
+            ),
+            const SizedBox(height: 16),
+            LabeledField(
+              label: '기본 배경 이미지 (노드가 배경을 따로 안 고르면 이 값이 쓰여요)',
+              child: StreamBuilder<List<AdminImage>>(
+                stream: _imagesStream,
+                builder: (context, snapshot) {
+                  final images = snapshot.data ?? const <AdminImage>[];
+                  return ImagePickerField(
+                    currentId: _defaultBackgroundImageId,
+                    images: images,
+                    onChanged: (id) => setState(() {
+                      _defaultBackgroundImageId = id;
                       _dirty = true;
                     }),
                   );

@@ -120,7 +120,7 @@ class _ApprovalCard extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  '[$label] ${ref.node.title.isEmpty ? '(제목 없음)' : ref.node.title}',
+                  '[$label] ${ref.node.previewText.isEmpty ? '(내용 없음)' : ref.node.previewText}',
                   style: const TextStyle(fontWeight: FontWeight.w700, color: AdminColors.ivory),
                 ),
                 const SizedBox(height: 4),
