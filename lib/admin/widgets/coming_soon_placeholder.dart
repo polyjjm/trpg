@@ -8,7 +8,11 @@ class ComingSoonPlaceholder extends StatelessWidget {
   final String title;
   final String description;
 
-  const ComingSoonPlaceholder({super.key, required this.title, required this.description});
+  const ComingSoonPlaceholder({
+    super.key,
+    required this.title,
+    required this.description,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -18,17 +22,29 @@ class ComingSoonPlaceholder extends StatelessWidget {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            const Icon(Icons.construction_rounded, color: AdminColors.muted, size: 32),
+            Icon(
+              Icons.construction_rounded,
+              color: AdminColors.muted,
+              size: 32,
+            ),
             const SizedBox(height: 14),
             Text(
               title,
-              style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w700, color: AdminColors.ivory),
+              style: TextStyle(
+                fontSize: 15,
+                fontWeight: FontWeight.w700,
+                color: AdminColors.ivory,
+              ),
             ),
             const SizedBox(height: 8),
             Text(
               description,
               textAlign: TextAlign.center,
-              style: const TextStyle(fontSize: 12, color: AdminColors.muted, height: 1.5),
+              style: TextStyle(
+                fontSize: 12,
+                color: AdminColors.muted,
+                height: 1.5,
+              ),
             ),
           ],
         ),

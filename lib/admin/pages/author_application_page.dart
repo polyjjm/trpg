@@ -37,14 +37,19 @@ class AuthorApplicationPage extends StatefulWidget {
 }
 
 class _AuthorApplicationPageState extends State<AuthorApplicationPage> {
-  late final TextEditingController _displayNameController = TextEditingController(
-    text: widget.previousApplication?.displayName ?? widget.user.displayName ?? '',
-  );
+  late final TextEditingController _displayNameController =
+      TextEditingController(
+        text:
+            widget.previousApplication?.displayName ??
+            widget.user.displayName ??
+            '',
+      );
   late final TextEditingController _bioController = TextEditingController(
     text: widget.previousApplication?.bio ?? '',
   );
   late final List<TextEditingController> _linkControllers = [
-    for (final link in widget.previousApplication?.portfolioLinks ?? const <String>[])
+    for (final link
+        in widget.previousApplication?.portfolioLinks ?? const <String>[])
       TextEditingController(text: link),
     TextEditingController(),
   ];
@@ -80,7 +85,9 @@ class _AuthorApplicationPageState extends State<AuthorApplicationPage> {
 
   void _addLinkField() {
     setState(() {
-      _linkControllers.add(TextEditingController()..addListener(_onFieldChanged));
+      _linkControllers.add(
+        TextEditingController()..addListener(_onFieldChanged),
+      );
     });
   }
 
@@ -93,8 +100,10 @@ class _AuthorApplicationPageState extends State<AuthorApplicationPage> {
   Future<void> _handleSubmit() async {
     setState(() => _isSubmitting = true);
 
-    final links =
-        _linkControllers.map((c) => c.text.trim()).where((text) => text.isNotEmpty).toList();
+    final links = _linkControllers
+        .map((c) => c.text.trim())
+        .where((text) => text.isNotEmpty)
+        .toList();
 
     await widget.repository.submitApplication(
       uid: widget.user.uid,
@@ -110,7 +119,9 @@ class _AuthorApplicationPageState extends State<AuthorApplicationPage> {
   @override
   Widget build(BuildContext context) {
     final rejectionReason = widget.previousApplication?.rejectionReason;
-    final showRejection = widget.previousApplication?.status == AuthorApplicationStatus.rejected &&
+    final showRejection =
+        widget.previousApplication?.status ==
+            AuthorApplicationStatus.rejected &&
         rejectionReason != null &&
         rejectionReason.isNotEmpty;
 
@@ -126,19 +137,28 @@ class _AuthorApplicationPageState extends State<AuthorApplicationPage> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  const Text(
+                  Text(
                     '작가로 신청하기',
-                    style: TextStyle(fontSize: 22, fontWeight: FontWeight.w800, color: AdminColors.ivory),
+                    style: TextStyle(
+                      fontSize: 22,
+                      fontWeight: FontWeight.w800,
+                      color: AdminColors.ivory,
+                    ),
                   ),
                   const SizedBox(height: 8),
-                  const Text(
+                  Text(
                     '간단한 소개만 있으면 충분해요. 승인되면 이 계정으로 바로 이야기를 쓸 수 있어요.',
-                    style: TextStyle(fontSize: 13, color: AdminColors.muted, height: 1.5),
+                    style: TextStyle(
+                      fontSize: 13,
+                      color: AdminColors.muted,
+                      height: 1.5,
+                    ),
                   ),
                   const SizedBox(height: 28),
                   if (showRejection) ...[
                     InfoBanner(
-                      text: '이전 신청이 반려됐어요: $rejectionReason\n내용을 보완해서 다시 제출해주세요.',
+                      text:
+                          '이전 신청이 반려됐어요: $rejectionReason\n내용을 보완해서 다시 제출해주세요.',
                       style: InfoBannerStyle.dirty,
                     ),
                     const SizedBox(height: 20),
@@ -147,7 +167,7 @@ class _AuthorApplicationPageState extends State<AuthorApplicationPage> {
                     label: '이름/필명',
                     child: TextField(
                       controller: _displayNameController,
-                      style: const TextStyle(color: AdminColors.ivory, fontSize: 13),
+                      style: TextStyle(color: AdminColors.ivory, fontSize: 13),
                       decoration: adminInputDecoration(hintText: '독자에게 보일 이름'),
                     ),
                   ),
@@ -158,8 +178,14 @@ class _AuthorApplicationPageState extends State<AuthorApplicationPage> {
                       controller: _bioController,
                       minLines: 6,
                       maxLines: 10,
-                      style: const TextStyle(color: AdminColors.ivory, fontSize: 14, height: 1.6),
-                      decoration: adminInputDecoration(hintText: '어떤 이야기를 쓰고 싶으신가요? 자유롭게 적어주세요.'),
+                      style: TextStyle(
+                        color: AdminColors.ivory,
+                        fontSize: 14,
+                        height: 1.6,
+                      ),
+                      decoration: adminInputDecoration(
+                        hintText: '어떤 이야기를 쓰고 싶으신가요? 자유롭게 적어주세요.',
+                      ),
                     ),
                   ),
                   const SizedBox(height: 24),
@@ -175,15 +201,24 @@ class _AuthorApplicationPageState extends State<AuthorApplicationPage> {
                                 Expanded(
                                   child: TextField(
                                     controller: _linkControllers[i],
-                                    style: const TextStyle(color: AdminColors.ivory, fontSize: 13),
-                                    decoration: adminInputDecoration(hintText: 'https://...'),
+                                    style: TextStyle(
+                                      color: AdminColors.ivory,
+                                      fontSize: 13,
+                                    ),
+                                    decoration: adminInputDecoration(
+                                      hintText: 'https://...',
+                                    ),
                                   ),
                                 ),
                                 if (_linkControllers.length > 1) ...[
                                   const SizedBox(width: 8),
                                   InkWell(
                                     onTap: () => _removeLinkField(i),
-                                    child: const Icon(Icons.close_rounded, size: 18, color: AdminColors.muted),
+                                    child: Icon(
+                                      Icons.close_rounded,
+                                      size: 18,
+                                      color: AdminColors.muted,
+                                    ),
                                   ),
                                 ],
                               ],
@@ -194,7 +229,13 @@ class _AuthorApplicationPageState extends State<AuthorApplicationPage> {
                             alignment: Alignment.centerLeft,
                             child: InkWell(
                               onTap: _addLinkField,
-                              child: const Text('+ 링크 추가', style: TextStyle(fontSize: 12, color: AdminColors.muted)),
+                              child: Text(
+                                '+ 링크 추가',
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  color: AdminColors.muted,
+                                ),
+                              ),
                             ),
                           ),
                       ],
@@ -211,11 +252,16 @@ class _AuthorApplicationPageState extends State<AuthorApplicationPage> {
                         foregroundColor: Colors.black,
                         disabledForegroundColor: AdminColors.muted,
                         padding: const EdgeInsets.symmetric(vertical: 14),
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(10),
+                        ),
                       ),
                       child: Text(
                         _isSubmitting ? '제출 중...' : '신청서 제출하기',
-                        style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w700),
+                        style: const TextStyle(
+                          fontSize: 14,
+                          fontWeight: FontWeight.w700,
+                        ),
                       ),
                     ),
                   ),
@@ -223,7 +269,13 @@ class _AuthorApplicationPageState extends State<AuthorApplicationPage> {
                   Center(
                     child: InkWell(
                       onTap: widget.onSignOut,
-                      child: const Text('로그아웃', style: TextStyle(fontSize: 12, color: AdminColors.muted)),
+                      child: Text(
+                        '로그아웃',
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: AdminColors.muted,
+                        ),
+                      ),
                     ),
                   ),
                 ],

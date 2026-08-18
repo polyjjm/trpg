@@ -16,9 +16,12 @@ import '../widgets/labeled_field.dart';
 
 /// 스토리팩의 메타데이터(제목/장르/설명/표지)를 편집하는 화면.
 ///
-/// NodeEditor와 같은 편집 세션 패턴을 따른다 — Firestore 문서를 한 번만 읽어
-/// 로컬 가변 상태로 들고 있고, 서버 스냅샷에 실시간으로 바인딩하지 않는다
-/// (그러면 타이핑 중에 들어온 변경이 폼을 덮어써버린다).
+/// 제목/설명 등 편집 가능한 필드는 NodeEditor와 같은 이유로 서버 스냅샷에
+/// 직접 바인딩하지 않는다(TextEditingController/로컬 Set에 한 번만 시드해서
+/// 들고 있고, 타이핑 중에 들어온 변경이 폼을 덮어쓰지 않게 한다) — 하지만
+/// serializationStatus/pendingMetadataAction 같은 승인 상태 필드는 폼이 아니라
+/// 배너 표시 전용이라 [_packStream]으로 실시간 반영한다(다른 화면에서 admin이
+/// 승인/반려해도 새로고침 없이 배너가 바로 바뀐다).
 ///
 /// 두 단계 흐름:
 /// - 연재 시작 전(draft/rejected): "임시저장" / "연재 시작 승인 요청" — 단,
@@ -47,7 +50,7 @@ class PackSettingsPage extends StatefulWidget {
 class _PackSettingsPageState extends State<PackSettingsPage> {
   final GenreRepository _genreRepository = GenreRepository();
 
-  late final Future<AdminStoryPack?> _packFuture = widget.repository.fetchPack(
+  late final Stream<AdminStoryPack?> _packStream = widget.repository.watchPack(
     widget.packId,
   );
   late final Stream<List<Genre>> _genresStream = _genreRepository
@@ -64,7 +67,6 @@ class _PackSettingsPageState extends State<PackSettingsPage> {
   String? _coverImageId;
   String? _defaultBackgroundImageId;
 
-  AdminStoryPack? _pack;
   bool _initialized = false;
   bool _dirty = false;
   bool _saving = false;
@@ -72,7 +74,6 @@ class _PackSettingsPageState extends State<PackSettingsPage> {
   void _initFrom(AdminStoryPack pack) {
     if (_initialized) return;
     _initialized = true;
-    _pack = pack;
     _titleController.text = pack.title;
     _descriptionController.text = pack.description;
     _selectedGenreSlugs.addAll(pack.genres);
@@ -145,7 +146,7 @@ class _PackSettingsPageState extends State<PackSettingsPage> {
       _handleError(e);
       return;
     }
-    await _reload();
+    _finishSaving();
   }
 
   Future<void> _handleRequestMetadataEdit() async {
@@ -162,7 +163,7 @@ class _PackSettingsPageState extends State<PackSettingsPage> {
       _handleError(e);
       return;
     }
-    await _reload();
+    _finishSaving();
   }
 
   /// Firestore 쓰기가 실패했을 때(권한 거부 등) 화면이 아무 반응 없이 멈춘 것처럼
@@ -171,14 +172,18 @@ class _PackSettingsPageState extends State<PackSettingsPage> {
   void _handleError(Object error) {
     if (!mounted) return;
     setState(() => _saving = false);
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('저장에 실패했어요: $error')));
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(SnackBar(content: Text('저장에 실패했어요: $error')));
   }
 
-  Future<void> _reload() async {
-    final pack = await widget.repository.fetchPack(widget.packId);
+  /// 승인 요청/임시저장 액션이 성공한 뒤 로딩 상태만 정리한다 — 배너에 쓰는
+  /// serializationStatus/pendingMetadataAction 등은 더 이상 수동으로 다시
+  /// 읽어올 필요가 없다. [_packStream]이 이미 라이브라 admin의 승인/반려는
+  /// 물론 이 액션 자체가 만든 변경도 스트림을 통해 자동으로 반영된다.
+  void _finishSaving() {
     if (!mounted) return;
     setState(() {
-      _pack = pack;
       _saving = false;
       _dirty = false;
     });
@@ -190,32 +195,33 @@ class _PackSettingsPageState extends State<PackSettingsPage> {
       backgroundColor: AdminColors.bg,
       appBar: AppBar(
         backgroundColor: AdminColors.panel,
-        title: const Text(
+        title: Text(
           '팩 설정',
           style: TextStyle(color: AdminColors.ivory, fontSize: 16),
         ),
-        iconTheme: const IconThemeData(color: AdminColors.ivory),
+        iconTheme: IconThemeData(color: AdminColors.ivory),
       ),
-      body: FutureBuilder<AdminStoryPack?>(
-        future: _packFuture,
+      body: StreamBuilder<AdminStoryPack?>(
+        stream: _packStream,
         builder: (context, snapshot) {
-          if (snapshot.connectionState != ConnectionState.done) {
-            return const Center(
-              child: CircularProgressIndicator(color: AdminColors.gold),
-            );
-          }
-
-          final loaded = _pack ?? snapshot.data;
-          if (loaded == null) {
-            return const Center(
+          final pack = snapshot.data;
+          if (pack == null) {
+            if (snapshot.connectionState == ConnectionState.waiting) {
+              return const Center(
+                child: CircularProgressIndicator(color: AdminColors.gold),
+              );
+            }
+            return Center(
               child: Text(
                 '스토리팩을 찾을 수 없어요.',
                 style: TextStyle(color: AdminColors.muted),
               ),
             );
           }
-          _initFrom(loaded);
-          final pack = _pack!;
+          // 제목/장르/설명/표지는 폼(TextEditingController/로컬 Set)이 한 번만
+          // 시드해서 들고 있는다 — 그 뒤로는 스트림이 갱신돼도 다시 덮어쓰지
+          // 않는다(클래스 상단 doc 참고).
+          _initFrom(pack);
 
           return StreamBuilder<List<AdminStoryNodeSummary>>(
             stream: _nodeSummariesStream,
@@ -245,12 +251,12 @@ class _PackSettingsPageState extends State<PackSettingsPage> {
               label: '제목',
               child: TextFormField(
                 controller: _titleController,
-                style: const TextStyle(color: AdminColors.ivory, fontSize: 13),
+                style: TextStyle(color: AdminColors.inputText, fontSize: 13),
                 decoration: adminInputDecoration(),
               ),
             ),
             const SizedBox(height: 16),
-            const Text(
+            Text(
               '장르',
               style: TextStyle(fontSize: 12, color: AdminColors.muted),
             ),
@@ -269,7 +275,7 @@ class _PackSettingsPageState extends State<PackSettingsPage> {
                 }
                 final genres = snapshot.data ?? const <Genre>[];
                 if (genres.isEmpty) {
-                  return const Text(
+                  return Text(
                     '등록된 장르가 없어요.',
                     style: TextStyle(fontSize: 12, color: AdminColors.muted),
                   );
@@ -295,8 +301,8 @@ class _PackSettingsPageState extends State<PackSettingsPage> {
                 controller: _descriptionController,
                 minLines: 4,
                 maxLines: 8,
-                style: const TextStyle(
-                  color: AdminColors.ivory,
+                style: TextStyle(
+                  color: AdminColors.inputText,
                   fontSize: 13,
                   height: 1.5,
                 ),
@@ -437,7 +443,7 @@ class _PackSettingsPageState extends State<PackSettingsPage> {
 
     return Container(
       padding: const EdgeInsets.only(top: 18),
-      decoration: const BoxDecoration(
+      decoration: BoxDecoration(
         border: Border(top: BorderSide(color: AdminColors.border)),
       ),
       child: Wrap(
@@ -449,7 +455,7 @@ class _PackSettingsPageState extends State<PackSettingsPage> {
             onPressed: _saving ? null : _handleSaveDraft,
             style: OutlinedButton.styleFrom(
               foregroundColor: AdminColors.muted,
-              side: const BorderSide(color: AdminColors.border),
+              side: BorderSide(color: AdminColors.border),
               padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 11),
               shape: RoundedRectangleBorder(
                 borderRadius: BorderRadius.circular(8),
@@ -462,7 +468,8 @@ class _PackSettingsPageState extends State<PackSettingsPage> {
               onPressed: _saving ? null : _handleRequestSerialization,
               style: ElevatedButton.styleFrom(
                 backgroundColor: AdminColors.gold,
-                foregroundColor: const Color(0xFF111111),
+                foregroundColor: Colors.white,
+                elevation: 0,
                 padding: const EdgeInsets.symmetric(
                   horizontal: 20,
                   vertical: 11,
@@ -481,7 +488,8 @@ class _PackSettingsPageState extends State<PackSettingsPage> {
               onPressed: _saving ? null : _handleRequestMetadataEdit,
               style: ElevatedButton.styleFrom(
                 backgroundColor: AdminColors.gold,
-                foregroundColor: const Color(0xFF111111),
+                foregroundColor: Colors.white,
+                elevation: 0,
                 padding: const EdgeInsets.symmetric(
                   horizontal: 20,
                   vertical: 11,
@@ -496,12 +504,12 @@ class _PackSettingsPageState extends State<PackSettingsPage> {
               ),
             )
           else if (blockedBySerializationContent)
-            const Text(
+            Text(
               '발행된 노드가 있어야 연재 시작을 요청할 수 있어요.',
               style: TextStyle(fontSize: 12, color: AdminColors.muted),
             )
           else
-            const Text(
+            Text(
               '승인 대기 중이라 지금은 새 요청을 보낼 수 없어요.',
               style: TextStyle(fontSize: 12, color: AdminColors.muted),
             ),

@@ -34,11 +34,17 @@ class _NoticesTabState extends State<NoticesTab> {
         context: context,
         builder: (dialogContext) => AlertDialog(
           backgroundColor: AdminColors.panel,
-          content: const Text('제목을 입력해주세요.', style: TextStyle(color: AdminColors.ivory)),
+          content: Text(
+            '제목을 입력해주세요.',
+            style: TextStyle(color: AdminColors.ivory),
+          ),
           actions: [
             TextButton(
               onPressed: () => Navigator.pop(dialogContext),
-              child: const Text('확인', style: TextStyle(color: AdminColors.gold)),
+              child: const Text(
+                '확인',
+                style: TextStyle(color: AdminColors.gold),
+              ),
             ),
           ],
         ),
@@ -65,9 +71,16 @@ class _NoticesTabState extends State<NoticesTab> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text('작가 공지사항', style: TextStyle(fontSize: 16, color: AdminColors.ivory, fontWeight: FontWeight.w700)),
+            Text(
+              '작가 공지사항',
+              style: TextStyle(
+                fontSize: 16,
+                color: AdminColors.ivory,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
             const SizedBox(height: 6),
-            const Text(
+            Text(
               "내 스토리팩 업데이트/새 이야기 출시 같은 소식을 올리면, 플레이어가 라이브러리에서 볼 수 있어요.",
               style: TextStyle(fontSize: 12, color: AdminColors.muted),
             ),
@@ -76,8 +89,10 @@ class _NoticesTabState extends State<NoticesTab> {
               label: '제목',
               child: TextField(
                 controller: _titleController,
-                style: const TextStyle(color: AdminColors.ivory, fontSize: 13),
-                decoration: adminInputDecoration(hintText: "제목 (예: 새로운 확장 이야기 '추적자' 공개!)"),
+                style: TextStyle(color: AdminColors.ivory, fontSize: 13),
+                decoration: adminInputDecoration(
+                  hintText: "제목 (예: 새로운 확장 이야기 '추적자' 공개!)",
+                ),
               ),
             ),
             const SizedBox(height: 16),
@@ -87,7 +102,7 @@ class _NoticesTabState extends State<NoticesTab> {
                 controller: _bodyController,
                 maxLines: 4,
                 minLines: 3,
-                style: const TextStyle(color: AdminColors.ivory, fontSize: 13),
+                style: TextStyle(color: AdminColors.ivory, fontSize: 13),
                 decoration: adminInputDecoration(hintText: '내용을 적어주세요.'),
               ),
             ),
@@ -97,10 +112,18 @@ class _NoticesTabState extends State<NoticesTab> {
               style: ElevatedButton.styleFrom(
                 backgroundColor: AdminColors.gold,
                 foregroundColor: Colors.black,
-                padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 11),
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 20,
+                  vertical: 11,
+                ),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(8),
+                ),
               ),
-              child: const Text('공지 올리기', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700)),
+              child: const Text(
+                '공지 올리기',
+                style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700),
+              ),
             ),
             const SizedBox(height: 24),
             StreamBuilder<List<WriterNotice>>(
@@ -110,10 +133,17 @@ class _NoticesTabState extends State<NoticesTab> {
                 return Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text('등록된 공지 ${notices.length}개', style: const TextStyle(fontSize: 13, color: AdminColors.muted)),
+                    Text(
+                      '등록된 공지 ${notices.length}개',
+                      style: TextStyle(fontSize: 13, color: AdminColors.muted),
+                    ),
                     const SizedBox(height: 10),
                     for (final notice in notices)
-                      _NoticeCard(notice: notice, onDelete: () => widget.repository.deleteNotice(notice.id)),
+                      _NoticeCard(
+                        notice: notice,
+                        onDelete: () =>
+                            widget.repository.deleteNotice(notice.id),
+                      ),
                   ],
                 );
               },
@@ -144,15 +174,35 @@ class _NoticeCard extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(notice.date, style: const TextStyle(fontSize: 11, color: AdminColors.muted)),
+          Text(
+            notice.date,
+            style: TextStyle(fontSize: 11, color: AdminColors.muted),
+          ),
           const SizedBox(height: 4),
-          Text(notice.title, style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: AdminColors.ivory)),
+          Text(
+            notice.title,
+            style: TextStyle(
+              fontSize: 14,
+              fontWeight: FontWeight.w700,
+              color: AdminColors.ivory,
+            ),
+          ),
           const SizedBox(height: 6),
-          Text(notice.body, style: const TextStyle(fontSize: 13, color: Color(0xFFCFC3AE), height: 1.5)),
+          Text(
+            notice.body,
+            style: TextStyle(
+              fontSize: 13,
+              color: AdminColors.ivory,
+              height: 1.5,
+            ),
+          ),
           const SizedBox(height: 8),
           InkWell(
             onTap: onDelete,
-            child: const Text('삭제', style: TextStyle(fontSize: 12, color: AdminColors.danger)),
+            child: const Text(
+              '삭제',
+              style: TextStyle(fontSize: 12, color: AdminColors.danger),
+            ),
           ),
         ],
       ),

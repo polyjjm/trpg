@@ -8,7 +8,7 @@ import '../models/author_application.dart';
 /// 없이 단건 조회로 확인할 수 있다.
 class AuthorApplicationRepository {
   AuthorApplicationRepository({FirebaseFirestore? firestore})
-      : _firestore = firestore ?? FirebaseFirestore.instance;
+    : _firestore = firestore ?? FirebaseFirestore.instance;
 
   final FirebaseFirestore _firestore;
 
@@ -46,11 +46,9 @@ class AuthorApplicationRepository {
       'submittedAt': FieldValue.serverTimestamp(),
     });
 
-    batch.set(
-      _firestore.collection('users').doc(uid),
-      {'authorApplicationStatus': AuthorApplicationStatus.pending.wireValue},
-      SetOptions(merge: true),
-    );
+    batch.set(_firestore.collection('users').doc(uid), {
+      'authorApplicationStatus': AuthorApplicationStatus.pending.wireValue,
+    }, SetOptions(merge: true));
 
     await batch.commit();
   }
@@ -61,15 +59,21 @@ class AuthorApplicationRepository {
         .collection('authorApplications')
         .where('status', isEqualTo: AuthorApplicationStatus.pending.wireValue)
         .snapshots()
-        .map((snapshot) =>
-            snapshot.docs.map((doc) => AuthorApplication.fromFirestore(doc.id, doc.data())).toList());
+        .map(
+          (snapshot) => snapshot.docs
+              .map((doc) => AuthorApplication.fromFirestore(doc.id, doc.data()))
+              .toList(),
+        );
   }
 
   /// 승인: 신청서 자체와 users/{uid}(role→author, authorApplicationStatus→approved)를
   /// 한 배치로 같이 갱신한다 — "작가 자격 부여"만 하는 것이고, 이 계정이 실제로
   /// 쓴 콘텐츠는 여전히 기존 노드 승인 흐름(status/pendingAction/liveSnapshot)을
   /// 그대로 거쳐야 한다. 이 메서드는 그 흐름을 전혀 건드리지 않는다.
-  Future<void> approveApplication(AuthorApplication application, {required String reviewerUid}) async {
+  Future<void> approveApplication(
+    AuthorApplication application, {
+    required String reviewerUid,
+  }) async {
     final batch = _firestore.batch();
 
     batch.update(_doc(application.uid), {

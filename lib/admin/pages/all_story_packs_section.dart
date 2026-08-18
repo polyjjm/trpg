@@ -26,8 +26,11 @@ class AllStoryPacksSection extends StatefulWidget {
 }
 
 class _AllStoryPacksSectionState extends State<AllStoryPacksSection> {
-  late final Stream<List<AdminStoryPack>> _packsStream = widget.storyRepository.watchPacks();
-  late final Stream<List<UserProfile>> _authorsStream = widget.userProfileRepository.watchAuthors();
+  late final Stream<List<AdminStoryPack>> _packsStream = widget.storyRepository
+      .watchPacks();
+  late final Stream<List<UserProfile>> _authorsStream = widget
+      .userProfileRepository
+      .watchAuthors();
 
   @override
   Widget build(BuildContext context) {
@@ -38,18 +41,31 @@ class _AllStoryPacksSectionState extends State<AllStoryPacksSection> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text('전체 작품 목록', style: TextStyle(fontSize: 16, color: AdminColors.ivory, fontWeight: FontWeight.w700)),
+            Text(
+              '전체 작품 목록',
+              style: TextStyle(
+                fontSize: 16,
+                color: AdminColors.ivory,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
             const SizedBox(height: 6),
-            const Text(
+            Text(
               '모든 작가의 스토리팩이에요. 작가/상태별로 좁혀 보는 기능은 아직 없어요 — 따로 설계해서 추가할 예정이에요.',
-              style: TextStyle(fontSize: 12, color: AdminColors.muted, height: 1.5),
+              style: TextStyle(
+                fontSize: 12,
+                color: AdminColors.muted,
+                height: 1.5,
+              ),
             ),
             const SizedBox(height: 16),
             StreamBuilder<List<UserProfile>>(
               stream: _authorsStream,
               builder: (context, authorsSnapshot) {
                 final authorNameByUid = {
-                  for (final author in authorsSnapshot.data ?? const <UserProfile>[]) author.uid: author.displayName,
+                  for (final author
+                      in authorsSnapshot.data ?? const <UserProfile>[])
+                    author.uid: author.displayName,
                 };
 
                 return StreamBuilder<List<AdminStoryPack>>(
@@ -58,16 +74,33 @@ class _AllStoryPacksSectionState extends State<AllStoryPacksSection> {
                     if (packsSnapshot.hasError) {
                       return SelectableText(
                         '작품 목록을 불러오지 못했어요: ${packsSnapshot.error}',
-                        style: const TextStyle(fontSize: 12, color: AdminColors.danger),
+                        style: const TextStyle(
+                          fontSize: 12,
+                          color: AdminColors.danger,
+                        ),
                       );
                     }
-                    if (packsSnapshot.connectionState == ConnectionState.waiting) {
-                      return const Text('불러오는 중...', style: TextStyle(fontSize: 13, color: AdminColors.muted));
+                    if (packsSnapshot.connectionState ==
+                        ConnectionState.waiting) {
+                      return Text(
+                        '불러오는 중...',
+                        style: TextStyle(
+                          fontSize: 13,
+                          color: AdminColors.muted,
+                        ),
+                      );
                     }
 
-                    final packs = packsSnapshot.data ?? const <AdminStoryPack>[];
+                    final packs =
+                        packsSnapshot.data ?? const <AdminStoryPack>[];
                     if (packs.isEmpty) {
-                      return const Text('등록된 스토리팩이 없어요.', style: TextStyle(fontSize: 13, color: AdminColors.muted));
+                      return Text(
+                        '등록된 스토리팩이 없어요.',
+                        style: TextStyle(
+                          fontSize: 13,
+                          color: AdminColors.muted,
+                        ),
+                      );
                     }
 
                     return Column(
@@ -75,7 +108,8 @@ class _AllStoryPacksSectionState extends State<AllStoryPacksSection> {
                         for (final pack in packs)
                           _PackRow(
                             pack: pack,
-                            authorName: authorNameByUid[pack.authorId] ?? pack.authorId,
+                            authorName:
+                                authorNameByUid[pack.authorId] ?? pack.authorId,
                           ),
                       ],
                     );
@@ -114,23 +148,30 @@ class _PackRow extends StatelessWidget {
               children: [
                 Text(
                   pack.title,
-                  style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 14, color: AdminColors.ivory),
+                  style: TextStyle(
+                    fontWeight: FontWeight.w700,
+                    fontSize: 14,
+                    color: AdminColors.ivory,
+                  ),
                 ),
                 const SizedBox(height: 4),
                 Text(
                   '작가: ${authorName.isEmpty ? '(알 수 없음)' : authorName}'
                   '${pack.genres.isNotEmpty ? ' · ${pack.genres.join(', ')}' : ''}',
-                  style: const TextStyle(fontSize: 11, color: AdminColors.muted),
+                  style: TextStyle(fontSize: 11, color: AdminColors.muted),
                 ),
               ],
             ),
           ),
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-            decoration: BoxDecoration(color: AdminColors.panel2, borderRadius: BorderRadius.circular(999)),
+            decoration: BoxDecoration(
+              color: AdminColors.panel2,
+              borderRadius: BorderRadius.circular(999),
+            ),
             child: Text(
               pack.type == StoryPackType.interactive ? '인터랙티브' : '선형',
-              style: const TextStyle(fontSize: 12, color: AdminColors.ivory),
+              style: TextStyle(fontSize: 12, color: AdminColors.ivory),
             ),
           ),
         ],

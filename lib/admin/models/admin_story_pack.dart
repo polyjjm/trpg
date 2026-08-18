@@ -94,14 +94,20 @@ class AdminStoryPack {
       description: json['description'] as String? ?? '',
       coverImageId: json['coverImageId'] as String?,
       defaultBackgroundImage: json['defaultBackgroundImage'] as String?,
-      serializationStatus: PackSerializationStatusJson.fromWire(json['serializationStatus'] as String?),
-      serializationSubmittedAt: (json['serializationSubmittedAt'] as Timestamp?)?.toDate(),
+      serializationStatus: PackSerializationStatusJson.fromWire(
+        json['serializationStatus'] as String?,
+      ),
+      serializationSubmittedAt: (json['serializationSubmittedAt'] as Timestamp?)
+          ?.toDate(),
       serializationReviewedBy: json['serializationReviewedBy'] as String?,
-      serializationReviewedAt: (json['serializationReviewedAt'] as Timestamp?)?.toDate(),
-      serializationRejectionReason: json['serializationRejectionReason'] as String?,
+      serializationReviewedAt: (json['serializationReviewedAt'] as Timestamp?)
+          ?.toDate(),
+      serializationRejectionReason:
+          json['serializationRejectionReason'] as String?,
       pendingMetadataAction: json['pendingMetadataAction'] as String?,
       liveMetadata: json['liveMetadata'] as Map<String, dynamic>?,
-      metadataSubmittedAt: (json['metadataSubmittedAt'] as Timestamp?)?.toDate(),
+      metadataSubmittedAt: (json['metadataSubmittedAt'] as Timestamp?)
+          ?.toDate(),
       metadataReviewedBy: json['metadataReviewedBy'] as String?,
       metadataReviewedAt: (json['metadataReviewedAt'] as Timestamp?)?.toDate(),
       metadataRejectionReason: json['metadataRejectionReason'] as String?,
@@ -111,23 +117,25 @@ class AdminStoryPack {
   /// 생성(create) 전용 — 이후의 부분 업데이트는 AdminStoryRepository가 각자
   /// 필요한 필드만 담아 직접 쓴다(saveDraftPackSettings/requestSerialization 등).
   Map<String, dynamic> toJson() => {
-        'title': title,
-        'authorId': authorId,
-        'authorName': authorName,
-        'type': type.wireValue,
-        'genres': genres,
-        'description': description,
-        'coverImageId': coverImageId,
-        'defaultBackgroundImage': defaultBackgroundImage,
-        'serializationStatus': serializationStatus.wireValue,
-      };
+    'title': title,
+    'authorId': authorId,
+    'authorName': authorName,
+    'type': type.wireValue,
+    'genres': genres,
+    'description': description,
+    'coverImageId': coverImageId,
+    'defaultBackgroundImage': defaultBackgroundImage,
+    'serializationStatus': serializationStatus.wireValue,
+  };
 
   /// 연재 시작 승인을 (다시) 요청할 수 있는 상태인지.
   bool get canRequestSerialization =>
-      serializationStatus == PackSerializationStatus.draft || serializationStatus == PackSerializationStatus.rejected;
+      serializationStatus == PackSerializationStatus.draft ||
+      serializationStatus == PackSerializationStatus.rejected;
 
   /// 메타데이터 변경 승인을 요청할 수 있는 상태인지 — 이미 연재 승인을 받았고,
   /// 지금 대기 중인 변경 요청이 없어야 한다.
   bool get canRequestMetadataEdit =>
-      serializationStatus == PackSerializationStatus.approved && pendingMetadataAction == null;
+      serializationStatus == PackSerializationStatus.approved &&
+      pendingMetadataAction == null;
 }

@@ -13,19 +13,32 @@ class PackApprovalsTab extends StatefulWidget {
   final AdminStoryRepository repository;
   final String reviewerUid;
 
-  const PackApprovalsTab({super.key, required this.repository, required this.reviewerUid});
+  const PackApprovalsTab({
+    super.key,
+    required this.repository,
+    required this.reviewerUid,
+  });
 
   @override
   State<PackApprovalsTab> createState() => _PackApprovalsTabState();
 }
 
 class _PackApprovalsTabState extends State<PackApprovalsTab> {
-  late final Stream<List<AdminStoryPack>> _pendingSerializationStream =
-      widget.repository.watchPendingSerializationRequests();
-  late final Stream<List<AdminStoryPack>> _pendingMetadataStream = widget.repository.watchPendingMetadataEdits();
+  late final Stream<List<AdminStoryPack>> _pendingSerializationStream = widget
+      .repository
+      .watchPendingSerializationRequests();
+  late final Stream<List<AdminStoryPack>> _pendingMetadataStream = widget
+      .repository
+      .watchPendingMetadataEdits();
 
-  Future<void> _handleRejectSerialization(BuildContext context, AdminStoryPack pack) async {
-    final reason = await _promptRejectionReason(context, title: '연재 시작 반려 사유 (선택)');
+  Future<void> _handleRejectSerialization(
+    BuildContext context,
+    AdminStoryPack pack,
+  ) async {
+    final reason = await _promptRejectionReason(
+      context,
+      title: '연재 시작 반려 사유 (선택)',
+    );
     if (reason == null) return;
     await widget.repository.rejectSerialization(
       pack,
@@ -34,8 +47,14 @@ class _PackApprovalsTabState extends State<PackApprovalsTab> {
     );
   }
 
-  Future<void> _handleRejectMetadataEdit(BuildContext context, AdminStoryPack pack) async {
-    final reason = await _promptRejectionReason(context, title: '메타데이터 변경 반려 사유 (선택)');
+  Future<void> _handleRejectMetadataEdit(
+    BuildContext context,
+    AdminStoryPack pack,
+  ) async {
+    final reason = await _promptRejectionReason(
+      context,
+      title: '메타데이터 변경 반려 사유 (선택)',
+    );
     if (reason == null) return;
     await widget.repository.rejectMetadataEdit(
       pack,
@@ -53,15 +72,33 @@ class _PackApprovalsTabState extends State<PackApprovalsTab> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text('스토리팩 승인', style: TextStyle(fontSize: 16, color: AdminColors.ivory, fontWeight: FontWeight.w700)),
+            Text(
+              '스토리팩 승인',
+              style: TextStyle(
+                fontSize: 16,
+                color: AdminColors.ivory,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
             const SizedBox(height: 6),
-            const Text(
+            Text(
               '팩이 독자 라이브러리에 노출되려면 먼저 "연재 시작 승인"을 받아야 해요. 승인 후에는 제목/장르/설명/표지 '
               '같은 메타데이터를 바꿀 때마다 "메타데이터 수정 승인"을 따로 받아요 — 노드 콘텐츠 승인(승인 대기함)과는 별개예요.',
-              style: TextStyle(fontSize: 12, color: AdminColors.muted, height: 1.5),
+              style: TextStyle(
+                fontSize: 12,
+                color: AdminColors.muted,
+                height: 1.5,
+              ),
             ),
             const SizedBox(height: 20),
-            const Text('신규 연재 요청', style: TextStyle(fontSize: 14, color: AdminColors.ivory, fontWeight: FontWeight.w700)),
+            Text(
+              '신규 연재 요청',
+              style: TextStyle(
+                fontSize: 14,
+                color: AdminColors.ivory,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
             const SizedBox(height: 10),
             StreamBuilder<List<AdminStoryPack>>(
               stream: _pendingSerializationStream,
@@ -69,12 +106,18 @@ class _PackApprovalsTabState extends State<PackApprovalsTab> {
                 if (snapshot.hasError) {
                   return SelectableText(
                     '목록을 불러오지 못했어요: ${snapshot.error}',
-                    style: const TextStyle(fontSize: 12, color: AdminColors.danger),
+                    style: const TextStyle(
+                      fontSize: 12,
+                      color: AdminColors.danger,
+                    ),
                   );
                 }
                 final packs = snapshot.data ?? const <AdminStoryPack>[];
                 if (packs.isEmpty) {
-                  return const Text('대기 중인 연재 시작 요청이 없어요.', style: TextStyle(fontSize: 13, color: AdminColors.muted));
+                  return Text(
+                    '대기 중인 연재 시작 요청이 없어요.',
+                    style: TextStyle(fontSize: 13, color: AdminColors.muted),
+                  );
                 }
                 return Column(
                   children: [
@@ -82,17 +125,25 @@ class _PackApprovalsTabState extends State<PackApprovalsTab> {
                       _PackRequestCard(
                         pack: pack,
                         kind: _RequestKind.serialization,
-                        onApprove: () => widget.repository.approveSerialization(pack, reviewerUid: widget.reviewerUid),
-                        onReject: () => _handleRejectSerialization(context, pack),
+                        onApprove: () => widget.repository.approveSerialization(
+                          pack,
+                          reviewerUid: widget.reviewerUid,
+                        ),
+                        onReject: () =>
+                            _handleRejectSerialization(context, pack),
                       ),
                   ],
                 );
               },
             ),
             const SizedBox(height: 28),
-            const Text(
+            Text(
               '메타데이터 수정 요청',
-              style: TextStyle(fontSize: 14, color: AdminColors.ivory, fontWeight: FontWeight.w700),
+              style: TextStyle(
+                fontSize: 14,
+                color: AdminColors.ivory,
+                fontWeight: FontWeight.w700,
+              ),
             ),
             const SizedBox(height: 10),
             StreamBuilder<List<AdminStoryPack>>(
@@ -101,12 +152,18 @@ class _PackApprovalsTabState extends State<PackApprovalsTab> {
                 if (snapshot.hasError) {
                   return SelectableText(
                     '목록을 불러오지 못했어요: ${snapshot.error}',
-                    style: const TextStyle(fontSize: 12, color: AdminColors.danger),
+                    style: const TextStyle(
+                      fontSize: 12,
+                      color: AdminColors.danger,
+                    ),
                   );
                 }
                 final packs = snapshot.data ?? const <AdminStoryPack>[];
                 if (packs.isEmpty) {
-                  return const Text('대기 중인 메타데이터 수정 요청이 없어요.', style: TextStyle(fontSize: 13, color: AdminColors.muted));
+                  return Text(
+                    '대기 중인 메타데이터 수정 요청이 없어요.',
+                    style: TextStyle(fontSize: 13, color: AdminColors.muted),
+                  );
                 }
                 return Column(
                   children: [
@@ -114,8 +171,12 @@ class _PackApprovalsTabState extends State<PackApprovalsTab> {
                       _PackRequestCard(
                         pack: pack,
                         kind: _RequestKind.metadata,
-                        onApprove: () => widget.repository.approveMetadataEdit(pack, reviewerUid: widget.reviewerUid),
-                        onReject: () => _handleRejectMetadataEdit(context, pack),
+                        onApprove: () => widget.repository.approveMetadataEdit(
+                          pack,
+                          reviewerUid: widget.reviewerUid,
+                        ),
+                        onReject: () =>
+                            _handleRejectMetadataEdit(context, pack),
                       ),
                   ],
                 );
@@ -145,7 +206,9 @@ class _PackRequestCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final submittedAt = kind == _RequestKind.serialization ? pack.serializationSubmittedAt : pack.metadataSubmittedAt;
+    final submittedAt = kind == _RequestKind.serialization
+        ? pack.serializationSubmittedAt
+        : pack.metadataSubmittedAt;
 
     return Container(
       margin: const EdgeInsets.only(bottom: 12),
@@ -167,18 +230,25 @@ class _PackRequestCard extends StatelessWidget {
                   children: [
                     Text(
                       pack.title,
-                      style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 15, color: AdminColors.ivory),
+                      style: TextStyle(
+                        fontWeight: FontWeight.w700,
+                        fontSize: 15,
+                        color: AdminColors.ivory,
+                      ),
                     ),
                     const SizedBox(height: 2),
                     Text(
                       pack.authorName.isEmpty ? '(작가 이름 없음)' : pack.authorName,
-                      style: const TextStyle(fontSize: 12, color: AdminColors.muted),
+                      style: TextStyle(fontSize: 12, color: AdminColors.muted),
                     ),
                     if (submittedAt != null) ...[
                       const SizedBox(height: 2),
                       Text(
                         '${_formatDate(submittedAt)} 제출',
-                        style: const TextStyle(fontSize: 11, color: AdminColors.muted),
+                        style: TextStyle(
+                          fontSize: 11,
+                          color: AdminColors.muted,
+                        ),
                       ),
                     ],
                   ],
@@ -214,7 +284,11 @@ class _PackRequestCard extends StatelessWidget {
             const SizedBox(height: 10),
             Text(
               pack.description,
-              style: const TextStyle(fontSize: 13, color: Color(0xFFCFC3AE), height: 1.6),
+              style: TextStyle(
+                fontSize: 13,
+                color: AdminColors.ivory,
+                height: 1.6,
+              ),
             ),
           ],
         ],
@@ -232,8 +306,14 @@ class _GenreTag extends StatelessWidget {
   Widget build(BuildContext context) {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-      decoration: BoxDecoration(color: AdminColors.panel2, borderRadius: BorderRadius.circular(999)),
-      child: Text(slug, style: const TextStyle(fontSize: 11, color: AdminColors.muted)),
+      decoration: BoxDecoration(
+        color: AdminColors.panel2,
+        borderRadius: BorderRadius.circular(999),
+      ),
+      child: Text(
+        slug,
+        style: TextStyle(fontSize: 11, color: AdminColors.muted),
+      ),
     );
   }
 }
@@ -260,41 +340,54 @@ class _ActionButton extends StatelessWidget {
       borderRadius: BorderRadius.circular(6),
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-        decoration:
-            BoxDecoration(color: bg, border: Border.all(color: border), borderRadius: BorderRadius.circular(6)),
+        decoration: BoxDecoration(
+          color: bg,
+          border: Border.all(color: border),
+          borderRadius: BorderRadius.circular(6),
+        ),
         child: Text(label, style: TextStyle(fontSize: 12, color: fg)),
       ),
     );
   }
 }
 
-Future<String?> _promptRejectionReason(BuildContext context, {required String title}) {
+Future<String?> _promptRejectionReason(
+  BuildContext context, {
+  required String title,
+}) {
   final controller = TextEditingController();
   return showDialog<String>(
     context: context,
     builder: (dialogContext) => AlertDialog(
       backgroundColor: AdminColors.panel,
-      title: Text(title, style: const TextStyle(color: AdminColors.ivory)),
+      title: Text(title, style: TextStyle(color: AdminColors.ivory)),
       content: TextField(
         controller: controller,
         autofocus: true,
         maxLines: 3,
-        style: const TextStyle(color: AdminColors.ivory),
+        style: TextStyle(color: AdminColors.ivory),
         decoration: InputDecoration(
           hintText: '작가에게 보여줄 사유를 적어주세요. 비워두면 사유 없이 반려돼요.',
-          hintStyle: const TextStyle(color: AdminColors.muted, fontSize: 12),
-          enabledBorder: const UnderlineInputBorder(borderSide: BorderSide(color: AdminColors.border)),
-          focusedBorder: const UnderlineInputBorder(borderSide: BorderSide(color: AdminColors.gold)),
+          hintStyle: TextStyle(color: AdminColors.muted, fontSize: 12),
+          enabledBorder: UnderlineInputBorder(
+            borderSide: BorderSide(color: AdminColors.border),
+          ),
+          focusedBorder: const UnderlineInputBorder(
+            borderSide: BorderSide(color: AdminColors.gold),
+          ),
         ),
       ),
       actions: [
         TextButton(
           onPressed: () => Navigator.pop(dialogContext),
-          child: const Text('취소', style: TextStyle(color: AdminColors.muted)),
+          child: Text('취소', style: TextStyle(color: AdminColors.muted)),
         ),
         TextButton(
           onPressed: () => Navigator.pop(dialogContext, controller.text.trim()),
-          child: const Text('반려하기', style: TextStyle(color: AdminColors.rejectText)),
+          child: const Text(
+            '반려하기',
+            style: TextStyle(color: AdminColors.rejectText),
+          ),
         ),
       ],
     ),

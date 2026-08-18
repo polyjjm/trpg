@@ -18,7 +18,8 @@ class GenreManagementSection extends StatefulWidget {
 }
 
 class _GenreManagementSectionState extends State<GenreManagementSection> {
-  late final Stream<List<Genre>> _genresStream = widget.repository.watchAllGenres();
+  late final Stream<List<Genre>> _genresStream = widget.repository
+      .watchAllGenres();
 
   Future<void> _openCreateDialog() async {
     final result = await showDialog<_GenreFormResult>(
@@ -72,26 +73,45 @@ class _GenreManagementSectionState extends State<GenreManagementSection> {
           children: [
             Row(
               children: [
-                const Expanded(
-                  child: Text('장르 관리', style: TextStyle(fontSize: 16, color: AdminColors.ivory, fontWeight: FontWeight.w700)),
+                Expanded(
+                  child: Text(
+                    '장르 관리',
+                    style: TextStyle(
+                      fontSize: 16,
+                      color: AdminColors.ivory,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
                 ),
                 ElevatedButton(
                   onPressed: _openCreateDialog,
                   style: ElevatedButton.styleFrom(
                     backgroundColor: AdminColors.gold,
                     foregroundColor: Colors.black,
-                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 16,
+                      vertical: 10,
+                    ),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(8),
+                    ),
                   ),
-                  child: const Text('+ 새 장르', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700)),
+                  child: const Text(
+                    '+ 새 장르',
+                    style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700),
+                  ),
                 ),
               ],
             ),
             const SizedBox(height: 6),
-            const Text(
+            Text(
               '여기서 만들고 고친 장르가 새 스토리팩 만들기 화면의 장르 선택지로 바로 나타나요. '
               '삭제는 지원하지 않아요 — 안 쓰려면 비활성으로 내려주세요(이미 이 장르를 쓰는 작품이 있을 수 있어요).',
-              style: TextStyle(fontSize: 12, color: AdminColors.muted, height: 1.5),
+              style: TextStyle(
+                fontSize: 12,
+                color: AdminColors.muted,
+                height: 1.5,
+              ),
             ),
             const SizedBox(height: 16),
             StreamBuilder<List<Genre>>(
@@ -100,18 +120,26 @@ class _GenreManagementSectionState extends State<GenreManagementSection> {
                 if (snapshot.hasError) {
                   return SelectableText(
                     '장르 목록을 불러오지 못했어요: ${snapshot.error}',
-                    style: const TextStyle(fontSize: 12, color: AdminColors.danger),
+                    style: const TextStyle(
+                      fontSize: 12,
+                      color: AdminColors.danger,
+                    ),
                   );
                 }
 
                 if (snapshot.connectionState == ConnectionState.waiting) {
-                  return const Text('불러오는 중...', style: TextStyle(fontSize: 13, color: AdminColors.muted));
+                  return Text(
+                    '불러오는 중...',
+                    style: TextStyle(fontSize: 13, color: AdminColors.muted),
+                  );
                 }
 
                 final genres = snapshot.data ?? const <Genre>[];
                 if (genres.isEmpty) {
-                  return const Text('등록된 장르가 없어요. "+ 새 장르"로 첫 장르를 만들어보세요.',
-                      style: TextStyle(fontSize: 13, color: AdminColors.muted));
+                  return Text(
+                    '등록된 장르가 없어요. "+ 새 장르"로 첫 장르를 만들어보세요.',
+                    style: TextStyle(fontSize: 13, color: AdminColors.muted),
+                  );
                 }
 
                 return Column(
@@ -138,7 +166,11 @@ class _GenreRow extends StatelessWidget {
   final VoidCallback onEdit;
   final VoidCallback onToggleActive;
 
-  const _GenreRow({required this.genre, required this.onEdit, required this.onToggleActive});
+  const _GenreRow({
+    required this.genre,
+    required this.onEdit,
+    required this.onToggleActive,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -164,17 +196,30 @@ class _GenreRow extends StatelessWidget {
                     children: [
                       Text(
                         genre.name.isEmpty ? '(이름 없음)' : genre.name,
-                        style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 14, color: AdminColors.ivory),
+                        style: TextStyle(
+                          fontWeight: FontWeight.w700,
+                          fontSize: 14,
+                          color: AdminColors.ivory,
+                        ),
                       ),
                       if (dimmed) ...[
                         const SizedBox(width: 8),
                         Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 6,
+                            vertical: 2,
+                          ),
                           decoration: BoxDecoration(
                             color: AdminColors.statusDraftBg,
                             borderRadius: BorderRadius.circular(999),
                           ),
-                          child: const Text('비활성', style: TextStyle(fontSize: 9, color: AdminColors.statusDraftText)),
+                          child: const Text(
+                            '비활성',
+                            style: TextStyle(
+                              fontSize: 9,
+                              color: AdminColors.statusDraftText,
+                            ),
+                          ),
                         ),
                       ],
                     ],
@@ -182,7 +227,7 @@ class _GenreRow extends StatelessWidget {
                   const SizedBox(height: 2),
                   Text(
                     'slug: ${genre.slug} · 정렬: ${genre.sortOrder}',
-                    style: const TextStyle(fontSize: 11, color: AdminColors.muted),
+                    style: TextStyle(fontSize: 11, color: AdminColors.muted),
                   ),
                 ],
               ),
@@ -197,7 +242,10 @@ class _GenreRow extends StatelessWidget {
               onTap: onEdit,
               child: const Padding(
                 padding: EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                child: Text('편집', style: TextStyle(fontSize: 12, color: AdminColors.accent)),
+                child: Text(
+                  '편집',
+                  style: TextStyle(fontSize: 12, color: AdminColors.accent),
+                ),
               ),
             ),
           ],
@@ -213,7 +261,12 @@ class _GenreFormResult {
   final int sortOrder;
   final bool active;
 
-  const _GenreFormResult({required this.name, required this.slug, required this.sortOrder, required this.active});
+  const _GenreFormResult({
+    required this.name,
+    required this.slug,
+    required this.sortOrder,
+    required this.active,
+  });
 }
 
 /// 새 장르 만들기/기존 장르 편집을 같은 폼으로 처리한다. [existing]이 null이면
@@ -228,10 +281,15 @@ class _GenreFormDialog extends StatefulWidget {
 }
 
 class _GenreFormDialogState extends State<_GenreFormDialog> {
-  late final TextEditingController _nameController = TextEditingController(text: widget.existing?.name ?? '');
-  late final TextEditingController _slugController = TextEditingController(text: widget.existing?.slug ?? '');
-  late final TextEditingController _sortOrderController =
-      TextEditingController(text: '${widget.existing?.sortOrder ?? 0}');
+  late final TextEditingController _nameController = TextEditingController(
+    text: widget.existing?.name ?? '',
+  );
+  late final TextEditingController _slugController = TextEditingController(
+    text: widget.existing?.slug ?? '',
+  );
+  late final TextEditingController _sortOrderController = TextEditingController(
+    text: '${widget.existing?.sortOrder ?? 0}',
+  );
   late bool _active = widget.existing?.active ?? true;
 
   @override
@@ -251,7 +309,9 @@ class _GenreFormDialogState extends State<_GenreFormDialog> {
     super.dispose();
   }
 
-  bool get _canSubmit => _nameController.text.trim().isNotEmpty && _slugController.text.trim().isNotEmpty;
+  bool get _canSubmit =>
+      _nameController.text.trim().isNotEmpty &&
+      _slugController.text.trim().isNotEmpty;
 
   void _submit() {
     final sortOrder = int.tryParse(_sortOrderController.text.trim()) ?? 0;
@@ -272,7 +332,10 @@ class _GenreFormDialogState extends State<_GenreFormDialog> {
 
     return AlertDialog(
       backgroundColor: AdminColors.panel,
-      title: Text(isEditing ? '장르 편집' : '새 장르', style: const TextStyle(color: AdminColors.ivory)),
+      title: Text(
+        isEditing ? '장르 편집' : '새 장르',
+        style: TextStyle(color: AdminColors.ivory),
+      ),
       content: SizedBox(
         width: 340,
         child: SingleChildScrollView(
@@ -285,7 +348,7 @@ class _GenreFormDialogState extends State<_GenreFormDialog> {
                 child: TextField(
                   controller: _nameController,
                   autofocus: true,
-                  style: const TextStyle(color: AdminColors.ivory, fontSize: 13),
+                  style: TextStyle(color: AdminColors.ivory, fontSize: 13),
                   decoration: adminInputDecoration(hintText: '예: 공포'),
                 ),
               ),
@@ -294,7 +357,7 @@ class _GenreFormDialogState extends State<_GenreFormDialog> {
                 label: 'slug (storyPack에 저장되는 값, 영문 권장)',
                 child: TextField(
                   controller: _slugController,
-                  style: const TextStyle(color: AdminColors.ivory, fontSize: 13),
+                  style: TextStyle(color: AdminColors.ivory, fontSize: 13),
                   decoration: adminInputDecoration(hintText: '예: horror'),
                 ),
               ),
@@ -304,14 +367,17 @@ class _GenreFormDialogState extends State<_GenreFormDialog> {
                 child: TextField(
                   controller: _sortOrderController,
                   keyboardType: TextInputType.number,
-                  style: const TextStyle(color: AdminColors.ivory, fontSize: 13),
+                  style: TextStyle(color: AdminColors.ivory, fontSize: 13),
                   decoration: adminInputDecoration(hintText: '예: 1'),
                 ),
               ),
               const SizedBox(height: 16),
               Row(
                 children: [
-                  const Text('활성', style: TextStyle(fontSize: 12, color: AdminColors.muted)),
+                  Text(
+                    '활성',
+                    style: TextStyle(fontSize: 12, color: AdminColors.muted),
+                  ),
                   const Spacer(),
                   Switch(
                     value: _active,
@@ -327,11 +393,14 @@ class _GenreFormDialogState extends State<_GenreFormDialog> {
       actions: [
         TextButton(
           onPressed: () => Navigator.pop(context),
-          child: const Text('취소', style: TextStyle(color: AdminColors.muted)),
+          child: Text('취소', style: TextStyle(color: AdminColors.muted)),
         ),
         TextButton(
           onPressed: _canSubmit ? _submit : null,
-          child: Text(isEditing ? '저장' : '만들기', style: const TextStyle(color: AdminColors.gold)),
+          child: Text(
+            isEditing ? '저장' : '만들기',
+            style: const TextStyle(color: AdminColors.gold),
+          ),
         ),
       ],
     );

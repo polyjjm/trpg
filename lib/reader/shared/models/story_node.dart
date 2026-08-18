@@ -17,6 +17,11 @@ class StoryNode {
   /// 데이터 레이어(Task 3/4에서 추가)가 images 컬렉션에서 조인해야 한다.
   final String? backgroundImage;
 
+  /// [backgroundImage]가 설정돼 있을 때만 의미가 있다 — false면 이 노드는
+  /// 배경 인계 체인에서 건너뛴다(작가가 "이 노드에만 적용"을 선택한 경우,
+  /// lib/core/story/background_image_inheritance.dart).
+  final bool backgroundAppliesForward;
+
   /// 이 노드에서만 storyPack.ambientBgm 대신 재생할 트랙. null이면 팩의
   /// 기본 ambientBgm을 그대로 이어서 쓴다.
   final BgmOverride? bgmOverride;
@@ -35,6 +40,7 @@ class StoryNode {
     required this.id,
     required this.order,
     this.backgroundImage,
+    this.backgroundAppliesForward = true,
     this.bgmOverride,
     required this.blocks,
     this.choices,
@@ -49,6 +55,7 @@ class StoryNode {
       id: id,
       order: (json['order'] as num?)?.toInt() ?? 0,
       backgroundImage: json['backgroundImage'] as String?,
+      backgroundAppliesForward: json['backgroundAppliesForward'] as bool? ?? true,
       bgmOverride: bgmOverrideJson != null ? BgmOverride.fromJson(bgmOverrideJson) : null,
       blocks: (json['blocks'] as List<dynamic>?)
               ?.map((e) => NodeBlock.fromJson(e as Map<String, dynamic>))
@@ -62,6 +69,7 @@ class StoryNode {
   Map<String, dynamic> toFirestore() => {
         'order': order,
         'backgroundImage': backgroundImage,
+        'backgroundAppliesForward': backgroundAppliesForward,
         'bgmOverride': bgmOverride?.toJson(),
         'blocks': blocks.map((b) => b.toJson()).toList(),
         'choices': choices?.map((c) => c.toJson()).toList(),

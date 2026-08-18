@@ -15,17 +15,26 @@
 ///
 /// order가 같은 노드가 여럿이면(작가가 순서를 안 챙긴 경우) 어느 쪽이
 /// "앞선" 노드인지는 정의하지 않는다 — 입력 리스트의 순서를 그대로 따른다.
+///
+/// [backgroundAppliesForward]가 false인 노드(편집기의 "이후 노드부터 배경이
+/// 바뀔 때까지 자동으로 이어서 적용" 체크 해제)는 자기 자신에게만 배경을
+/// 적용하고 인계 체인에는 아무 영향을 주지 않는다 — 즉 그 노드는 체인 계산에서
+/// 있으나 없으나 마찬가지로 취급되고, 그 앞에서 이어져 오던 값(또는 그런 값이
+/// 없었으면 팩 기본값)이 그 노드를 건너뛰어 그대로 이어진다.
 String? resolveInheritedBackgroundImage({
-  required Iterable<({int order, String? backgroundImage})> nodes,
+  required Iterable<({int order, String? backgroundImage, bool backgroundAppliesForward})> nodes,
   required int targetOrder,
   required String? packDefaultBackgroundImage,
 }) {
   final earlierNodes = nodes.where((n) => n.order < targetOrder).toList()
     ..sort((a, b) => a.order.compareTo(b.order));
 
-  String? latest;
+  String? active = packDefaultBackgroundImage;
   for (final node in earlierNodes) {
-    if (node.backgroundImage != null) latest = node.backgroundImage;
+    if (node.backgroundImage == null) continue;
+    if (node.backgroundAppliesForward) active = node.backgroundImage;
+    // backgroundAppliesForward == false면 이 노드는 건너뛴다 — active를
+    // 바꾸지 않아 그 앞까지 이어져 오던 값이 그대로 유지된다.
   }
-  return latest ?? packDefaultBackgroundImage;
+  return active;
 }

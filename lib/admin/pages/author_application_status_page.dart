@@ -10,7 +10,11 @@ class AuthorApplicationStatusPage extends StatelessWidget {
   final AuthorApplication? application;
   final VoidCallback onSignOut;
 
-  const AuthorApplicationStatusPage({super.key, required this.application, required this.onSignOut});
+  const AuthorApplicationStatusPage({
+    super.key,
+    required this.application,
+    required this.onSignOut,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -26,11 +30,19 @@ class AuthorApplicationStatusPage extends StatelessWidget {
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                const Icon(Icons.hourglass_top_rounded, color: AdminColors.muted, size: 36),
+                Icon(
+                  Icons.hourglass_top_rounded,
+                  color: AdminColors.muted,
+                  size: 36,
+                ),
                 const SizedBox(height: 18),
-                const Text(
+                Text(
                   '신청서를 검토 중이에요',
-                  style: TextStyle(fontSize: 17, fontWeight: FontWeight.w700, color: AdminColors.ivory),
+                  style: TextStyle(
+                    fontSize: 17,
+                    fontWeight: FontWeight.w700,
+                    color: AdminColors.ivory,
+                  ),
                 ),
                 const SizedBox(height: 8),
                 Text(
@@ -38,12 +50,19 @@ class AuthorApplicationStatusPage extends StatelessWidget {
                       ? '검토가 끝나면 알려드릴게요.'
                       : '${_formatDate(submittedAt)}에 제출했어요.\n검토가 끝나면 알려드릴게요.',
                   textAlign: TextAlign.center,
-                  style: const TextStyle(fontSize: 13, color: AdminColors.muted, height: 1.5),
+                  style: TextStyle(
+                    fontSize: 13,
+                    color: AdminColors.muted,
+                    height: 1.5,
+                  ),
                 ),
                 const SizedBox(height: 28),
                 InkWell(
                   onTap: onSignOut,
-                  child: const Text('로그아웃', style: TextStyle(fontSize: 12, color: AdminColors.muted)),
+                  child: Text(
+                    '로그아웃',
+                    style: TextStyle(fontSize: 12, color: AdminColors.muted),
+                  ),
                 ),
               ],
             ),

@@ -27,12 +27,17 @@ class AuthorApplication {
     this.reviewedAt,
   });
 
-  factory AuthorApplication.fromFirestore(String uid, Map<String, dynamic> json) {
+  factory AuthorApplication.fromFirestore(
+    String uid,
+    Map<String, dynamic> json,
+  ) {
     return AuthorApplication(
       uid: uid,
       displayName: json['displayName'] as String? ?? '',
       bio: json['bio'] as String? ?? '',
-      portfolioLinks: (json['portfolioLinks'] as List<dynamic>?)?.cast<String>() ?? const [],
+      portfolioLinks:
+          (json['portfolioLinks'] as List<dynamic>?)?.cast<String>() ??
+          const [],
       status: AuthorApplicationStatusJson.fromWire(json['status'] as String?),
       rejectionReason: json['rejectionReason'] as String?,
       reviewedBy: json['reviewedBy'] as String?,

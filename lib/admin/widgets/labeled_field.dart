@@ -14,10 +14,7 @@ class LabeledField extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(
-          label,
-          style: const TextStyle(fontSize: 12, color: AdminColors.muted),
-        ),
+        Text(label, style: TextStyle(fontSize: 12, color: AdminColors.muted)),
         const SizedBox(height: 6),
         child,
       ],
@@ -25,29 +22,30 @@ class LabeledField extends StatelessWidget {
   }
 }
 
-/// 편집기 전반에서 쓰는 다크 테마 텍스트 필드 스타일.
+/// 편집기 전반에서 쓰는 텍스트 필드 스타일 — 라이트/다크에 따라 채움/테두리
+/// 색이 바뀐다(AdminColors.inputFill/inputBorder, admin_theme.dart 참고).
 InputDecoration adminInputDecoration({String? hintText}) {
   return InputDecoration(
     hintText: hintText,
-    hintStyle: const TextStyle(color: AdminColors.muted, fontSize: 13),
+    hintStyle: TextStyle(color: AdminColors.muted, fontSize: 13),
     filled: true,
-    fillColor: AdminColors.panel2,
-    contentPadding: const EdgeInsets.symmetric(horizontal: 11, vertical: 9),
+    fillColor: AdminColors.inputFill,
+    contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
     border: OutlineInputBorder(
       borderRadius: BorderRadius.circular(8),
-      borderSide: const BorderSide(color: AdminColors.border),
+      borderSide: BorderSide(color: AdminColors.inputBorder),
     ),
     enabledBorder: OutlineInputBorder(
       borderRadius: BorderRadius.circular(8),
-      borderSide: const BorderSide(color: AdminColors.border),
+      borderSide: BorderSide(color: AdminColors.inputBorder),
     ),
     focusedBorder: OutlineInputBorder(
       borderRadius: BorderRadius.circular(8),
-      borderSide: const BorderSide(color: AdminColors.gold),
+      borderSide: const BorderSide(color: AdminColors.gold, width: 1.5),
     ),
     disabledBorder: OutlineInputBorder(
       borderRadius: BorderRadius.circular(8),
-      borderSide: BorderSide(color: AdminColors.border.withOpacity(0.5)),
+      borderSide: BorderSide(color: AdminColors.inputDisabledBorder),
     ),
   );
 }

@@ -22,6 +22,20 @@ class AudioService {
 
   final AudioPlayer _bgmPlayer = AudioPlayer()..setReleaseMode(ReleaseMode.loop);
   String? _currentBgmPath;
+  bool _bgmMuted = false;
+
+  bool get isBgmMuted => _bgmMuted;
+
+  /// 리더 화면 하단 시트의 "BGM 끄기" 토글이 쓴다 — 트랙을 멈추지 않고
+  /// 볼륨만 0으로 낮춘다, 다시 켜면 같은 트랙이 이어서 들린다.
+  Future<void> setBgmMuted(bool muted) async {
+    _bgmMuted = muted;
+    try {
+      await _bgmPlayer.setVolume(muted ? 0 : 1);
+    } catch (e) {
+      debugPrint('BGM 음소거 전환 실패: $e');
+    }
+  }
 
   /// 배경음악을 반복 재생한다. 이미 같은 트랙이 재생 중이면 아무 것도 하지 않고,
   /// 다른 트랙이 요청되면 지금 트랙을 멈추고 바로 교체한다.

@@ -11,7 +11,11 @@ class NodeChoiceEditor extends StatelessWidget {
   final List<AdminNodeChoice> choices;
   final VoidCallback onChanged;
 
-  const NodeChoiceEditor({super.key, required this.choices, required this.onChanged});
+  const NodeChoiceEditor({
+    super.key,
+    required this.choices,
+    required this.onChanged,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -21,7 +25,14 @@ class NodeChoiceEditor extends StatelessWidget {
         Row(
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
-            const Text('선택지', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: AdminColors.ivory)),
+            Text(
+              '선택지',
+              style: TextStyle(
+                fontSize: 14,
+                fontWeight: FontWeight.w700,
+                color: AdminColors.ivory,
+              ),
+            ),
             TextButton(
               onPressed: () {
                 choices.add(AdminNodeChoice());
@@ -30,9 +41,17 @@ class NodeChoiceEditor extends StatelessWidget {
               style: TextButton.styleFrom(
                 foregroundColor: AdminColors.gold,
                 backgroundColor: AdminColors.panel2,
-                side: const BorderSide(color: AdminColors.border, style: BorderStyle.solid),
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                side: BorderSide(
+                  color: AdminColors.border,
+                  style: BorderStyle.solid,
+                ),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(6),
+                ),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 8,
+                ),
               ),
               child: const Text('+ 선택지 추가', style: TextStyle(fontSize: 12)),
             ),
@@ -57,14 +76,24 @@ class NodeChoiceEditor extends StatelessWidget {
                   children: [
                     Text(
                       '선택지 ${i + 1}',
-                      style: const TextStyle(fontSize: 11, color: AdminColors.muted, fontWeight: FontWeight.w700),
+                      style: TextStyle(
+                        fontSize: 11,
+                        color: AdminColors.muted,
+                        fontWeight: FontWeight.w700,
+                      ),
                     ),
                     InkWell(
                       onTap: () {
                         choices.removeAt(i);
                         onChanged();
                       },
-                      child: const Text('삭제', style: TextStyle(fontSize: 12, color: AdminColors.danger)),
+                      child: const Text(
+                        '삭제',
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: AdminColors.danger,
+                        ),
+                      ),
                     ),
                   ],
                 ),
@@ -73,7 +102,10 @@ class NodeChoiceEditor extends StatelessWidget {
                   label: '버튼에 표시될 텍스트',
                   child: TextFormField(
                     initialValue: choices[i].label,
-                    style: const TextStyle(color: AdminColors.ivory, fontSize: 13),
+                    style: TextStyle(
+                      color: AdminColors.inputText,
+                      fontSize: 13,
+                    ),
                     decoration: adminInputDecoration(),
                     onChanged: (value) {
                       choices[i].label = value;
@@ -86,7 +118,10 @@ class NodeChoiceEditor extends StatelessWidget {
                   label: '이동할 노드 ID',
                   child: TextFormField(
                     initialValue: choices[i].nextNodeId,
-                    style: const TextStyle(color: AdminColors.ivory, fontSize: 13),
+                    style: TextStyle(
+                      color: AdminColors.inputText,
+                      fontSize: 13,
+                    ),
                     decoration: adminInputDecoration(hintText: '예: node_02'),
                     onChanged: (value) {
                       choices[i].nextNodeId = value;
@@ -98,9 +133,12 @@ class NodeChoiceEditor extends StatelessWidget {
             ),
           ),
         if (choices.isEmpty)
-          const Padding(
-            padding: EdgeInsets.symmetric(vertical: 8),
-            child: Text('선택지가 없어요. "+ 선택지 추가"로 시작하세요.', style: TextStyle(fontSize: 12, color: AdminColors.muted)),
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: 8),
+            child: Text(
+              '선택지가 없어요. "+ 선택지 추가"로 시작하세요.',
+              style: TextStyle(fontSize: 12, color: AdminColors.muted),
+            ),
           ),
       ],
     );

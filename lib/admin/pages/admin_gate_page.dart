@@ -38,7 +38,8 @@ class AdminGatePage extends StatefulWidget {
 }
 
 class _AdminGatePageState extends State<AdminGatePage> {
-  late final GoogleAuthService _authService = widget.authService ?? GoogleAuthService();
+  late final GoogleAuthService _authService =
+      widget.authService ?? GoogleAuthService();
   late final UserProfileRepository _userProfileRepository =
       widget.userProfileRepository ?? UserProfileRepository();
   late final AuthorApplicationRepository _authorApplicationRepository =
@@ -68,7 +69,9 @@ class _AdminGatePageState extends State<AdminGatePage> {
       return (profile, null);
     }
 
-    final application = await _authorApplicationRepository.fetchApplication(user.uid);
+    final application = await _authorApplicationRepository.fetchApplication(
+      user.uid,
+    );
     return (profile, application);
   }
 
@@ -120,7 +123,8 @@ class _AdminGatePageState extends State<AdminGatePage> {
           );
         }
 
-        final canApply = profile.authorApplicationStatus == AuthorApplicationStatus.none ||
+        final canApply =
+            profile.authorApplicationStatus == AuthorApplicationStatus.none ||
             profile.authorApplicationStatus == AuthorApplicationStatus.rejected;
 
         if (canApply) {
@@ -147,9 +151,11 @@ class _AdminGateLoading extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return const Scaffold(
+    return Scaffold(
       backgroundColor: AdminColors.bg,
-      body: Center(child: CircularProgressIndicator(color: AdminColors.gold)),
+      body: const Center(
+        child: CircularProgressIndicator(color: AdminColors.gold),
+      ),
     );
   }
 }
@@ -173,14 +179,22 @@ class _AdminGateError extends StatelessWidget {
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                const Icon(Icons.error_outline_rounded, color: AdminColors.danger, size: 40),
+                const Icon(
+                  Icons.error_outline_rounded,
+                  color: AdminColors.danger,
+                  size: 40,
+                ),
                 const SizedBox(height: 16),
-                const Text(
+                Text(
                   '계정 정보를 불러오지 못했어요',
-                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700, color: AdminColors.ivory),
+                  style: TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w700,
+                    color: AdminColors.ivory,
+                  ),
                 ),
                 const SizedBox(height: 8),
-                const Text(
+                Text(
                   '네트워크 상태를 확인하고 다시 시도해주세요.',
                   textAlign: TextAlign.center,
                   style: TextStyle(fontSize: 13, color: AdminColors.muted),
@@ -189,12 +203,17 @@ class _AdminGateError extends StatelessWidget {
                 OutlinedButton(
                   onPressed: () => Navigator.pushReplacement(
                     context,
-                    MaterialPageRoute(builder: (_) => AdminGatePage(authService: authService)),
+                    MaterialPageRoute(
+                      builder: (_) => AdminGatePage(authService: authService),
+                    ),
                   ),
                   style: OutlinedButton.styleFrom(
                     foregroundColor: AdminColors.ivory,
-                    side: const BorderSide(color: AdminColors.border),
-                    padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+                    side: BorderSide(color: AdminColors.border),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 24,
+                      vertical: 12,
+                    ),
                   ),
                   child: const Text('다시 시도'),
                 ),

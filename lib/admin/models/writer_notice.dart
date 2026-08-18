@@ -28,9 +28,9 @@ class WriterNotice {
   }
 
   Map<String, dynamic> toJson() => {
-        'packId': packId,
-        'title': title,
-        'body': body,
-        'date': date,
-      };
+    'packId': packId,
+    'title': title,
+    'body': body,
+    'date': date,
+  };
 }

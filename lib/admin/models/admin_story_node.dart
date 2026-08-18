@@ -38,6 +38,13 @@ class AdminStoryNode {
   /// 참고(이 필드 자체는 항상 "이 노드가 명시적으로 고른 값"만 담는다).
   String? backgroundImageId;
 
+  /// [backgroundImageId]가 설정돼 있을 때만 의미가 있다 — true(기본값)면 이
+  /// 배경이 다음에 배경을 명시적으로 고르는 노드가 나올 때까지 이후 노드들에
+  /// 자동으로 이어서 적용된다. false면 이 노드 자신에게만 적용되고, 다음 노드는
+  /// (명시적으로 고르지 않았다면) 이 노드를 건너뛰어 그 이전에 이어져 오던
+  /// 값을 그대로 물려받는다(lib/core/story/background_image_inheritance.dart).
+  bool backgroundAppliesForward;
+
   /// storyPack.type == 'interactive'일 때만 편집기에 노출/저장된다.
   List<AdminNodeChoice> choices;
 
@@ -61,14 +68,15 @@ class AdminStoryNode {
     this.bodyText = '',
     List<AdminNodeBlock>? blocks,
     this.backgroundImageId,
+    this.backgroundAppliesForward = true,
     List<AdminNodeChoice>? choices,
     this.nextNodeId,
     this.status = NodeStatus.draft,
     this.pendingAction,
     this.liveSnapshot,
     this.dirty = false,
-  })  : blocks = blocks ?? const [],
-        choices = choices ?? [];
+  }) : blocks = blocks ?? const [],
+       choices = choices ?? [];
 
   /// 이 노드가 Firestore에 한 번도 저장된 적 없는 순수 신규 노드인지.
   bool get isNew => liveSnapshot == null;
@@ -77,7 +85,9 @@ class AdminStoryNode {
   /// 승인요청) 직전에만 호출한다. 그 전까지 [blocks]는 마지막으로 저장된
   /// 값 그대로다.
   void applyBodyTextToBlocks() {
-    blocks = splitIntoParagraphs(bodyText).map((text) => AdminNodeBlock(text: text)).toList();
+    blocks = splitIntoParagraphs(
+      bodyText,
+    ).map((text) => AdminNodeBlock(text: text)).toList();
   }
 
   /// 사이드바/승인 대기함에 title 대신 보여줄 짧은 미리보기 — bodyText의
@@ -89,7 +99,8 @@ class AdminStoryNode {
   }
 
   factory AdminStoryNode.fromFirestore(String id, Map<String, dynamic> json) {
-    final blocks = (json['blocks'] as List<dynamic>?)
+    final blocks =
+        (json['blocks'] as List<dynamic>?)
             ?.map((e) => AdminNodeBlock.fromJson(e as Map<String, dynamic>))
             .toList() ??
         const <AdminNodeBlock>[];
@@ -102,7 +113,10 @@ class AdminStoryNode {
       bodyText: blocks.map((b) => b.text).join('\n\n'),
       blocks: blocks,
       backgroundImageId: json['backgroundImage'] as String?,
-      choices: (json['choices'] as List<dynamic>?)
+      backgroundAppliesForward:
+          json['backgroundAppliesForward'] as bool? ?? true,
+      choices:
+          (json['choices'] as List<dynamic>?)
               ?.map((e) => AdminNodeChoice.fromJson(e as Map<String, dynamic>))
               .toList() ??
           [],
@@ -118,18 +132,19 @@ class AdminStoryNode {
   /// [applyBodyTextToBlocks]를 먼저 불러야 한다(story_tab_view.dart의
   /// 저장 핸들러들이 그렇게 한다).
   Map<String, dynamic> toFirestoreJson() => {
-        ...contentSnapshot(),
-        'status': status.wireValue,
-        'pendingAction': pendingAction?.wireValue,
-        'liveSnapshot': liveSnapshot,
-      };
+    ...contentSnapshot(),
+    'status': status.wireValue,
+    'pendingAction': pendingAction?.wireValue,
+    'liveSnapshot': liveSnapshot,
+  };
 
   /// 승인 시 liveSnapshot에 복사해 넣을, 지금 이 순간의 콘텐츠 스냅샷.
   Map<String, dynamic> contentSnapshot() => {
-        'order': order,
-        'blocks': blocks.map((b) => b.toJson()).toList(),
-        'backgroundImage': backgroundImageId,
-        'choices': choices.isEmpty ? null : choices.map((c) => c.toJson()).toList(),
-        'nextNodeId': nextNodeId,
-      };
+    'order': order,
+    'blocks': blocks.map((b) => b.toJson()).toList(),
+    'backgroundImage': backgroundImageId,
+    'backgroundAppliesForward': backgroundAppliesForward,
+    'choices': choices.isEmpty ? null : choices.map((c) => c.toJson()).toList(),
+    'nextNodeId': nextNodeId,
+  };
 }

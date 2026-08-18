@@ -52,6 +52,7 @@ class StoryPackRepository {
         genres: (live?['genres'] as List<dynamic>?)?.cast<String>() ?? const [],
         ttsEnabled: data['ttsEnabled'] as bool? ?? false,
         ambientBgm: data['ambientBgm'] as String?,
+        defaultBackgroundImage: data['defaultBackgroundImage'] as String?,
       );
     }).toList();
   }

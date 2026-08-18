@@ -7,11 +7,9 @@ import '../models/admin_image.dart';
 
 /// images 컬렉션(색인) + Firebase Storage(실제 파일)를 함께 다루는 저장소.
 class AdminImageRepository {
-  AdminImageRepository({
-    FirebaseFirestore? firestore,
-    FirebaseStorage? storage,
-  })  : _firestore = firestore ?? FirebaseFirestore.instance,
-        _storage = storage ?? FirebaseStorage.instance;
+  AdminImageRepository({FirebaseFirestore? firestore, FirebaseStorage? storage})
+    : _firestore = firestore ?? FirebaseFirestore.instance,
+      _storage = storage ?? FirebaseStorage.instance;
 
   final FirebaseFirestore _firestore;
   final FirebaseStorage _storage;
@@ -20,7 +18,10 @@ class AdminImageRepository {
       _firestore.collection('images');
 
   Stream<List<AdminImage>> watchImages() {
-    return _images.orderBy('name').snapshots().map(
+    return _images
+        .orderBy('name')
+        .snapshots()
+        .map(
           (snapshot) => snapshot.docs
               .map((doc) => AdminImage.fromFirestore(doc.id, doc.data()))
               .toList(),

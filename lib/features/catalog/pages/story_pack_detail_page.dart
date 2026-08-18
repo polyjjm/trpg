@@ -2,8 +2,9 @@ import 'package:flutter/material.dart';
 
 import '../../../core/state/game_state.dart';
 import '../../../core/state/game_state_scope.dart';
+import '../../../reader/interactive/interactive_reader.dart';
+import '../../../reader/linear/linear_reader.dart';
 import '../../story/data/story_nodes.dart';
-import '../../story/widgets/story_page.dart';
 import '../models/genre_style.dart';
 import '../models/story_pack.dart';
 
@@ -16,7 +17,8 @@ const List<Color> _brandGradient = [Color(0xFFFF6B4A), Color(0xFFFFB648)];
 /// 설명/메타데이터/액션 버튼이 있는 일반 스크롤 영역이다.
 ///
 /// 유료 팩도 미구매 상태로 바로 들어올 수 있으며, 무료 미리보기 한도는
-/// StoryPage 안에서 노드 이동 시점에 따로 검사한다.
+/// 리더 화면(InteractiveReader/LinearReader) 안에서 노드 이동 시점에 따로
+/// 검사한다.
 class StoryPackDetailPage extends StatelessWidget {
   final StoryPack pack;
 
@@ -67,7 +69,10 @@ class StoryPackDetailPage extends StatelessWidget {
 
   void _handleAction(BuildContext context, bool owned) {
     if (owned) {
-      Navigator.push(context, MaterialPageRoute(builder: (_) => StoryPage(pack: pack)));
+      final reader = pack.format == StoryPackFormat.linear
+          ? LinearReader(pack: pack)
+          : InteractiveReader(pack: pack);
+      Navigator.push(context, MaterialPageRoute(builder: (_) => reader));
       return;
     }
     // 결제 기능은 아직 없다 — 스텁.

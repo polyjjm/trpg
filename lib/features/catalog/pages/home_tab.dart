@@ -9,6 +9,7 @@ import '../../../core/platform/open_external_link.dart';
 import '../../../core/state/game_state_scope.dart';
 import '../../wallet/pages/charge_page.dart';
 import '../data/story_pack_repository.dart';
+import '../models/genre_style.dart';
 import '../models/story_pack.dart';
 import '../widgets/story_pack_card.dart';
 
@@ -284,9 +285,10 @@ class _HomeTabState extends State<HomeTab> {
     );
   }
 
-  /// 검색 중이 아닐 때 보여주는 가로 스크롤 섹션들. "인기"/"신작"처럼 실제
-  /// 근거 없는 구분을 만들지 않고 "전체 스토리" 한 섹션에 전부 담는다 —
-  /// 콘텐츠가 늘어나면 여기서 실제 기준으로 나누면 된다.
+  /// 검색 중이 아닐 때 보여주는 섹션들. 형식(인터랙티브/소설)으로 먼저 나누고,
+  /// 그 안에서 장르별로 가로 스크롤 행을 만든다 — 형식/장르 둘 다 실제 데이터
+  /// 기준이라 "인기"/"신작" 같은 근거 없는 구분과는 다르다. 팩이 하나도 없는
+  /// 형식 섹션은 통째로 숨긴다.
   Widget _buildBrowseSections(List<StoryPack> packs) {
     if (packs.isEmpty) {
       return Center(
@@ -297,13 +299,43 @@ class _HomeTabState extends State<HomeTab> {
       );
     }
 
+    final interactivePacks = packs.where((pack) => pack.format == StoryPackFormat.interactive).toList();
+    final linearPacks = packs.where((pack) => pack.format == StoryPackFormat.linear).toList();
+
     return ListView(
       padding: const EdgeInsets.only(bottom: 20),
       children: [
-        _buildSectionTitle('전체 스토리'),
-        const SizedBox(height: 14),
-        _buildHorizontalPackRow(packs),
+        if (interactivePacks.isNotEmpty) ..._buildTypeSection('인터랙티브', interactivePacks),
+        if (interactivePacks.isNotEmpty && linearPacks.isNotEmpty) const SizedBox(height: 28),
+        if (linearPacks.isNotEmpty) ..._buildTypeSection('소설', linearPacks),
       ],
+    );
+  }
+
+  /// 형식 섹션 하나(제목 + 장르별 가로 스크롤 행들). 장르는 별도
+  /// genres 컬렉션을 읽지 않고 팩에 실제로 등장하는 순서대로 나열한다.
+  List<Widget> _buildTypeSection(String title, List<StoryPack> packs) {
+    final genreGroups = <String, List<StoryPack>>{};
+    for (final pack in packs) {
+      genreGroups.putIfAbsent(pack.primaryGenre, () => []).add(pack);
+    }
+
+    final entries = genreGroups.entries.toList();
+    return [
+      _buildSectionTitle(title),
+      for (var i = 0; i < entries.length; i++) ...[
+        const SizedBox(height: 18),
+        _buildGenreLabel(entries[i].key),
+        const SizedBox(height: 10),
+        _buildHorizontalPackRow(entries[i].value),
+      ],
+    ];
+  }
+
+  Widget _buildGenreLabel(String genreSlug) {
+    return Text(
+      genreStyleFor(genreSlug).label,
+      style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: _ivory.withOpacity(0.72)),
     );
   }
 

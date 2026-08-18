@@ -7,7 +7,7 @@ import '../models/genre.dart';
 /// 콘솔에서 직접 채운다(FIRESTORE_SCHEMA.md 참고).
 class GenreRepository {
   GenreRepository({FirebaseFirestore? firestore})
-      : _firestore = firestore ?? FirebaseFirestore.instance;
+    : _firestore = firestore ?? FirebaseFirestore.instance;
 
   final FirebaseFirestore _firestore;
 
@@ -17,8 +17,11 @@ class GenreRepository {
         .where('active', isEqualTo: true)
         .orderBy('sortOrder')
         .snapshots()
-        .map((snapshot) =>
-            snapshot.docs.map((doc) => Genre.fromFirestore(doc.id, doc.data())).toList());
+        .map(
+          (snapshot) => snapshot.docs
+              .map((doc) => Genre.fromFirestore(doc.id, doc.data()))
+              .toList(),
+        );
   }
 
   /// 관리자 화면 전용 — 비활성 장르까지 전부 보여준다. 정렬 필드 하나만 쓰는
@@ -28,8 +31,11 @@ class GenreRepository {
         .collection('genres')
         .orderBy('sortOrder')
         .snapshots()
-        .map((snapshot) =>
-            snapshot.docs.map((doc) => Genre.fromFirestore(doc.id, doc.data())).toList());
+        .map(
+          (snapshot) => snapshot.docs
+              .map((doc) => Genre.fromFirestore(doc.id, doc.data()))
+              .toList(),
+        );
   }
 
   Future<void> createGenre({

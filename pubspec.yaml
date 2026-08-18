@@ -54,6 +54,12 @@ dependencies:
   # BGM/SFX 재생
   audioplayers: ^6.1.0
 
+  # 리더 화면 TTS(문장 읽어주기)
+  flutter_tts: ^4.2.0
+
+  # 작가 도구 라이트/다크 모드 선택 저장
+  shared_preferences: ^2.3.2
+
   # 로고(assets/images/telo_logo.svg) 렌더링 — Image.asset은 SVG를 못 그린다.
   flutter_svg: ^2.0.10+1
 

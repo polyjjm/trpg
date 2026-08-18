@@ -52,22 +52,23 @@ class NodeEditor extends StatelessWidget {
   Widget build(BuildContext context) {
     if (node.pendingAction == PendingAction.delete) {
       return SingleChildScrollView(
-        padding: const EdgeInsets.fromLTRB(32, 24, 32, 24),
+        padding: const EdgeInsets.fromLTRB(24, 20, 24, 20),
         child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 820),
+          constraints: const BoxConstraints(maxWidth: 680),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               const InfoBanner(
                 style: InfoBannerStyle.dirty,
-                text: '이 노드는 삭제 요청이 들어가 있어요. 상위 관리자 승인을 기다리는 중이고, '
+                text:
+                    '이 노드는 삭제 요청이 들어가 있어요. 상위 관리자 승인을 기다리는 중이고, '
                     '그동안 플레이어에게는 계속 원래 내용이 보여요.',
               ),
               OutlinedButton(
                 onPressed: onCancelDeleteRequest,
                 style: OutlinedButton.styleFrom(
                   foregroundColor: AdminColors.muted,
-                  side: const BorderSide(color: AdminColors.border),
+                  side: BorderSide(color: AdminColors.border),
                 ),
                 child: const Text('삭제 요청 취소하기'),
               ),
@@ -78,9 +79,9 @@ class NodeEditor extends StatelessWidget {
     }
 
     return SingleChildScrollView(
-      padding: const EdgeInsets.fromLTRB(32, 24, 32, 24),
+      padding: const EdgeInsets.fromLTRB(24, 20, 24, 20),
       child: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: 820),
+        constraints: const BoxConstraints(maxWidth: 680),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -91,7 +92,9 @@ class NodeEditor extends StatelessWidget {
                 initialValue: node.id,
                 enabled: isIdEditable,
                 style: TextStyle(
-                  color: isIdEditable ? AdminColors.ivory : AdminColors.muted,
+                  color: isIdEditable
+                      ? AdminColors.inputText
+                      : AdminColors.muted,
                   fontSize: 13,
                 ),
                 decoration: adminInputDecoration(),
@@ -102,14 +105,14 @@ class NodeEditor extends StatelessWidget {
               ),
             ),
             if (!isIdEditable)
-              const Padding(
-                padding: EdgeInsets.only(top: 4),
+              Padding(
+                padding: const EdgeInsets.only(top: 4),
                 child: Text(
                   '이미 저장된 노드의 ID는 바꿀 수 없어요.',
                   style: TextStyle(fontSize: 11, color: AdminColors.muted),
                 ),
               ),
-            const SizedBox(height: 16),
+            const SizedBox(height: 18),
             LabeledField(
               label: '순서 (배경 이미지 인계 기준 — 작은 값이 앞선 노드)',
               child: SizedBox(
@@ -117,7 +120,7 @@ class NodeEditor extends StatelessWidget {
                 child: TextFormField(
                   initialValue: '${node.order}',
                   keyboardType: TextInputType.number,
-                  style: const TextStyle(color: AdminColors.ivory, fontSize: 13),
+                  style: TextStyle(color: AdminColors.inputText, fontSize: 13),
                   decoration: adminInputDecoration(),
                   onChanged: (value) {
                     node.order = int.tryParse(value) ?? node.order;
@@ -126,7 +129,7 @@ class NodeEditor extends StatelessWidget {
                 ),
               ),
             ),
-            const SizedBox(height: 16),
+            const SizedBox(height: 18),
             LabeledField(
               label: '배경 이미지',
               child: ImagePickerField(
@@ -143,6 +146,15 @@ class NodeEditor extends StatelessWidget {
               Text(
                 _inheritanceHint(),
                 style: const TextStyle(fontSize: 11, color: AdminColors.gold),
+              ),
+            ] else ...[
+              const SizedBox(height: 10),
+              _BackgroundAppliesForwardToggle(
+                value: node.backgroundAppliesForward,
+                onChanged: (value) {
+                  node.backgroundAppliesForward = value;
+                  onChanged();
+                },
               ),
             ],
             const SizedBox(height: 24),
@@ -161,7 +173,7 @@ class NodeEditor extends StatelessWidget {
                 label: '다음 노드 ID',
                 child: TextFormField(
                   initialValue: node.nextNodeId ?? '',
-                  style: const TextStyle(color: AdminColors.ivory, fontSize: 13),
+                  style: TextStyle(color: AdminColors.inputText, fontSize: 13),
                   decoration: adminInputDecoration(hintText: '마지막 노드면 비워두세요.'),
                   onChanged: (value) {
                     node.nextNodeId = value.isEmpty ? null : value;
@@ -170,7 +182,10 @@ class NodeEditor extends StatelessWidget {
                 ),
               ),
             const SizedBox(height: 12),
-            _SaveBar(onSaveDraft: onSaveDraft, onRequestApproval: onRequestApproval),
+            _SaveBar(
+              onSaveDraft: onSaveDraft,
+              onRequestApproval: onRequestApproval,
+            ),
             const SizedBox(height: 24),
           ],
         ),
@@ -182,30 +197,42 @@ class NodeEditor extends StatelessWidget {
     final banners = <Widget>[];
 
     if (dirty) {
-      banners.add(const InfoBanner(
-        style: InfoBannerStyle.dirty,
-        text: '저장하지 않은 변경사항이 있어요. "임시저장"을 눌러야 다음에 다시 열었을 때 남아있고, '
-            '"승인 요청"을 보내야 상위 관리자 검토 후 플레이어에게 반영돼요.',
-      ));
-    } else if (node.pendingAction == PendingAction.edit || node.pendingAction == PendingAction.create) {
-      final actionLabel = node.pendingAction == PendingAction.create ? '신규 등록' : '수정';
+      banners.add(
+        const InfoBanner(
+          style: InfoBannerStyle.dirty,
+          text:
+              '저장하지 않은 변경사항이 있어요. "임시저장"을 눌러야 다음에 다시 열었을 때 남아있고, '
+              '"승인 요청"을 보내야 상위 관리자 검토 후 플레이어에게 반영돼요.',
+        ),
+      );
+    } else if (node.pendingAction == PendingAction.edit ||
+        node.pendingAction == PendingAction.create) {
+      final actionLabel = node.pendingAction == PendingAction.create
+          ? '신규 등록'
+          : '수정';
       final visibility = node.liveSnapshot != null
           ? '플레이어에게는 이전 버전이 그대로 보여요.'
           : '플레이어에게는 아직 안 보여요.';
-      banners.add(InfoBanner(
-        style: InfoBannerStyle.dirty,
-        text: '$actionLabel 승인 요청을 보냈어요. 상위 관리자가 검토 중이에요 — 승인 전까지 $visibility',
-      ));
+      banners.add(
+        InfoBanner(
+          style: InfoBannerStyle.dirty,
+          text:
+              '$actionLabel 승인 요청을 보냈어요. 상위 관리자가 검토 중이에요 — 승인 전까지 $visibility',
+        ),
+      );
     }
 
     if (node.liveSnapshot != null &&
         node.pendingAction != PendingAction.edit &&
         node.pendingAction != PendingAction.create) {
-      banners.add(const InfoBanner(
-        style: InfoBannerStyle.live,
-        text: '이 노드는 현재 연재 중이에요. 지금 여기서 수정하면 바로 반영되는 게 아니라, '
-            '"승인 요청"을 보내서 상위 관리자가 승인해야 실제 반영돼요.',
-      ));
+      banners.add(
+        const InfoBanner(
+          style: InfoBannerStyle.live,
+          text:
+              '이 노드는 현재 연재 중이에요. 지금 여기서 수정하면 바로 반영되는 게 아니라, '
+              '"승인 요청"을 보내서 상위 관리자가 승인해야 실제 반영돼요.',
+        ),
+      );
     }
 
     return banners;
@@ -219,7 +246,9 @@ class NodeEditor extends StatelessWidget {
     if (inherited == null) {
       return '(기본값 없음 — 이 노드부터 배경 이미지가 표시되지 않아요)';
     }
-    final matchingImage = images.where((img) => img.id == inherited).firstOrNull;
+    final matchingImage = images
+        .where((img) => img.id == inherited)
+        .firstOrNull;
     final label = matchingImage?.name ?? inherited;
     return '(기본값 사용 · 이전 노드에서 이어짐: $label)';
   }
@@ -227,6 +256,82 @@ class NodeEditor extends StatelessWidget {
 
 extension _FirstOrNull<T> on Iterable<T> {
   T? get firstOrNull => isEmpty ? null : first;
+}
+
+/// 배경 이미지를 명시적으로 고른 노드에서만 보이는 체크박스 — 인계 체인
+/// 자체는 이미 동작하던 기존 로직(lib/core/story/
+/// background_image_inheritance.dart)이고, 이 위젯은 그 동작을 작가에게
+/// 눈에 보이게 확인시켜 줄 뿐이다. 기본값(체크됨)은 지금까지의 동작 그대로다.
+class _BackgroundAppliesForwardToggle extends StatelessWidget {
+  final bool value;
+  final ValueChanged<bool> onChanged;
+
+  const _BackgroundAppliesForwardToggle({
+    required this.value,
+    required this.onChanged,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: AdminColors.panel2,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: AdminColors.border),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Checkbox(
+            value: value,
+            fillColor: WidgetStateProperty.resolveWith(
+              (states) => states.contains(WidgetState.selected)
+                  ? AdminColors.gold
+                  : AdminColors.checkboxUncheckedFill,
+            ),
+            checkColor: AdminColors.checkboxCheckColor,
+            side: BorderSide(
+              color: AdminColors.checkboxUncheckedBorder,
+              width: 1.5,
+            ),
+            onChanged: (checked) => onChanged(checked ?? true),
+          ),
+          Expanded(
+            child: Padding(
+              padding: const EdgeInsets.only(top: 12),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    '이후 노드부터 배경이 바뀔 때까지 자동으로 이어서 적용',
+                    style: TextStyle(
+                      fontSize: 13,
+                      color: AdminColors.ivory,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    value
+                        ? '체크 해제하면 이 배경은 이 노드에만 적용돼요. 다음 노드부터는 이 노드가 '
+                              '없었던 것처럼, 그 이전에 이어져 오던 배경(또는 기본 배경)으로 돌아가요.'
+                        : '지금은 이 노드에만 적용돼요. 다음 노드부터는 이 노드가 없었던 것처럼, 그 이전에 '
+                              '이어져 오던 배경(또는 기본 배경)이 계속 이어져요.',
+                    style: TextStyle(
+                      fontSize: 11,
+                      color: AdminColors.muted,
+                      height: 1.4,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
 }
 
 class _SaveBar extends StatelessWidget {
@@ -239,7 +344,7 @@ class _SaveBar extends StatelessWidget {
   Widget build(BuildContext context) {
     return Container(
       padding: const EdgeInsets.only(top: 18),
-      decoration: const BoxDecoration(
+      decoration: BoxDecoration(
         border: Border(top: BorderSide(color: AdminColors.border)),
       ),
       child: Wrap(
@@ -251,9 +356,11 @@ class _SaveBar extends StatelessWidget {
             onPressed: onSaveDraft,
             style: OutlinedButton.styleFrom(
               foregroundColor: AdminColors.muted,
-              side: const BorderSide(color: AdminColors.border),
+              side: BorderSide(color: AdminColors.border),
               padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 11),
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(8),
+              ),
             ),
             child: const Text('임시저장 (나만 보임)', style: TextStyle(fontSize: 13)),
           ),
@@ -261,11 +368,17 @@ class _SaveBar extends StatelessWidget {
             onPressed: onRequestApproval,
             style: ElevatedButton.styleFrom(
               backgroundColor: AdminColors.gold,
-              foregroundColor: const Color(0xFF111111),
+              foregroundColor: Colors.white,
+              elevation: 0,
               padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 11),
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(8),
+              ),
             ),
-            child: const Text('승인 요청 보내기', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700)),
+            child: const Text(
+              '승인 요청 보내기',
+              style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700),
+            ),
           ),
           OutlinedButton(
             onPressed: () {
@@ -273,8 +386,11 @@ class _SaveBar extends StatelessWidget {
                 context: context,
                 builder: (dialogContext) => AlertDialog(
                   backgroundColor: AdminColors.panel,
-                  title: const Text('미리보기', style: TextStyle(color: AdminColors.ivory)),
-                  content: const Text(
+                  title: Text(
+                    '미리보기',
+                    style: TextStyle(color: AdminColors.ivory),
+                  ),
+                  content: Text(
                     '실제 구현되면 여기서 바로 플레이해볼 수 있어요.',
                     style: TextStyle(color: AdminColors.muted),
                   ),
@@ -289,9 +405,11 @@ class _SaveBar extends StatelessWidget {
             },
             style: OutlinedButton.styleFrom(
               foregroundColor: AdminColors.muted,
-              side: const BorderSide(color: AdminColors.border),
+              side: BorderSide(color: AdminColors.border),
               padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 11),
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(8),
+              ),
             ),
             child: const Text('미리보기', style: TextStyle(fontSize: 13)),
           ),

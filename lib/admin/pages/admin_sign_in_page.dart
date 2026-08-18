@@ -39,7 +39,9 @@ class _AdminSignInPageState extends State<AdminSignInPage> {
 
     Navigator.pushReplacement(
       context,
-      MaterialPageRoute(builder: (_) => AdminGatePage(authService: widget.authService)),
+      MaterialPageRoute(
+        builder: (_) => AdminGatePage(authService: widget.authService),
+      ),
     );
   }
 
@@ -55,12 +57,16 @@ class _AdminSignInPageState extends State<AdminSignInPage> {
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                const Text(
+                Text(
                   '작가 편집기',
-                  style: TextStyle(fontSize: 22, fontWeight: FontWeight.w800, color: AdminColors.ivory),
+                  style: TextStyle(
+                    fontSize: 22,
+                    fontWeight: FontWeight.w800,
+                    color: AdminColors.ivory,
+                  ),
                 ),
                 const SizedBox(height: 8),
-                const Text(
+                Text(
                   'Google 계정으로 로그인하세요.',
                   textAlign: TextAlign.center,
                   style: TextStyle(fontSize: 13, color: AdminColors.muted),
@@ -75,20 +81,31 @@ class _AdminSignInPageState extends State<AdminSignInPage> {
                         ? const SizedBox(
                             width: 16,
                             height: 16,
-                            child: CircularProgressIndicator(strokeWidth: 2, color: Colors.black),
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                              color: Colors.black,
+                            ),
                           )
                         : const Icon(Icons.login_rounded),
                     label: Text(_isSigningIn ? '로그인 중...' : 'Google로 로그인'),
                     style: ElevatedButton.styleFrom(
                       backgroundColor: AdminColors.gold,
                       foregroundColor: Colors.black,
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(10),
+                      ),
                     ),
                   ),
                 ),
                 if (_errorMessage != null) ...[
                   const SizedBox(height: 14),
-                  Text(_errorMessage!, style: const TextStyle(color: AdminColors.danger, fontSize: 12)),
+                  Text(
+                    _errorMessage!,
+                    style: const TextStyle(
+                      color: AdminColors.danger,
+                      fontSize: 12,
+                    ),
+                  ),
                 ],
               ],
             ),

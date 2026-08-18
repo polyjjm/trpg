@@ -31,27 +31,53 @@ class StatusTag extends StatelessWidget {
   Widget build(BuildContext context) {
     final (label, bg, fg) = _resolve();
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
-      decoration: BoxDecoration(color: bg, borderRadius: BorderRadius.circular(999)),
-      child: Text(label, style: TextStyle(fontSize: 10, color: fg, fontWeight: FontWeight.w600)),
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+      decoration: BoxDecoration(
+        color: bg,
+        borderRadius: BorderRadius.circular(999),
+      ),
+      child: Text(
+        label,
+        style: TextStyle(fontSize: 10, color: fg, fontWeight: FontWeight.w600),
+      ),
     );
   }
 
   (String, Color, Color) _resolve() {
     if (dirty) {
-      return ('수정중(미저장)', AdminColors.statusDraftBg, AdminColors.statusDraftText);
+      return (
+        '수정중(미저장)',
+        AdminColors.statusDraftBg,
+        AdminColors.statusDraftText,
+      );
     }
     if (pendingAction == PendingAction.delete) {
-      return ('삭제 승인대기', AdminColors.statusPendingDeleteBg, AdminColors.statusPendingDeleteText);
+      return (
+        '삭제 승인대기',
+        AdminColors.statusPendingDeleteBg,
+        AdminColors.statusPendingDeleteText,
+      );
     }
     if (pendingAction == PendingAction.create) {
-      return ('등록 승인대기', AdminColors.statusPendingBg, AdminColors.statusPendingText);
+      return (
+        '등록 승인대기',
+        AdminColors.statusPendingBg,
+        AdminColors.statusPendingText,
+      );
     }
     if (pendingAction == PendingAction.edit) {
-      return ('수정 승인대기', AdminColors.statusPendingBg, AdminColors.statusPendingText);
+      return (
+        '수정 승인대기',
+        AdminColors.statusPendingBg,
+        AdminColors.statusPendingText,
+      );
     }
     if (status == NodeStatus.published) {
-      return ('연재중', AdminColors.statusPublishedBg, AdminColors.statusPublishedText);
+      return (
+        '연재중',
+        AdminColors.statusPublishedBg,
+        AdminColors.statusPublishedText,
+      );
     }
     return ('초안', AdminColors.statusDraftBg, AdminColors.statusDraftText);
   }

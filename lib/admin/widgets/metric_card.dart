@@ -25,10 +25,14 @@ class MetricCard extends StatelessWidget {
         children: [
           Text(
             count == null ? '-' : '$count',
-            style: const TextStyle(fontSize: 26, fontWeight: FontWeight.w800, color: AdminColors.gold),
+            style: const TextStyle(
+              fontSize: 26,
+              fontWeight: FontWeight.w800,
+              color: AdminColors.gold,
+            ),
           ),
           const SizedBox(height: 4),
-          Text(label, style: const TextStyle(fontSize: 12, color: AdminColors.muted)),
+          Text(label, style: TextStyle(fontSize: 12, color: AdminColors.muted)),
         ],
       ),
     );

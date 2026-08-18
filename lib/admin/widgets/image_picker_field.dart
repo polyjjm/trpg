@@ -28,7 +28,7 @@ class ImagePickerField extends StatelessWidget {
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(6),
             border: Border.all(color: AdminColors.border),
-            color: Colors.black,
+            color: AdminColors.panel2,
           ),
           clipBehavior: Clip.antiAlias,
           child: selected == null
@@ -38,26 +38,39 @@ class ImagePickerField extends StatelessWidget {
         const SizedBox(width: 10),
         Expanded(
           child: DropdownButtonFormField<String>(
-            initialValue: currentId != null && images.any((img) => img.id == currentId)
+            initialValue:
+                currentId != null && images.any((img) => img.id == currentId)
                 ? currentId
                 : null,
             decoration: InputDecoration(
               isDense: true,
               filled: true,
-              fillColor: AdminColors.panel2,
-              contentPadding: const EdgeInsets.symmetric(horizontal: 11, vertical: 9),
+              fillColor: AdminColors.inputFill,
+              contentPadding: const EdgeInsets.symmetric(
+                horizontal: 11,
+                vertical: 9,
+              ),
               border: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(8),
-                borderSide: const BorderSide(color: AdminColors.border),
+                borderSide: BorderSide(color: AdminColors.inputBorder),
               ),
             ),
-            dropdownColor: AdminColors.panel2,
-            style: const TextStyle(color: AdminColors.ivory, fontSize: 13),
-            hint: const Text('(선택 안 함)', style: TextStyle(color: AdminColors.muted, fontSize: 13)),
+            dropdownColor: AdminColors.inputDropdownMenuBg,
+            style: TextStyle(color: AdminColors.inputText, fontSize: 13),
+            hint: Text(
+              '(선택 안 함)',
+              style: TextStyle(color: AdminColors.muted, fontSize: 13),
+            ),
             items: [
-              const DropdownMenuItem<String>(value: null, child: Text('(선택 안 함)')),
+              const DropdownMenuItem<String>(
+                value: null,
+                child: Text('(선택 안 함)'),
+              ),
               ...images.map(
-                (img) => DropdownMenuItem<String>(value: img.id, child: Text(img.name)),
+                (img) => DropdownMenuItem<String>(
+                  value: img.id,
+                  child: Text(img.name),
+                ),
               ),
             ],
             onChanged: onChanged,
@@ -65,7 +78,7 @@ class ImagePickerField extends StatelessWidget {
         ),
         if (images.isEmpty) ...[
           const SizedBox(width: 10),
-          const Flexible(
+          Flexible(
             child: Text(
               '→ 이미지 라이브러리에서 먼저 업로드하세요',
               style: TextStyle(fontSize: 11, color: AdminColors.muted),

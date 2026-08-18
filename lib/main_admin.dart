@@ -18,6 +18,7 @@ import 'firebase_options.dart';
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
+  await AdminTheme.load();
   runApp(const AdminApp());
 }
 
@@ -26,19 +27,40 @@ class AdminApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return MaterialApp(
-      title: 'Telo 작가 편집기',
-      debugShowCheckedModeBanner: false,
-      theme: ThemeData(
-        brightness: Brightness.dark,
-        scaffoldBackgroundColor: AdminColors.bg,
-        fontFamily: 'NotoSansKR',
-        colorScheme: ColorScheme.fromSeed(
-          seedColor: AdminColors.gold,
-          brightness: Brightness.dark,
-        ),
-      ),
-      home: const AdminGatePage(),
+    // AdminTheme.mode가 바뀔 때마다(라이트/다크 토글) MaterialApp을 통째로
+    // 다시 그린다 — themeMode가 바뀌면 기본 Material 위젯(체크박스/스위치
+    // 기본 색상 등 AdminColors로 직접 칠하지 않은 것들)은 즉시 반응한다.
+    // AdminColors 자체는 여전히 static const라(admin_theme.dart 상단 doc
+    // 참고) 화면 대부분의 색은 이 토글에 반응하지 않는다 — 인프라(저장/토글
+    // 버튼)만 이번 패스 범위다.
+    return ValueListenableBuilder<ThemeMode>(
+      valueListenable: AdminTheme.mode,
+      builder: (context, themeMode, _) {
+        return MaterialApp(
+          title: 'Telo 작가 편집기',
+          debugShowCheckedModeBanner: false,
+          themeMode: themeMode,
+          theme: ThemeData(
+            brightness: Brightness.light,
+            scaffoldBackgroundColor: const Color(0xFFFBF8F3),
+            fontFamily: 'NotoSansKR',
+            colorScheme: ColorScheme.fromSeed(
+              seedColor: AdminColors.gold,
+              brightness: Brightness.light,
+            ),
+          ),
+          darkTheme: ThemeData(
+            brightness: Brightness.dark,
+            scaffoldBackgroundColor: AdminColors.bg,
+            fontFamily: 'NotoSansKR',
+            colorScheme: ColorScheme.fromSeed(
+              seedColor: AdminColors.gold,
+              brightness: Brightness.dark,
+            ),
+          ),
+          home: const AdminGatePage(),
+        );
+      },
     );
   }
 }

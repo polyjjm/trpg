@@ -13,7 +13,11 @@ class AuthorApplicationsTab extends StatefulWidget {
   final AuthorApplicationRepository repository;
   final String reviewerUid;
 
-  const AuthorApplicationsTab({super.key, required this.repository, required this.reviewerUid});
+  const AuthorApplicationsTab({
+    super.key,
+    required this.repository,
+    required this.reviewerUid,
+  });
 
   @override
   State<AuthorApplicationsTab> createState() => _AuthorApplicationsTabState();
@@ -23,9 +27,13 @@ class _AuthorApplicationsTabState extends State<AuthorApplicationsTab> {
   /// ApprovalsTab에서 겪은 것과 같은 이유로 State에 한 번만 만든다 — build()가
   /// 다시 돌 때마다 watchPendingApplications()를 새로 부르면 승인/반려 직후
   /// 목록이 나타났다 사라지는 것처럼 깜빡인다.
-  late final Stream<List<AuthorApplication>> _pendingStream = widget.repository.watchPendingApplications();
+  late final Stream<List<AuthorApplication>> _pendingStream = widget.repository
+      .watchPendingApplications();
 
-  Future<void> _handleReject(BuildContext context, AuthorApplication application) async {
+  Future<void> _handleReject(
+    BuildContext context,
+    AuthorApplication application,
+  ) async {
     final reason = await _promptRejectionReason(context);
     if (reason == null) return;
 
@@ -45,12 +53,23 @@ class _AuthorApplicationsTabState extends State<AuthorApplicationsTab> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text('작가 신청', style: TextStyle(fontSize: 16, color: AdminColors.ivory, fontWeight: FontWeight.w700)),
+            Text(
+              '작가 신청',
+              style: TextStyle(
+                fontSize: 16,
+                color: AdminColors.ivory,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
             const SizedBox(height: 6),
-            const Text(
+            Text(
               '승인하면 이 계정이 바로 작가 편집기를 쓸 수 있어요. 이 계정이 실제로 쓰는 이야기는 '
               '여전히 "승인 대기함" 탭에서 따로 검토해요 — 여기서는 작가 자격만 판단해요.',
-              style: TextStyle(fontSize: 12, color: AdminColors.muted, height: 1.5),
+              style: TextStyle(
+                fontSize: 12,
+                color: AdminColors.muted,
+                height: 1.5,
+              ),
             ),
             const SizedBox(height: 16),
             StreamBuilder<List<AuthorApplication>>(
@@ -59,21 +78,30 @@ class _AuthorApplicationsTabState extends State<AuthorApplicationsTab> {
                 if (snapshot.hasError) {
                   return SelectableText(
                     '작가 신청 목록을 불러오지 못했어요: ${snapshot.error}',
-                    style: const TextStyle(fontSize: 12, color: AdminColors.danger),
+                    style: const TextStyle(
+                      fontSize: 12,
+                      color: AdminColors.danger,
+                    ),
                   );
                 }
 
-                final applications = snapshot.data ?? const <AuthorApplication>[];
+                final applications =
+                    snapshot.data ?? const <AuthorApplication>[];
                 if (applications.isEmpty) {
-                  return const Text('대기 중인 신청이 없어요.', style: TextStyle(fontSize: 13, color: AdminColors.muted));
+                  return Text(
+                    '대기 중인 신청이 없어요.',
+                    style: TextStyle(fontSize: 13, color: AdminColors.muted),
+                  );
                 }
                 return Column(
                   children: [
                     for (final application in applications)
                       _ApplicationCard(
                         application: application,
-                        onApprove: () =>
-                            widget.repository.approveApplication(application, reviewerUid: widget.reviewerUid),
+                        onApprove: () => widget.repository.approveApplication(
+                          application,
+                          reviewerUid: widget.reviewerUid,
+                        ),
                         onReject: () => _handleReject(context, application),
                       ),
                   ],
@@ -92,7 +120,11 @@ class _ApplicationCard extends StatelessWidget {
   final VoidCallback onApprove;
   final VoidCallback onReject;
 
-  const _ApplicationCard({required this.application, required this.onApprove, required this.onReject});
+  const _ApplicationCard({
+    required this.application,
+    required this.onApprove,
+    required this.onReject,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -115,14 +147,23 @@ class _ApplicationCard extends StatelessWidget {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      application.displayName.isEmpty ? '(이름 없음)' : application.displayName,
-                      style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 15, color: AdminColors.ivory),
+                      application.displayName.isEmpty
+                          ? '(이름 없음)'
+                          : application.displayName,
+                      style: TextStyle(
+                        fontWeight: FontWeight.w700,
+                        fontSize: 15,
+                        color: AdminColors.ivory,
+                      ),
                     ),
                     if (application.submittedAt != null) ...[
                       const SizedBox(height: 2),
                       Text(
                         '${_formatDate(application.submittedAt!)} 제출',
-                        style: const TextStyle(fontSize: 11, color: AdminColors.muted),
+                        style: TextStyle(
+                          fontSize: 11,
+                          color: AdminColors.muted,
+                        ),
                       ),
                     ],
                   ],
@@ -149,12 +190,19 @@ class _ApplicationCard extends StatelessWidget {
           const SizedBox(height: 12),
           Text(
             application.bio.isEmpty ? '(자기소개 없음)' : application.bio,
-            style: const TextStyle(fontSize: 13, color: Color(0xFFCFC3AE), height: 1.6),
+            style: TextStyle(
+              fontSize: 13,
+              color: AdminColors.ivory,
+              height: 1.6,
+            ),
           ),
           if (application.portfolioLinks.isNotEmpty) ...[
             const SizedBox(height: 10),
             for (final link in application.portfolioLinks)
-              Text(link, style: const TextStyle(fontSize: 12, color: AdminColors.accent)),
+              Text(
+                link,
+                style: const TextStyle(fontSize: 12, color: AdminColors.accent),
+              ),
           ],
         ],
       ),
@@ -201,27 +249,34 @@ Future<String?> _promptRejectionReason(BuildContext context) {
     context: context,
     builder: (dialogContext) => AlertDialog(
       backgroundColor: AdminColors.panel,
-      title: const Text('반려 사유 (선택)', style: TextStyle(color: AdminColors.ivory)),
+      title: Text('반려 사유 (선택)', style: TextStyle(color: AdminColors.ivory)),
       content: TextField(
         controller: controller,
         autofocus: true,
         maxLines: 3,
-        style: const TextStyle(color: AdminColors.ivory),
+        style: TextStyle(color: AdminColors.ivory),
         decoration: InputDecoration(
           hintText: '신청자에게 보여줄 사유를 적어주세요. 비워두면 사유 없이 반려돼요.',
-          hintStyle: const TextStyle(color: AdminColors.muted, fontSize: 12),
-          enabledBorder: const UnderlineInputBorder(borderSide: BorderSide(color: AdminColors.border)),
-          focusedBorder: const UnderlineInputBorder(borderSide: BorderSide(color: AdminColors.gold)),
+          hintStyle: TextStyle(color: AdminColors.muted, fontSize: 12),
+          enabledBorder: UnderlineInputBorder(
+            borderSide: BorderSide(color: AdminColors.border),
+          ),
+          focusedBorder: const UnderlineInputBorder(
+            borderSide: BorderSide(color: AdminColors.gold),
+          ),
         ),
       ),
       actions: [
         TextButton(
           onPressed: () => Navigator.pop(dialogContext),
-          child: const Text('취소', style: TextStyle(color: AdminColors.muted)),
+          child: Text('취소', style: TextStyle(color: AdminColors.muted)),
         ),
         TextButton(
           onPressed: () => Navigator.pop(dialogContext, controller.text.trim()),
-          child: const Text('반려하기', style: TextStyle(color: AdminColors.rejectText)),
+          child: const Text(
+            '반려하기',
+            style: TextStyle(color: AdminColors.rejectText),
+          ),
         ),
       ],
     ),

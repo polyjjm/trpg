@@ -21,6 +21,16 @@ class AdminStoryNodeSummary {
   /// 이 노드가 명시적으로 고른 배경 이미지. null이면 인계받는 노드다.
   final String? backgroundImageId;
 
+  /// [backgroundImageId]가 설정돼 있을 때만 의미가 있다 — false면 이 노드는
+  /// 배경 인계 체인 계산에서 건너뛴다(lib/core/story/
+  /// background_image_inheritance.dart).
+  final bool backgroundAppliesForward;
+
+  /// liveSnapshot 존재 여부만(내용은 빼고) — 목록 스트림을 가볍게 유지하면서도
+  /// StoryTabView가 "지금 편집 중인 노드가 서버에서 승인/반려됐는지"를 라이브로
+  /// 감지하는 데 쓴다(liveSnapshot의 실제 내용은 여전히 fetchNode()로만 읽는다).
+  final bool hasLiveSnapshot;
+
   const AdminStoryNodeSummary({
     required this.id,
     required this.preview,
@@ -28,11 +38,18 @@ class AdminStoryNodeSummary {
     required this.pendingAction,
     required this.order,
     required this.backgroundImageId,
+    this.backgroundAppliesForward = true,
+    required this.hasLiveSnapshot,
   });
 
-  factory AdminStoryNodeSummary.fromFirestore(String id, Map<String, dynamic> json) {
+  factory AdminStoryNodeSummary.fromFirestore(
+    String id,
+    Map<String, dynamic> json,
+  ) {
     final blocks = json['blocks'] as List<dynamic>?;
-    final firstBlock = (blocks != null && blocks.isNotEmpty) ? blocks.first as Map<String, dynamic>? : null;
+    final firstBlock = (blocks != null && blocks.isNotEmpty)
+        ? blocks.first as Map<String, dynamic>?
+        : null;
     final previewText = (firstBlock?['text'] as String?)?.trim() ?? '';
 
     return AdminStoryNodeSummary(
@@ -42,6 +59,9 @@ class AdminStoryNodeSummary {
       pendingAction: pendingActionFromWire(json['pendingAction'] as String?),
       order: (json['order'] as num?)?.toInt() ?? 0,
       backgroundImageId: json['backgroundImage'] as String?,
+      backgroundAppliesForward:
+          json['backgroundAppliesForward'] as bool? ?? true,
+      hasLiveSnapshot: json['liveSnapshot'] != null,
     );
   }
 }

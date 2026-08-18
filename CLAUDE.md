@@ -30,11 +30,19 @@ Feature-first layout under `lib/features/<feature>/{pages,widgets,models,service
 
 ### Navigation flow
 
-`main.dart` (`MyApp` → `MainPage`, the title screen) → `StoryPage` (`features/story`), pushed/popped via `Navigator.push`/`pop` with typed result objects rather than a router package (no named routes, no `go_router`/`Navigator 2.0`).
+`main.dart` (`MyApp` → `MainPage`, the title screen) → `CatalogShellPage` (`features/catalog`, the library/home tab bar) → `StoryPackDetailPage` → `InteractiveReader`/`LinearReader` (`lib/reader/`, picked by `storyPack.format` — see "Reader system" below), all pushed/popped via `Navigator.push`/`pop` with typed result objects rather than a router package (no named routes, no `go_router`/`Navigator 2.0`).
 
-### Story system (`lib/features/story`)
+The old hardcoded `features/story/widgets/story_page.dart` (`StoryPage`) has been retired — it rendered the hand-written `features/story/data/story_nodes.dart` content directly. `features/story/data/story_nodes.dart`, `storyStartNodeId`, and the battle/encounter/merchant demo pages it drove are still referenced elsewhere (`GameStateProvider`'s initial `GameState`, `EncounterPage`) and haven't been removed, but nothing routes into that hardcoded story graph as a full reading experience anymore.
 
-`StoryPage` renders background art, a `TypewriterText` animated-reveal widget for narrative copy, and choice buttons that appear once typing completes (`onComplete` callback). Choices can trigger navigation into a battle (see above) or be no-ops for content not yet written.
+### Reader system (`lib/reader/`)
+
+Real per-pack content now flows from Firestore (`storyPacks/{packId}/nodes`, reading each node's `liveSnapshot` — the last-approved content, never the top-level "currently editing" fields, same pattern as `StoryPackRepository`'s `liveMetadata`) via `StoryReaderRepository` (`lib/reader/shared/data/story_reader_repository.dart`), which also resolves each node's background image through the inheritance chain (`lib/core/story/background_image_inheritance.dart`: explicit node value → nearest earlier node by `order` → `storyPack.defaultBackgroundImage` → none) and joins `images/{imageId}` docs to real URLs.
+
+`SceneFrame` (`lib/reader/shared/scene_frame.dart`) is the shared full-screen node renderer both reader types build on: it types out `blocks` (paragraph/beat/image) in order, fades in a background banner, and — once typing completes — fades in a type-specific action area supplied by the caller via `actionAreaBuilder`. It also owns a collapsible bottom settings sheet (TTS play/pause via `lib/reader/shared/tts_controller.dart` wrapping `flutter_tts`, BGM mute via `AudioService`, font selector, typing-animation toggle) backed by a per-user `users/{uid}/readerPrefs/settings` Firestore doc (`ReaderPrefsRepository`).
+
+- `InteractiveReader` (`lib/reader/interactive/`): `storyPack.type == 'interactive'`. Renders `node.choices` as buttons; tapping one calls `GameState.goToNode(choice.nextNodeId)` and swaps to that node in place (no new route per node).
+- `LinearReader` (`lib/reader/linear/`): `storyPack.type == 'linear'`. Renders a single "다음" button following `node.nextNodeId`, or "완료" when it's null.
+- Both reuse `GameState.ownsPack`/`visitedNodeCount`/`previewNodeLimit` for the free-preview paywall (`lib/reader/shared/paywall.dart`) — note this progress tracking is still global on `GameState`, not per-pack (a pre-existing limitation, unchanged by the reader work).
 
 ### Panel system (`lib/features/panel`)
 
@@ -70,7 +78,7 @@ consistent as you implement each one — later prompts assume earlier ones are d
   state if none exists yet). Signed-out/guest play keeps working purely in memory — nothing is
   synced until `authService.userId` is non-null.
 - `MainPage`'s '이어하기' button (`lib/main.dart`) is wired to this: already-signed-in users
-  load their cloud save and go straight into `StoryPage`; signed-out users go to
+  load their cloud save and go straight into `CatalogShellPage`; signed-out users go to
   `SignInPage` (`lib/features/auth/pages/sign_in_page.dart`), which offers "Google로 로그인"
   or "로그인 없이 계속하기" (guest).
 

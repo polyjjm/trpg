@@ -34,6 +34,12 @@ service cloud.firestore {
       allow read, write: if isSignedIn() && myUid() == userId;
     }
 
+    // 리더 화면(SceneFrame) 표시/재생 환경설정 — save/current와 같은 "본인만
+    // 읽고 쓴다" 패턴.
+    match /users/{userId}/readerPrefs/{prefsDocId} {
+      allow read, write: if isSignedIn() && myUid() == userId;
+    }
+
     // users/{uid} — 신원/권한 문서. role/authorApplicationStatus는 본인이 함부로
     // 못 바꾼다(승인/반려 흐름을 통해서만 바뀐다).
     match /users/{userId} {

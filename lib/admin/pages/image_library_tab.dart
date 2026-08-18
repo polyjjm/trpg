@@ -49,9 +49,16 @@ class _ImageLibraryTabState extends State<ImageLibraryTab> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text('이미지 라이브러리', style: TextStyle(fontSize: 16, color: AdminColors.ivory, fontWeight: FontWeight.w700)),
+          Text(
+            '이미지 라이브러리',
+            style: TextStyle(
+              fontSize: 16,
+              color: AdminColors.ivory,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
           const SizedBox(height: 6),
-          const Text(
+          Text(
             '여기에 업로드한 이미지를 노드 배경이나 선택지 전용 이미지로 고를 수 있어요.',
             style: TextStyle(fontSize: 12, color: AdminColors.muted),
           ),
@@ -69,7 +76,7 @@ class _ImageLibraryTabState extends State<ImageLibraryTab> {
               child: Center(
                 child: Text(
                   _isUploading ? '업로드 중...' : '클릭해서 이미지 업로드 (여러 장 선택 가능)',
-                  style: const TextStyle(color: AdminColors.muted, fontSize: 13),
+                  style: TextStyle(color: AdminColors.muted, fontSize: 13),
                 ),
               ),
             ),
@@ -80,14 +87,20 @@ class _ImageLibraryTabState extends State<ImageLibraryTab> {
             builder: (context, snapshot) {
               final images = snapshot.data ?? const <AdminImage>[];
               if (images.isEmpty) {
-                return const Text('업로드된 이미지가 없어요.', style: TextStyle(fontSize: 13, color: AdminColors.muted));
+                return Text(
+                  '업로드된 이미지가 없어요.',
+                  style: TextStyle(fontSize: 13, color: AdminColors.muted),
+                );
               }
               return Wrap(
                 spacing: 14,
                 runSpacing: 14,
                 children: [
                   for (final image in images)
-                    _ImageCard(image: image, onDelete: () => widget.repository.deleteImage(image)),
+                    _ImageCard(
+                      image: image,
+                      onDelete: () => widget.repository.deleteImage(image),
+                    ),
                 ],
               );
             },
@@ -122,7 +135,8 @@ class _ImageCard extends StatelessWidget {
             child: Image.network(
               image.url,
               fit: BoxFit.cover,
-              errorBuilder: (context, error, stackTrace) => const ColoredBox(color: Colors.black),
+              errorBuilder: (context, error, stackTrace) =>
+                  ColoredBox(color: AdminColors.panel2),
             ),
           ),
           Padding(
@@ -131,7 +145,7 @@ class _ImageCard extends StatelessWidget {
               image.name,
               maxLines: 2,
               overflow: TextOverflow.ellipsis,
-              style: const TextStyle(fontSize: 11, color: AdminColors.muted),
+              style: TextStyle(fontSize: 11, color: AdminColors.muted),
             ),
           ),
           InkWell(
@@ -139,8 +153,14 @@ class _ImageCard extends StatelessWidget {
             child: Container(
               width: double.infinity,
               padding: const EdgeInsets.symmetric(vertical: 6),
-              decoration: const BoxDecoration(border: Border(top: BorderSide(color: AdminColors.border))),
-              child: const Text('삭제', textAlign: TextAlign.center, style: TextStyle(fontSize: 11, color: AdminColors.danger)),
+              decoration: BoxDecoration(
+                border: Border(top: BorderSide(color: AdminColors.border)),
+              ),
+              child: const Text(
+                '삭제',
+                textAlign: TextAlign.center,
+                style: TextStyle(fontSize: 11, color: AdminColors.danger),
+              ),
             ),
           ),
         ],

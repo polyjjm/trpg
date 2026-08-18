@@ -20,8 +20,5 @@ class AdminNodeBlock {
 
   /// type은 이번 패스에서 늘 'paragraph'로 고정한다 — beat/image가 생기면
   /// 그때 이 클래스에 type 필드를 추가한다.
-  Map<String, dynamic> toJson() => {
-        'type': 'paragraph',
-        'text': text,
-      };
+  Map<String, dynamic> toJson() => {'type': 'paragraph', 'text': text};
 }

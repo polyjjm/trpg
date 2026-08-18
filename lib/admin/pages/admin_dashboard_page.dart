@@ -76,9 +76,11 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
       future: _profileFuture,
       builder: (context, snapshot) {
         if (snapshot.connectionState != ConnectionState.done) {
-          return const Scaffold(
+          return Scaffold(
             backgroundColor: AdminColors.bg,
-            body: Center(child: CircularProgressIndicator(color: AdminColors.gold)),
+            body: const Center(
+              child: CircularProgressIndicator(color: AdminColors.gold),
+            ),
           );
         }
 
@@ -87,7 +89,10 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
           return const _NotAuthorized();
         }
 
-        return _AdminDashboardShell(authService: widget.authService, email: widget.email);
+        return _AdminDashboardShell(
+          authService: widget.authService,
+          email: widget.email,
+        );
       },
     );
   }
@@ -108,14 +113,22 @@ class _NotAuthorized extends StatelessWidget {
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                const Icon(Icons.lock_outline_rounded, color: AdminColors.danger, size: 40),
+                const Icon(
+                  Icons.lock_outline_rounded,
+                  color: AdminColors.danger,
+                  size: 40,
+                ),
                 const SizedBox(height: 16),
-                const Text(
+                Text(
                   '관리자 권한이 없어요',
-                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700, color: AdminColors.ivory),
+                  style: TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w700,
+                    color: AdminColors.ivory,
+                  ),
                 ),
                 const SizedBox(height: 8),
-                const Text(
+                Text(
                   '이 페이지는 admin 계정만 볼 수 있어요.',
                   textAlign: TextAlign.center,
                   style: TextStyle(fontSize: 13, color: AdminColors.muted),
@@ -125,8 +138,11 @@ class _NotAuthorized extends StatelessWidget {
                   onPressed: () => Navigator.pop(context),
                   style: OutlinedButton.styleFrom(
                     foregroundColor: AdminColors.ivory,
-                    side: const BorderSide(color: AdminColors.border),
-                    padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+                    side: BorderSide(color: AdminColors.border),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 24,
+                      vertical: 12,
+                    ),
                   ),
                   child: const Text('작가 도구로 돌아가기'),
                 ),
@@ -151,7 +167,8 @@ class _AdminDashboardShell extends StatefulWidget {
 
 class _AdminDashboardShellState extends State<_AdminDashboardShell> {
   final AdminStoryRepository _storyRepository = AdminStoryRepository();
-  final AuthorApplicationRepository _authorApplicationRepository = AuthorApplicationRepository();
+  final AuthorApplicationRepository _authorApplicationRepository =
+      AuthorApplicationRepository();
   final UserProfileRepository _userProfileRepository = UserProfileRepository();
   final GenreRepository _genreRepository = GenreRepository();
 
@@ -161,23 +178,30 @@ class _AdminDashboardShellState extends State<_AdminDashboardShell> {
   // 구독과는 각각 별개 인스턴스다. _NavTabs/ApprovalsTab에서 겪었던 "부모가
   // 재빌드될 때마다 새 스트림이 생겨서 깜빡이는" 문제를 피하려고 late final로
   // State가 살아있는 동안 한 번만 만든다.
-  late final Stream<List<PendingNodeRef>> _sidebarPendingNodesStream = _storyRepository.watchPendingNodes();
+  late final Stream<List<PendingNodeRef>> _sidebarPendingNodesStream =
+      _storyRepository.watchPendingNodes();
   late final Stream<List<AuthorApplication>> _sidebarPendingApplicationsStream =
       _authorApplicationRepository.watchPendingApplications();
   late final Stream<List<AdminStoryPack>> _sidebarPendingSerializationStream =
       _storyRepository.watchPendingSerializationRequests();
-  late final Stream<List<AdminStoryPack>> _sidebarPendingMetadataStream = _storyRepository.watchPendingMetadataEdits();
+  late final Stream<List<AdminStoryPack>> _sidebarPendingMetadataStream =
+      _storyRepository.watchPendingMetadataEdits();
 
   // 개요 카드 전용 — 사이드바 배지와도, ApprovalsTab 자체 구독과도 별개.
-  late final Stream<List<PendingNodeRef>> _overviewPendingNodesStream = _storyRepository.watchPendingNodes();
-  late final Stream<List<AuthorApplication>> _overviewPendingApplicationsStream =
-      _authorApplicationRepository.watchPendingApplications();
-  late final Stream<List<AdminStoryPack>> _overviewPacksStream = _storyRepository.watchPacks();
-  late final Stream<List<UserProfile>> _overviewAuthorsStream = _userProfileRepository.watchAuthors();
+  late final Stream<List<PendingNodeRef>> _overviewPendingNodesStream =
+      _storyRepository.watchPendingNodes();
+  late final Stream<List<AuthorApplication>>
+  _overviewPendingApplicationsStream = _authorApplicationRepository
+      .watchPendingApplications();
+  late final Stream<List<AdminStoryPack>> _overviewPacksStream =
+      _storyRepository.watchPacks();
+  late final Stream<List<UserProfile>> _overviewAuthorsStream =
+      _userProfileRepository.watchAuthors();
 
   // ApprovalsTab에 넘길 packTitles를 만들기 위한, 위 개요 카드용과도 별개인
   // 팩 목록 구독.
-  late final Stream<List<AdminStoryPack>> _packTitlesStream = _storyRepository.watchPacks();
+  late final Stream<List<AdminStoryPack>> _packTitlesStream = _storyRepository
+      .watchPacks();
 
   Future<void> _handleSignOut() async {
     await widget.authService.signOut();
@@ -185,7 +209,9 @@ class _AdminDashboardShellState extends State<_AdminDashboardShell> {
     // 작가 도구까지 포함해 스택을 통째로 비우고 게이트부터 다시 시작한다 —
     // 로그아웃 후 pop만 하면 이미 로그아웃된 작가 도구 화면이 남아있게 된다.
     Navigator.of(context).pushAndRemoveUntil(
-      MaterialPageRoute(builder: (_) => AdminGatePage(authService: widget.authService)),
+      MaterialPageRoute(
+        builder: (_) => AdminGatePage(authService: widget.authService),
+      ),
       (route) => false,
     );
   }
@@ -207,10 +233,12 @@ class _AdminDashboardShellState extends State<_AdminDashboardShell> {
               children: [
                 _Sidebar(
                   active: _activeSection,
-                  onSelected: (section) => setState(() => _activeSection = section),
+                  onSelected: (section) =>
+                      setState(() => _activeSection = section),
                   pendingNodesStream: _sidebarPendingNodesStream,
                   pendingApplicationsStream: _sidebarPendingApplicationsStream,
-                  pendingSerializationStream: _sidebarPendingSerializationStream,
+                  pendingSerializationStream:
+                      _sidebarPendingSerializationStream,
                   pendingMetadataStream: _sidebarPendingMetadataStream,
                 ),
                 Container(width: 1, color: AdminColors.border),
@@ -279,13 +307,17 @@ class _DashboardTopBar extends StatelessWidget {
   final VoidCallback onBackToAuthorTool;
   final VoidCallback onSignOut;
 
-  const _DashboardTopBar({required this.email, required this.onBackToAuthorTool, required this.onSignOut});
+  const _DashboardTopBar({
+    required this.email,
+    required this.onBackToAuthorTool,
+    required this.onSignOut,
+  });
 
   @override
   Widget build(BuildContext context) {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 14),
-      decoration: const BoxDecoration(
+      decoration: BoxDecoration(
         color: AdminColors.panel,
         border: Border(bottom: BorderSide(color: AdminColors.border)),
       ),
@@ -293,27 +325,49 @@ class _DashboardTopBar extends StatelessWidget {
         children: [
           SvgPicture.asset(UiPaths.logo, width: 20, height: 20),
           const SizedBox(width: 8),
-          const Text('관리자', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700, color: AdminColors.ivory)),
+          Text(
+            '관리자',
+            style: TextStyle(
+              fontSize: 16,
+              fontWeight: FontWeight.w700,
+              color: AdminColors.ivory,
+            ),
+          ),
           const SizedBox(width: 8),
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-            decoration: BoxDecoration(color: const Color(0xFF3A3A2A), borderRadius: BorderRadius.circular(999)),
-            child: Text(email, style: const TextStyle(fontSize: 10, color: AdminColors.gold)),
+            decoration: BoxDecoration(
+              color: AdminColors.badgeBg,
+              borderRadius: BorderRadius.circular(999),
+            ),
+            child: Text(
+              email,
+              style: const TextStyle(fontSize: 10, color: AdminColors.gold),
+            ),
           ),
           const Spacer(),
           InkWell(
             onTap: onBackToAuthorTool,
-            child: const Text('작가 도구로', style: TextStyle(fontSize: 12, color: AdminColors.muted)),
+            child: Text(
+              '작가 도구로',
+              style: TextStyle(fontSize: 12, color: AdminColors.muted),
+            ),
           ),
           const SizedBox(width: 14),
           InkWell(
             onTap: () => openExternalLink(ExternalLinks.readerAppUrl),
-            child: const Text('독자로 보기', style: TextStyle(fontSize: 12, color: AdminColors.muted)),
+            child: Text(
+              '독자로 보기',
+              style: TextStyle(fontSize: 12, color: AdminColors.muted),
+            ),
           ),
           const SizedBox(width: 14),
           InkWell(
             onTap: onSignOut,
-            child: const Text('로그아웃', style: TextStyle(fontSize: 12, color: AdminColors.muted)),
+            child: Text(
+              '로그아웃',
+              style: TextStyle(fontSize: 12, color: AdminColors.muted),
+            ),
           ),
         ],
       ),
@@ -370,7 +424,9 @@ class _Sidebar extends StatelessWidget {
               return StreamBuilder<List<AdminStoryPack>>(
                 stream: pendingMetadataStream,
                 builder: (context, metadataSnapshot) {
-                  final count = (serializationSnapshot.data?.length ?? 0) + (metadataSnapshot.data?.length ?? 0);
+                  final count =
+                      (serializationSnapshot.data?.length ?? 0) +
+                      (metadataSnapshot.data?.length ?? 0);
                   return _SidebarItem(
                     icon: Icons.rate_review_rounded,
                     label: '스토리팩 승인',
@@ -414,8 +470,14 @@ class _Sidebar extends StatelessWidget {
           ),
           const SizedBox(height: 14),
           const _SidebarSectionHeader('돈 관리'),
-          const _SidebarPlaceholderItem(icon: Icons.receipt_long_rounded, label: '결제 내역'),
-          const _SidebarPlaceholderItem(icon: Icons.bar_chart_rounded, label: '매출 대시보드'),
+          const _SidebarPlaceholderItem(
+            icon: Icons.receipt_long_rounded,
+            label: '결제 내역',
+          ),
+          const _SidebarPlaceholderItem(
+            icon: Icons.bar_chart_rounded,
+            label: '매출 대시보드',
+          ),
           const SizedBox(height: 14),
           const _SidebarSectionHeader('설정'),
           _SidebarItem(
@@ -441,7 +503,12 @@ class _SidebarSectionHeader extends StatelessWidget {
       padding: const EdgeInsets.fromLTRB(20, 8, 20, 6),
       child: Text(
         label,
-        style: const TextStyle(fontSize: 11, color: AdminColors.muted, fontWeight: FontWeight.w700, letterSpacing: 0.4),
+        style: TextStyle(
+          fontSize: 11,
+          color: AdminColors.muted,
+          fontWeight: FontWeight.w700,
+          letterSpacing: 0.4,
+        ),
       ),
     );
   }
@@ -476,22 +543,36 @@ class _SidebarItem extends StatelessWidget {
         ),
         child: Row(
           children: [
-            Icon(icon, size: 18, color: selected ? AdminColors.gold : AdminColors.muted),
+            Icon(
+              icon,
+              size: 18,
+              color: selected ? AdminColors.gold : AdminColors.muted,
+            ),
             const SizedBox(width: 10),
             Expanded(
               child: Text(
                 label,
-                style: TextStyle(fontSize: 13, color: selected ? AdminColors.gold : AdminColors.ivory),
+                style: TextStyle(
+                  fontSize: 13,
+                  color: selected ? AdminColors.gold : AdminColors.ivory,
+                ),
               ),
             ),
             if (badgeCount != null && badgeCount! > 0) ...[
               const SizedBox(width: 6),
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
-                decoration: BoxDecoration(color: AdminColors.statusPendingBg, borderRadius: BorderRadius.circular(999)),
+                decoration: BoxDecoration(
+                  color: AdminColors.statusPendingBg,
+                  borderRadius: BorderRadius.circular(999),
+                ),
                 child: Text(
                   '$badgeCount',
-                  style: const TextStyle(fontSize: 10, color: AdminColors.statusPendingText, fontWeight: FontWeight.w700),
+                  style: const TextStyle(
+                    fontSize: 10,
+                    color: AdminColors.statusPendingText,
+                    fontWeight: FontWeight.w700,
+                  ),
                 ),
               ),
             ],
@@ -519,7 +600,13 @@ class _SidebarPlaceholderItem extends StatelessWidget {
           Icon(icon, size: 18, color: AdminColors.muted.withOpacity(0.5)),
           const SizedBox(width: 10),
           Expanded(
-            child: Text(label, style: TextStyle(fontSize: 13, color: AdminColors.muted.withOpacity(0.5))),
+            child: Text(
+              label,
+              style: TextStyle(
+                fontSize: 13,
+                color: AdminColors.muted.withOpacity(0.5),
+              ),
+            ),
           ),
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
@@ -527,7 +614,10 @@ class _SidebarPlaceholderItem extends StatelessWidget {
               border: Border.all(color: AdminColors.border),
               borderRadius: BorderRadius.circular(999),
             ),
-            child: const Text('준비중', style: TextStyle(fontSize: 9, color: AdminColors.muted)),
+            child: Text(
+              '준비중',
+              style: TextStyle(fontSize: 9, color: AdminColors.muted),
+            ),
           ),
         ],
       ),
@@ -555,9 +645,16 @@ class _OverviewSection extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text('개요', style: TextStyle(fontSize: 18, color: AdminColors.ivory, fontWeight: FontWeight.w700)),
+          Text(
+            '개요',
+            style: TextStyle(
+              fontSize: 18,
+              color: AdminColors.ivory,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
           const SizedBox(height: 4),
-          const Text(
+          Text(
             '드릴다운하기 전에 한눈에 보는 현재 상태예요.',
             style: TextStyle(fontSize: 12, color: AdminColors.muted),
           ),
@@ -570,28 +667,32 @@ class _OverviewSection extends StatelessWidget {
                 width: 180,
                 child: StreamBuilder<List<PendingNodeRef>>(
                   stream: pendingNodesStream,
-                  builder: (context, snapshot) => MetricCard(label: '승인 대기', count: snapshot.data?.length),
+                  builder: (context, snapshot) =>
+                      MetricCard(label: '승인 대기', count: snapshot.data?.length),
                 ),
               ),
               SizedBox(
                 width: 180,
                 child: StreamBuilder<List<AuthorApplication>>(
                   stream: pendingApplicationsStream,
-                  builder: (context, snapshot) => MetricCard(label: '작가 신청', count: snapshot.data?.length),
+                  builder: (context, snapshot) =>
+                      MetricCard(label: '작가 신청', count: snapshot.data?.length),
                 ),
               ),
               SizedBox(
                 width: 180,
                 child: StreamBuilder<List<UserProfile>>(
                   stream: authorsStream,
-                  builder: (context, snapshot) => MetricCard(label: '전체 작가', count: snapshot.data?.length),
+                  builder: (context, snapshot) =>
+                      MetricCard(label: '전체 작가', count: snapshot.data?.length),
                 ),
               ),
               SizedBox(
                 width: 180,
                 child: StreamBuilder<List<AdminStoryPack>>(
                   stream: packsStream,
-                  builder: (context, snapshot) => MetricCard(label: '전체 작품', count: snapshot.data?.length),
+                  builder: (context, snapshot) =>
+                      MetricCard(label: '전체 작품', count: snapshot.data?.length),
                 ),
               ),
             ],

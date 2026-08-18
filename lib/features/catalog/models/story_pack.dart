@@ -47,6 +47,13 @@ class StoryPack {
   /// 이 팩에 기본 BGM이 없다는 뜻.
   final String? ambientBgm;
 
+  /// images/{imageId} 참조 — 어떤 노드도 배경 이미지를 명시적으로 고르지
+  /// 않았을 때 인계 체인의 최종 폴백(lib/core/story/
+  /// background_image_inheritance.dart). admin 쪽 defaultBackgroundImage와
+  /// 달리 liveMetadata 승인 게이트를 거치지 않는 값이라, StoryPackRepository는
+  /// 이 필드를 top-level storyPacks 문서에서 곧장 읽는다.
+  final String? defaultBackgroundImage;
+
   const StoryPack({
     required this.id,
     required this.title,
@@ -59,6 +66,7 @@ class StoryPack {
     this.previewNodeLimit = 3,
     this.ttsEnabled = false,
     this.ambientBgm,
+    this.defaultBackgroundImage,
   });
 
   bool get isFree => price <= 0;

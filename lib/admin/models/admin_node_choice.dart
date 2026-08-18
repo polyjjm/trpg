@@ -17,8 +17,5 @@ class AdminNodeChoice {
     );
   }
 
-  Map<String, dynamic> toJson() => {
-        'label': label,
-        'nextNodeId': nextNodeId,
-      };
+  Map<String, dynamic> toJson() => {'label': label, 'nextNodeId': nextNodeId};
 }

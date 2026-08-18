@@ -12,7 +12,11 @@ class NodeBodyEditor extends StatelessWidget {
   final String bodyText;
   final ValueChanged<String> onChanged;
 
-  const NodeBodyEditor({super.key, required this.bodyText, required this.onChanged});
+  const NodeBodyEditor({
+    super.key,
+    required this.bodyText,
+    required this.onChanged,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -22,8 +26,14 @@ class NodeBodyEditor extends StatelessWidget {
         initialValue: bodyText,
         minLines: 14,
         maxLines: 28,
-        style: const TextStyle(color: AdminColors.ivory, fontSize: 13, height: 1.6),
-        decoration: adminInputDecoration(hintText: '문단을 입력하세요. 다음 문단은 빈 줄(엔터 두 번)로 구분해요.'),
+        style: TextStyle(
+          color: AdminColors.inputText,
+          fontSize: 13,
+          height: 1.6,
+        ),
+        decoration: adminInputDecoration(
+          hintText: '문단을 입력하세요. 다음 문단은 빈 줄(엔터 두 번)로 구분해요.',
+        ),
         onChanged: onChanged,
       ),
     );

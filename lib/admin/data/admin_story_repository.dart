@@ -92,6 +92,20 @@ class AdminStoryRepository {
     return AdminStoryPack.fromFirestore(doc.id, data);
   }
 
+  /// PackSettingsPage처럼 승인/반려 상태(serializationStatus/pendingMetadataAction
+  /// 등)를 실시간으로 반영해야 하는 화면용. AdminStoryPack의 title/genres/
+  /// description/coverImageId/defaultBackgroundImage는 편집 폼이 별도의 로컬
+  /// 컨트롤러/상태로 들고 있고 이 스트림 값을 직접 표시에 쓰지 않는 화면에서만
+  /// 안전하다 — NodeEditor처럼 폼 필드가 모델 값을 initialValue로 직접 쓰는
+  /// 화면에서는 쓰면 안 된다(타이핑 중인 내용이 스냅샷에 덮어써진다).
+  Stream<AdminStoryPack?> watchPack(String packId) {
+    return _packs.doc(packId).snapshots().map((doc) {
+      final data = doc.data();
+      if (data == null) return null;
+      return AdminStoryPack.fromFirestore(doc.id, data);
+    });
+  }
+
   /// 팩 설정을 직접 저장한다("임시저장") — 상태 전이 없이 언제나 가능하다.
   ///
   /// defaultBackgroundImage는 title/genres/description/coverImageId와 달리
@@ -272,6 +286,17 @@ class AdminStoryRepository {
   /// 부분 업데이트보다 전체 set이 더 안전하다).
   Future<void> saveNode(String packId, AdminStoryNode node) async {
     await _nodes(packId).doc(node.id).set(node.toFirestoreJson());
+  }
+
+  /// 일괄 쓰기("한 번에 쓰기", 선형 스토리 페이지 분할)가 여러 노드를 한 번에
+  /// 만들 때 쓴다 — saveNode()를 N번 부르는 것과 달리 하나의 배치로 묶여서
+  /// 중간에 실패해도 부분 반영되지 않는다.
+  Future<void> saveNodesBatch(String packId, List<AdminStoryNode> nodes) async {
+    final batch = _firestore.batch();
+    for (final node in nodes) {
+      batch.set(_nodes(packId).doc(node.id), node.toFirestoreJson());
+    }
+    await batch.commit();
   }
 
   /// 한 번도 발행된 적 없는 순수 초안을 즉시 삭제한다(승인 절차 불필요).
