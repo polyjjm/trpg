@@ -1,6 +1,7 @@
 import '../../core/text/paragraph_blocks.dart';
 import 'admin_node_block.dart';
 import 'admin_node_choice.dart';
+import 'node_effects.dart';
 import 'node_status.dart';
 import 'pending_action.dart';
 
@@ -51,6 +52,11 @@ class AdminStoryNode {
   /// storyPack.type == 'linear'일 때만 편집기에 노출/저장된다.
   String? nextNodeId;
 
+  /// 연출 효과(암전/화면 흔들림/효과음/진동) — 전부 프리셋 전용, 기본은
+  /// 꺼짐. 지금은 리더에서 실제로 재생되지 않는다("연출 효과" UI/스키마만
+  /// 붙인 패스) — 실제 재생은 에셋이 준비된 다음 패스의 몫이다.
+  NodeEffects effects;
+
   NodeStatus status;
   PendingAction? pendingAction;
 
@@ -71,31 +77,32 @@ class AdminStoryNode {
     this.backgroundAppliesForward = true,
     List<AdminNodeChoice>? choices,
     this.nextNodeId,
+    this.effects = const NodeEffects(),
     this.status = NodeStatus.draft,
     this.pendingAction,
     this.liveSnapshot,
     this.dirty = false,
-  }) : blocks = blocks ?? const [],
+  }) : blocks = blocks ?? [],
        choices = choices ?? [];
 
   /// 이 노드가 Firestore에 한 번도 저장된 적 없는 순수 신규 노드인지.
   bool get isNew => liveSnapshot == null;
 
-  /// [bodyText]를 문단 기준으로 나눠 [blocks]에 반영한다 — 저장(임시저장/
-  /// 승인요청) 직전에만 호출한다. 그 전까지 [blocks]는 마지막으로 저장된
-  /// 값 그대로다.
+  /// [bodyText]를 문단 기준으로 나눠 [blocks]에 반영한다 — "한 번에 쓰기"
+  /// (BulkNodeWriter)에서 붙여넣은 긴 텍스트를 문단 블록으로 변환할 때만
+  /// 쓴다. 단일 노드 편집(NodeEditor)은 이제 [blocks]를 직접 수정하므로
+  /// bodyText를 거치지 않는다.
   void applyBodyTextToBlocks() {
     blocks = splitIntoParagraphs(
       bodyText,
     ).map((text) => AdminNodeBlock(text: text)).toList();
   }
 
-  /// 사이드바/승인 대기함에 title 대신 보여줄 짧은 미리보기 — bodyText의
-  /// 첫 문단(트림됨). blocks가 아니라 bodyText 기준이라 저장 전에도
-  /// 타이핑한 내용이 그대로 반영된다.
+  /// 사이드바/승인 대기함에 title 대신 보여줄 짧은 미리보기 — 첫 번째
+  /// 블록의 텍스트(트림됨). 블록이 없으면 빈 문자열.
   String get previewText {
-    final paragraphs = splitIntoParagraphs(bodyText);
-    return paragraphs.isEmpty ? '' : paragraphs.first;
+    if (blocks.isEmpty) return '';
+    return blocks.first.text.trim();
   }
 
   factory AdminStoryNode.fromFirestore(String id, Map<String, dynamic> json) {
@@ -108,9 +115,6 @@ class AdminStoryNode {
     return AdminStoryNode(
       id: id,
       order: (json['order'] as num?)?.toInt() ?? 0,
-      // blocks[].text를 빈 줄로 이어 붙여 편집 가능한 원문을 복원한다 —
-      // NodeBodyEditor가 여는 순간부터 자연스러운 하나의 텍스트로 보이게 하려는 것.
-      bodyText: blocks.map((b) => b.text).join('\n\n'),
       blocks: blocks,
       backgroundImageId: json['backgroundImage'] as String?,
       backgroundAppliesForward:
@@ -121,6 +125,7 @@ class AdminStoryNode {
               .toList() ??
           [],
       nextNodeId: json['nextNodeId'] as String?,
+      effects: NodeEffects.fromJson(json['effects'] as Map<String, dynamic>?),
       status: NodeStatusJson.fromWire(json['status'] as String?),
       pendingAction: pendingActionFromWire(json['pendingAction'] as String?),
       liveSnapshot: (json['liveSnapshot'] as Map<String, dynamic>?),
@@ -146,5 +151,6 @@ class AdminStoryNode {
     'backgroundAppliesForward': backgroundAppliesForward,
     'choices': choices.isEmpty ? null : choices.map((c) => c.toJson()).toList(),
     'nextNodeId': nextNodeId,
+    'effects': effects.toJson(),
   };
 }

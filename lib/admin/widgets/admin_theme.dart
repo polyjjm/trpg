@@ -140,4 +140,13 @@ class AdminColors {
   static const rejectBg = Color(0xFF3D1F1F);
   static const rejectText = Color(0xFFFF9D9D);
   static const rejectBorder = Color(0xFF5C2C2C);
+
+  // 이미지 라이브러리 카테고리 배지(배경/선택지/기타) — 상태 배지와 같은
+  // 파스텔 bg + 진한 텍스트 조합이라 static const로 고정한다.
+  static const imageCategoryBackgroundBg = Color(0xFFDCEAFB);
+  static const imageCategoryBackgroundText = Color(0xFF1B4F8C);
+  static const imageCategoryChoiceBg = Color(0xFFEDE3FB);
+  static const imageCategoryChoiceText = Color(0xFF4B2E83);
+  static const imageCategoryOtherBg = Color(0xFFE7E3DA);
+  static const imageCategoryOtherText = Color(0xFF6B6355);
 }

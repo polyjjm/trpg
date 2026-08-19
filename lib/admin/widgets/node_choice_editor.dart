@@ -1,19 +1,25 @@
 import 'package:flutter/material.dart';
 
 import '../models/admin_node_choice.dart';
+import '../models/admin_story_node_summary.dart';
 import 'admin_theme.dart';
-import 'labeled_field.dart';
+import 'choice_edit_form.dart';
 
 /// "선택지" 섹션 — storyPack.type == 'interactive'인 노드에서만 보인다.
-/// 선택지마다 라벨 텍스트 + 이동할 노드 id를 직접 입력하는 텍스트 필드뿐이다
-/// — 노드 선택 드롭다운은 이번 패스에서 다루지 않는다(수동 입력으로 충분).
+/// 선택지마다 라벨 + 이동할 노드를 [ChoiceEditForm](choice_edit_form.dart)으로
+/// 편집한다 — 스토리맵의 간선 편집 팝오버와 같은 위젯을 그대로 재사용한다.
 class NodeChoiceEditor extends StatelessWidget {
   final List<AdminNodeChoice> choices;
+
+  /// 이동 대상 후보 — 저장된 노드 + 세션 캐시 초안을 합친 목록
+  /// (story_tab_view.dart의 displaySummaries)을 그대로 받는다.
+  final List<AdminStoryNodeSummary> candidates;
   final VoidCallback onChanged;
 
   const NodeChoiceEditor({
     super.key,
     required this.choices,
+    required this.candidates,
     required this.onChanged,
   });
 
@@ -98,36 +104,20 @@ class NodeChoiceEditor extends StatelessWidget {
                   ],
                 ),
                 const SizedBox(height: 8),
-                LabeledField(
-                  label: '버튼에 표시될 텍스트',
-                  child: TextFormField(
-                    initialValue: choices[i].label,
-                    style: TextStyle(
-                      color: AdminColors.inputText,
-                      fontSize: 13,
-                    ),
-                    decoration: adminInputDecoration(),
-                    onChanged: (value) {
-                      choices[i].label = value;
-                      onChanged();
-                    },
-                  ),
-                ),
-                const SizedBox(height: 8),
-                LabeledField(
-                  label: '이동할 노드 ID',
-                  child: TextFormField(
-                    initialValue: choices[i].nextNodeId,
-                    style: TextStyle(
-                      color: AdminColors.inputText,
-                      fontSize: 13,
-                    ),
-                    decoration: adminInputDecoration(hintText: '예: node_02'),
-                    onChanged: (value) {
-                      choices[i].nextNodeId = value;
-                      onChanged();
-                    },
-                  ),
+                ChoiceEditForm(
+                  label: choices[i].label,
+                  nextNodeId: choices[i].nextNodeId.isEmpty
+                      ? null
+                      : choices[i].nextNodeId,
+                  candidates: candidates,
+                  onLabelChanged: (value) {
+                    choices[i].label = value;
+                    onChanged();
+                  },
+                  onTargetChanged: (id) {
+                    choices[i].nextNodeId = id;
+                    onChanged();
+                  },
                 ),
               ],
             ),

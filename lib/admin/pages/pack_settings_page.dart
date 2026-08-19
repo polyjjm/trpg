@@ -4,6 +4,7 @@ import '../data/admin_image_repository.dart';
 import '../data/admin_story_repository.dart';
 import '../data/genre_repository.dart';
 import '../models/admin_image.dart';
+import '../models/admin_image_category.dart';
 import '../models/admin_story_node_summary.dart';
 import '../models/admin_story_pack.dart';
 import '../models/genre.dart';
@@ -337,6 +338,7 @@ class _PackSettingsPageState extends State<PackSettingsPage> {
                   return ImagePickerField(
                     currentId: _defaultBackgroundImageId,
                     images: images,
+                    filterCategory: AdminImageCategory.background,
                     onChanged: (id) => setState(() {
                       _defaultBackgroundImageId = id;
                       _dirty = true;

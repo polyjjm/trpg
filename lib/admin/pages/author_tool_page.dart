@@ -9,6 +9,7 @@ import '../../core/user/user_profile_repository.dart';
 import '../data/admin_notice_repository.dart';
 import '../data/admin_image_repository.dart';
 import '../data/admin_story_repository.dart';
+import '../data/node_edit_session_cache.dart';
 import '../models/admin_story_pack.dart';
 import '../models/story_pack_type.dart';
 import '../widgets/admin_theme.dart';
@@ -59,6 +60,14 @@ class _AuthorToolPageState extends State<AuthorToolPage> {
 
   _AdminTab _activeTab = _AdminTab.story;
   String? _activePackId;
+
+  /// 저장 안 한 노드 편집 내용의 세션 캐시(node_edit_session_cache.dart) —
+  /// 이 State가 살아있는 동안(로그아웃 전까지) 하나만 만들어서 StoryTabView에
+  /// 그대로 내려준다. StoryTabView 자신은 팩을 바꿀 때마다 통째로
+  /// 재생성되므로, 캐시가 거기 속해 있으면 전환할 때마다 사라진다 — 팩/탭을
+  /// 오가도 편집 중이던 내용이 남아있어야 하니 더 오래 사는 이 State가 들고
+  /// 있는다.
+  final NodeEditSessionCache _sessionCache = NodeEditSessionCache();
 
   @override
   void dispose() {
@@ -207,6 +216,7 @@ class _AuthorToolPageState extends State<AuthorToolPage> {
           pack: activePack,
           repository: _storyRepository,
           imageRepository: _imageRepository,
+          sessionCache: _sessionCache,
         );
       case _AdminTab.images:
         return ImageLibraryTab(repository: _imageRepository);

@@ -4,6 +4,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_storage/firebase_storage.dart';
 
 import '../models/admin_image.dart';
+import '../models/admin_image_category.dart';
 
 /// images 컬렉션(색인) + Firebase Storage(실제 파일)를 함께 다루는 저장소.
 class AdminImageRepository {
@@ -32,6 +33,7 @@ class AdminImageRepository {
   Future<AdminImage> uploadImage({
     required Uint8List bytes,
     required String fileName,
+    required AdminImageCategory category,
   }) async {
     final doc = _images.doc();
     final ref = _storage.ref('admin/story_images/${doc.id}_$fileName');
@@ -39,9 +41,15 @@ class AdminImageRepository {
     await ref.putData(bytes);
     final url = await ref.getDownloadURL();
 
-    await doc.set({'name': fileName, 'url': url});
+    await doc.set({'name': fileName, 'url': url, 'category': category.wireValue});
 
-    return AdminImage(id: doc.id, name: fileName, url: url);
+    return AdminImage(id: doc.id, name: fileName, url: url, category: category);
+  }
+
+  /// 카드의 "카테고리 변경"에서 쓴다 — 업로드 시 잘못 고른 분류나, 필드가
+  /// 생기기 전에 올라와 기본값 '기타'로 읽히는 기존 이미지를 나중에 바로잡는다.
+  Future<void> updateCategory(String imageId, AdminImageCategory category) async {
+    await _images.doc(imageId).update({'category': category.wireValue});
   }
 
   Future<void> deleteImage(AdminImage image) async {
