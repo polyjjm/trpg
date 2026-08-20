@@ -14,7 +14,6 @@ import '../../auth/pages/sign_in_page.dart';
 import '../../battle/inventory/data/item_catalog.dart';
 import '../../battle/inventory/models/item_effect_type.dart';
 import '../../battle/inventory/models/item_model.dart';
-import '../../story/data/story_nodes.dart';
 import '../models/encounter_config.dart';
 import '../models/encounter_result.dart';
 
@@ -55,8 +54,10 @@ class _EncounterPageState extends State<EncounterPage>
       vsync: this,
       duration: const Duration(milliseconds: 900),
     );
-    _revealOpacity =
-        CurvedAnimation(parent: _revealController, curve: Curves.easeOut);
+    _revealOpacity = CurvedAnimation(
+      parent: _revealController,
+      curve: Curves.easeOut,
+    );
     _revealScale = Tween<double>(begin: 1.12, end: 1.0).animate(
       CurvedAnimation(parent: _revealController, curve: Curves.easeOutCubic),
     );
@@ -263,10 +264,7 @@ class _EncounterPageState extends State<EncounterPage>
       barrierColor: Colors.black.withOpacity(0.6),
       builder: (dialogContext) => AlertDialog(
         backgroundColor: const Color(0xFF151515),
-        title: const Text(
-          '처음부터 다시 시작',
-          style: TextStyle(color: Colors.white),
-        ),
+        title: const Text('처음부터 다시 시작', style: TextStyle(color: Colors.white)),
         content: const Text(
           '진행 상황이 모두 초기화됩니다. 계속하시겠습니까?',
           style: TextStyle(color: Colors.white70),
@@ -279,10 +277,13 @@ class _EncounterPageState extends State<EncounterPage>
           TextButton(
             onPressed: () {
               Navigator.pop(dialogContext);
-              _gameState.resetProgress(storyStartNodeId);
+              _gameState.resetProgress();
               Navigator.popUntil(context, (route) => route.isFirst);
             },
-            child: const Text('다시 시작', style: TextStyle(color: Colors.redAccent)),
+            child: const Text(
+              '다시 시작',
+              style: TextStyle(color: Colors.redAccent),
+            ),
           ),
         ],
       ),
@@ -295,10 +296,7 @@ class _EncounterPageState extends State<EncounterPage>
       barrierColor: Colors.black.withOpacity(0.6),
       builder: (dialogContext) => AlertDialog(
         backgroundColor: const Color(0xFF151515),
-        title: const Text(
-          '라이브러리로 돌아가기',
-          style: TextStyle(color: Colors.white),
-        ),
+        title: const Text('라이브러리로 돌아가기', style: TextStyle(color: Colors.white)),
         content: const Text(
           '현재 진행 상황은 자동으로 저장됩니다.\n라이브러리로 돌아가시겠습니까?',
           style: TextStyle(color: Colors.white70),

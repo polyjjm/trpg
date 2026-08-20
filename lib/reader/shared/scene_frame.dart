@@ -103,6 +103,10 @@ class _SceneFrameState extends State<SceneFrame>
   double _blackoutOpacity = 0;
   Duration _blackoutFadeDuration = const Duration(milliseconds: 250);
 
+  double _flashOpacity = 0;
+  Duration _flashFadeDuration = const Duration(milliseconds: 40);
+  Color _flashColor = Colors.transparent;
+
   late final AnimationController _shakeController = AnimationController(
     vsync: this,
     duration: const Duration(milliseconds: 500),
@@ -187,6 +191,12 @@ class _SceneFrameState extends State<SceneFrame>
     if (effects.shake.enabled) {
       _triggerShake(effects.shake.intensityPreset.amplitudePx);
     }
+    if (effects.flash.enabled) {
+      _triggerFlash(
+        effects.flash.colorPreset.color,
+        effects.flash.durationPreset.duration,
+      );
+    }
     if (effects.sfx.enabled) {
       // await하지 않는다 — 재생 완료를 기다리면 haptic 등 뒤 트리거가 밀린다.
       unawaited(_triggerSfx(widget.sfxUrl));
@@ -205,6 +215,28 @@ class _SceneFrameState extends State<SceneFrame>
     Future.delayed(half, () {
       if (!mounted) return;
       setState(() => _blackoutOpacity = 0);
+    });
+  }
+
+  /// blackout은 반씩 나눠 대칭으로 fade in/out하지만, 플래시는 "번쩍임"으로
+  /// 읽혀야 해서 비대칭이다 — 아주 짧게(고정 40ms) 확 들어왔다가, 나머지
+  /// durationPreset 구간에 걸쳐 천천히 빠진다.
+  void _triggerFlash(Color color, Duration total) {
+    const fadeIn = Duration(milliseconds: 40);
+    final fadeOut = total > fadeIn
+        ? total - fadeIn
+        : const Duration(milliseconds: 10);
+    setState(() {
+      _flashColor = color;
+      _flashFadeDuration = fadeIn;
+      _flashOpacity = 1;
+    });
+    Future.delayed(fadeIn, () {
+      if (!mounted) return;
+      setState(() {
+        _flashFadeDuration = fadeOut;
+        _flashOpacity = 0;
+      });
     });
   }
 
@@ -371,6 +403,19 @@ class _SceneFrameState extends State<SceneFrame>
                 duration: _blackoutFadeDuration,
                 curve: Curves.easeInOut,
                 child: const ColoredBox(color: Colors.black),
+              ),
+            ),
+          ),
+          // 블랙아웃과 같은 "화면 전체 오버레이" 메커니즘을 그대로 재사용한
+          // 두 번째, 독립된 레이어 — 색/지속시간이 다른 상태(_flash*)를 따로
+          // 들고 있어서 블랙아웃과 동시에 켜져도 서로 값을 덮어쓰지 않는다.
+          Positioned.fill(
+            child: IgnorePointer(
+              child: AnimatedOpacity(
+                opacity: _flashOpacity,
+                duration: _flashFadeDuration,
+                curve: Curves.easeOut,
+                child: ColoredBox(color: _flashColor),
               ),
             ),
           ),

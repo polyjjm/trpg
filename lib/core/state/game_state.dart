@@ -1,16 +1,57 @@
 import 'package:flutter/foundation.dart';
 
 import '../../features/battle/models/battle_result.dart';
+import 'reading_progress.dart';
 
 /// 스토리 진행 상황 / 인벤토리 / 플레이어 능력치를 담는 상태 계층.
 /// 지금은 메모리에만 보관하지만, toJson·fromJson 형태를 갖춰 두어
 /// 나중에 DB 저장·불러오기를 붙일 때 이 클래스만 확장하면 되도록 만들었다.
 class GameState extends ChangeNotifier {
-  GameState({required String startingNodeId})
-      : _currentNodeId = startingNodeId;
+  GameState();
 
-  String _currentNodeId;
-  String get currentNodeId => _currentNodeId;
+  /// 팩별 읽기 진행 상황(현재 노드/미리보기 카운트) — packId로 키를 잡는다.
+  /// 예전엔 currentNodeId/visitedNodeCount가 이 클래스에 스칼라 하나로만
+  /// 있어서 팩을 옮겨다니면 서로의 위치를 덮어썼다(known limitation,
+  /// CLAUDE.md 참고) — 이 맵이 그 자리를 대신한다. 게스트(로그인 안 함)도
+  /// 이 맵 자체는 그대로 갖는다 — 세션(앱을 껐다 켜기 전까지) 안에서는
+  /// 팩별로 안 섞이고, 앱을 재시작하면 다른 메모리 전용 상태와 마찬가지로
+  /// 사라진다. 로그인 사용자는 ReadingProgressRepository가 이 맵의 항목을
+  /// users/{uid}/readingProgress/{packId}에 별도로 저장한다(save/current의
+  /// GameState.toJson()에는 안 실린다 — CloudSyncController가 아니라 리더
+  /// 화면이 노드 이동 시점에 직접 저장한다).
+  final Map<String, ReadingProgress> _readingProgress = {};
+
+  ReadingProgress? progressFor(String packId) => _readingProgress[packId];
+
+  /// 노드 이동(선택지를 고르거나 "다음"을 눌렀을 때)마다 호출한다 —
+  /// visitedNodeCount를 1 늘리고 currentNodeId를 갱신한다.
+  void recordNodeVisit({required String packId, required String nodeId}) {
+    final existing = _readingProgress[packId];
+    _readingProgress[packId] = ReadingProgress(
+      currentNodeId: nodeId,
+      visitedNodeCount: (existing?.visitedNodeCount ?? 0) + 1,
+    );
+    notifyListeners();
+  }
+
+  /// Firestore(또는 이미 메모리에 있던 값)에서 읽어온 진행 상황을 그대로
+  /// 채워 넣는다 — [recordNodeVisit]과 달리 visitedNodeCount를 더하지 않고
+  /// 그 값 그대로 덮어쓴다("이동"이 아니라 "불러오기"라서).
+  void seedPackProgress(String packId, ReadingProgress progress) {
+    _readingProgress[packId] = progress;
+    notifyListeners();
+  }
+
+  /// "처음부터 다시 시작" — 이 팩의 진행 상황만 시작 노드로 되돌린다.
+  /// 하트/레벨/인벤토리 같은 전역 RPG 상태는 건드리지 않는다(그건
+  /// [resetProgress]의 몫 — 호출부가 필요하면 둘 다 부른다).
+  void resetPackProgress(String packId, String startingNodeId) {
+    _readingProgress[packId] = ReadingProgress(
+      currentNodeId: startingNodeId,
+      visitedNodeCount: 0,
+    );
+    notifyListeners();
+  }
 
   final Map<String, int> _inventory = {};
   Map<String, int> get inventory => Map.unmodifiable(_inventory);
@@ -58,10 +99,6 @@ class GameState extends ChangeNotifier {
     }
   }
 
-  /// 지금까지 진행한(goToNode로 이동한) 노드 수. 유료 팩의 무료 미리보기 한도를
-  /// 판단하는 데 쓰인다.
-  int visitedNodeCount = 0;
-
   /// 하트를 하나 잃는다. 반환값이 true면 하트가 0이 되어 사망 처리해야 한다는 뜻이다.
   bool loseHeart() {
     if (hearts > 0) {
@@ -103,12 +140,6 @@ class GameState extends ChangeNotifier {
     notifyListeners();
   }
 
-  void goToNode(String nodeId) {
-    _currentNodeId = nodeId;
-    visitedNodeCount += 1;
-    notifyListeners();
-  }
-
   void addItem(String itemId, [int count = 1]) {
     if (count <= 0) return;
     _inventory[itemId] = (_inventory[itemId] ?? 0) + count;
@@ -145,8 +176,12 @@ class GameState extends ChangeNotifier {
   /// 다음 공격/사건을 버틸 수 있게 한다.
   void revive() => healHeart();
 
-  void resetProgress(String startingNodeId) {
-    _currentNodeId = startingNodeId;
+  /// 전역 RPG 상태(인벤토리/레벨/경험치/능력치/하트)를 초기값으로 되돌린다.
+  /// 팩별 읽기 위치(currentNodeId/visitedNodeCount)는 더 이상 여기서 다루지
+  /// 않는다 — 그건 [resetPackProgress]의 몫이다. "처음부터 다시 시작"처럼
+  /// 둘 다 초기화해야 하는 호출부는 이 메서드와 [resetPackProgress]를 함께
+  /// 부른다.
+  void resetProgress() {
     _inventory.clear();
     level = 1;
     exp = 0;
@@ -154,39 +189,31 @@ class GameState extends ChangeNotifier {
     playerDefense = 5;
     hearts = maxHearts;
     hasUsedAdRevival = false;
-    visitedNodeCount = 0;
     notifyListeners();
   }
 
   /// 세이브 데이터 구조 버전. 필드를 추가/변경할 때마다 올리고
   /// fromJson()에서 이전 버전 데이터도 기본값으로 채워 읽을 수 있게 한다.
-  static const int currentSchemaVersion = 5;
+  /// v6: currentNodeId/visitedNodeCount가 이 blob에서 빠지고
+  /// users/{uid}/readingProgress/{packId}(ReadingProgressRepository)로
+  /// 옮겨갔다 — 이 문서에 남아 있던 옛 값은 이제 그냥 무시된다.
+  static const int currentSchemaVersion = 6;
 
   Map<String, dynamic> toJson() => {
-        'schemaVersion': currentSchemaVersion,
-        'currentNodeId': _currentNodeId,
-        'inventory': _inventory,
-        'playerAttack': playerAttack,
-        'playerDefense': playerDefense,
-        'level': level,
-        'exp': exp,
-        'hearts': hearts,
-        'hasUsedAdRevival': hasUsedAdRevival,
-        'cashBalance': cashBalance,
-        'ownedPackIds': _ownedPackIds.toList(),
-        'visitedNodeCount': visitedNodeCount,
-      };
+    'schemaVersion': currentSchemaVersion,
+    'inventory': _inventory,
+    'playerAttack': playerAttack,
+    'playerDefense': playerDefense,
+    'level': level,
+    'exp': exp,
+    'hearts': hearts,
+    'hasUsedAdRevival': hasUsedAdRevival,
+    'cashBalance': cashBalance,
+    'ownedPackIds': _ownedPackIds.toList(),
+  };
 
-  /// [fallbackNodeId]: 저장된 데이터에 currentNodeId가 없을 때 대신 쓸 시작 노드.
-  /// GameState는 스토리 콘텐츠를 모르는 계층이라 임의의 노드 id를 하드코딩할 수 없으므로,
-  /// 실제 시작 노드를 아는 호출부(예: 나중에 추가될 SaveService)가 넘겨준다.
-  factory GameState.fromJson(
-    Map<String, dynamic> json, {
-    required String fallbackNodeId,
-  }) {
-    final state = GameState(
-      startingNodeId: json['currentNodeId'] as String? ?? fallbackNodeId,
-    );
+  factory GameState.fromJson(Map<String, dynamic> json) {
+    final state = GameState();
     state.loadFromJson(json);
     return state;
   }
@@ -196,8 +223,6 @@ class GameState extends ChangeNotifier {
   /// 로그인 후 클라우드 세이브를 불러올 때는 새 인스턴스로 교체하는 대신 이 메서드로
   /// 값만 갱신한다.
   void loadFromJson(Map<String, dynamic> json) {
-    _currentNodeId = json['currentNodeId'] as String? ?? _currentNodeId;
-
     _inventory.clear();
     final inventoryJson = json['inventory'] as Map<String, dynamic>?;
     inventoryJson?.forEach((itemId, count) {
@@ -215,8 +240,6 @@ class GameState extends ChangeNotifier {
     _ownedPackIds.clear();
     final ownedPackIdsJson = json['ownedPackIds'] as List<dynamic>?;
     ownedPackIdsJson?.forEach((id) => _ownedPackIds.add(id as String));
-
-    visitedNodeCount = json['visitedNodeCount'] as int? ?? visitedNodeCount;
 
     notifyListeners();
   }

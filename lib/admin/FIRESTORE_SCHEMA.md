@@ -175,6 +175,22 @@ date: string             // yyyy-MM-dd
 `Notice`(lib/features/catalog/models/notice.dart)와 같은 모양이라, 나중에
 게임이 이 컬렉션을 직접 읽게 되면 `packId`로 걸러서 그대로 매핑할 수 있다.
 
+## users/{uid}/readingProgress/{packId} — 팩별 읽기 진행 상황
+
+```
+currentNodeId: string
+visitedNodeCount: int        // 유료 팩 무료 미리보기 한도 판단에 쓰임
+lastReadAt: timestamp
+```
+
+`users/{uid}/save/current`(GameState 전체 — 인벤토리/레벨/캐시 등)와는 별개의
+서브컬렉션이다. 예전엔 읽던 위치(currentNodeId)와 미리보기 카운트
+(visitedNodeCount)가 GameState 안에 스칼라 하나로만 있어서, 한 팩을 읽다 다른
+팩을 열면 서로의 진행 상황을 그냥 덮어썼다(known limitation, CLAUDE.md 참고) —
+문서 id를 packId로 잡아 팩마다 독립된 문서를 두는 것으로 고쳤다. 리더
+(InteractiveReader/LinearReader)가 노드 이동 시점에 직접 저장한다 — save/current를
+갱신하는 CloudSyncController와는 별개의 경로다(ReadingProgressRepository).
+
 ## users/{uid} — 프로필/역할 문서
 
 기존 `users/{uid}/save/current`(게임 진행 데이터, CLAUDE.md의 "Auth + cloud save"

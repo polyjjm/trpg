@@ -1,6 +1,5 @@
 import 'package:flutter/widgets.dart';
 
-import '../../features/story/data/story_nodes.dart';
 import '../auth/auth_scope.dart';
 import '../auth/auth_service.dart';
 import '../auth/google_auth_service.dart';
@@ -20,8 +19,7 @@ class GameStateProvider extends StatefulWidget {
 }
 
 class _GameStateProviderState extends State<GameStateProvider> {
-  late final GameState _gameState =
-      GameState(startingNodeId: storyStartNodeId);
+  late final GameState _gameState = GameState();
   final AuthService _authService = GoogleAuthService();
   late final CloudSyncController _cloudSyncController = CloudSyncController(
     gameState: _gameState,
@@ -46,10 +44,7 @@ class _GameStateProviderState extends State<GameStateProvider> {
     return AuthScope(
       authService: _authService,
       cloudSyncController: _cloudSyncController,
-      child: GameStateScope(
-        gameState: _gameState,
-        child: widget.child,
-      ),
+      child: GameStateScope(gameState: _gameState, child: widget.child),
     );
   }
 }

@@ -40,6 +40,14 @@ service cloud.firestore {
       allow read, write: if isSignedIn() && myUid() == userId;
     }
 
+    // 팩별 읽기 진행 상황(현재 노드/미리보기 카운트) — 문서 id == packId.
+    // save/current(전역 세이브 하나)와 별개로, 팩마다 독립된 문서를 둬서
+    // 한 팩을 읽다 다른 팩으로 옮겨도 서로의 위치를 안 덮어쓴다. save/
+    // readerPrefs와 같은 "본인만 읽고 쓴다" 패턴.
+    match /users/{userId}/readingProgress/{packId} {
+      allow read, write: if isSignedIn() && myUid() == userId;
+    }
+
     // users/{uid} — 신원/권한 문서. role/authorApplicationStatus는 본인이 함부로
     // 못 바꾼다(승인/반려 흐름을 통해서만 바뀐다).
     match /users/{userId} {

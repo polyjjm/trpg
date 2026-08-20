@@ -1,6 +1,11 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
+import '../../core/auth/auth_scope.dart';
+import '../../core/state/game_state.dart';
 import '../../core/state/game_state_scope.dart';
+import '../../core/state/reading_progress_repository.dart';
 import '../../features/catalog/models/story_pack.dart';
 import '../shared/data/story_reader_repository.dart';
 import '../shared/paywall.dart';
@@ -24,6 +29,8 @@ class LinearReader extends StatefulWidget {
 
 class _LinearReaderState extends State<LinearReader> {
   final StoryReaderRepository _repository = StoryReaderRepository();
+  final ReadingProgressRepository _progressRepository =
+      ReadingProgressRepository();
 
   Map<String, ResolvedStoryNode> _nodesById = {};
   String? _currentNodeId;
@@ -53,9 +60,18 @@ class _LinearReaderState extends State<LinearReader> {
       }
 
       // fetchPublishedNodes()가 이미 order(=챕터 순서) 오름차순으로 정렬해 반환한다.
+      final entryId = nodes.first.node.id;
+      final nodesById = {for (final n in nodes) n.node.id: n};
+
+      final resumeNodeId = await _resolveResumeNodeId(
+        entryId: entryId,
+        validNodeIds: nodesById.keys.toSet(),
+      );
+      if (!mounted) return;
+
       setState(() {
-        _nodesById = {for (final n in nodes) n.node.id: n};
-        _currentNodeId = nodes.first.node.id;
+        _nodesById = nodesById;
+        _currentNodeId = resumeNodeId;
         _loading = false;
       });
     } catch (_) {
@@ -67,6 +83,34 @@ class _LinearReaderState extends State<LinearReader> {
     }
   }
 
+  /// InteractiveReader._resolveResumeNodeId와 같다 — 이 팩에 저장된 위치가
+  /// 있으면 그 챕터에서, 없으면 [entryId](첫 챕터)부터 시작한다.
+  Future<String> _resolveResumeNodeId({
+    required String entryId,
+    required Set<String> validNodeIds,
+  }) async {
+    final gameState = GameStateScope.of(context);
+    var progress = gameState.progressFor(widget.pack.id);
+
+    if (progress == null) {
+      final uid = AuthScope.of(context).userId;
+      if (uid != null) {
+        final loaded = await _progressRepository.load(uid, widget.pack.id);
+        if (!mounted) return entryId;
+        if (loaded != null) {
+          gameState.seedPackProgress(widget.pack.id, loaded);
+          progress = loaded;
+        }
+      }
+    }
+
+    final savedNodeId = progress?.currentNodeId;
+    if (savedNodeId != null && validNodeIds.contains(savedNodeId)) {
+      return savedNodeId;
+    }
+    return entryId;
+  }
+
   Future<void> _goToNext(String nextNodeId) async {
     if (!_nodesById.containsKey(nextNodeId)) return;
 
@@ -75,16 +119,32 @@ class _LinearReaderState extends State<LinearReader> {
     final previewLimitReached =
         !pack.isFree &&
         !gameState.ownsPack(pack.id) &&
-        gameState.visitedNodeCount >= pack.previewNodeLimit;
+        (gameState.progressFor(pack.id)?.visitedNodeCount ?? 0) >=
+            pack.previewNodeLimit;
 
     if (previewLimitReached) {
       final purchased = await requestPackPurchase(context, gameState, pack);
       if (!purchased || !mounted) return;
     }
 
-    gameState.goToNode(nextNodeId);
+    gameState.recordNodeVisit(packId: pack.id, nodeId: nextNodeId);
+    unawaited(_persistProgress(gameState));
     if (!mounted) return;
     setState(() => _currentNodeId = nextNodeId);
+  }
+
+  /// 로그인 사용자만 Firestore에 저장한다 — 게스트는 GameState의 메모리
+  /// 상태만으로 이번 세션 안에서의 팩별 분리를 이미 만족한다.
+  Future<void> _persistProgress(GameState gameState) async {
+    final uid = AuthScope.of(context).userId;
+    if (uid == null) return;
+    final progress = gameState.progressFor(widget.pack.id);
+    if (progress == null) return;
+    try {
+      await _progressRepository.save(uid, widget.pack.id, progress);
+    } catch (e) {
+      debugPrint('읽기 진행 상황 저장 실패: $e');
+    }
   }
 
   @override

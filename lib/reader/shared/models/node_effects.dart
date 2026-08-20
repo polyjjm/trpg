@@ -3,9 +3,11 @@
 /// 리더는 절대 lib/admin/을 import하지 않는다(모바일 빌드에서 admin 코드를
 /// 끌고 들어가지 않기 위해서 — CLAUDE.md "Writer/admin web tool" 참고)는
 /// 원칙 때문에 StoryNode(story_node.dart)처럼 별개 클래스로 다시 둔다.
-/// 여기서는 재생에 필요한 값(초/픽셀/enum)만 다루고, toJson/copyWith 같은
-/// 편집기 전용 기능은 없다 — 리더는 읽기만 한다.
+/// 여기서는 재생에 필요한 값(초/픽셀/Color/enum)만 다루고, toJson/copyWith
+/// 같은 편집기 전용 기능은 없다 — 리더는 읽기만 한다.
 library;
+
+import 'package:flutter/material.dart' show Color, Colors;
 
 enum BlackoutDurationPreset { half, one, two }
 
@@ -41,6 +43,45 @@ extension ShakeIntensityPresetPlayback on ShakeIntensityPreset {
       '약하게' => ShakeIntensityPreset.weak,
       '강하게' => ShakeIntensityPreset.strong,
       _ => ShakeIntensityPreset.normal,
+    };
+  }
+}
+
+enum FlashColorPreset { red, white, blue }
+
+extension FlashColorPresetPlayback on FlashColorPreset {
+  /// 화면 전체를 완전히 덮는 blackout과 달리, 플래시는 배경/텍스트가 살짝
+  /// 비치는 반투명이어야 "번쩍임"으로 읽힌다 — 그래서 셋 다 완전 불투명이
+  /// 아니라 40~55% 알파를 쓴다(하양은 대비가 약해서 조금 더 진하게).
+  Color get color => switch (this) {
+    FlashColorPreset.red => Colors.red.withOpacity(0.45),
+    FlashColorPreset.white => Colors.white.withOpacity(0.55),
+    FlashColorPreset.blue => Colors.lightBlue.withOpacity(0.4),
+  };
+
+  static FlashColorPreset fromWire(String? value) {
+    return switch (value) {
+      '하양(섬광)' => FlashColorPreset.white,
+      '파랑(냉기)' => FlashColorPreset.blue,
+      _ => FlashColorPreset.red,
+    };
+  }
+}
+
+enum FlashDurationPreset { short, normal, long }
+
+extension FlashDurationPresetPlayback on FlashDurationPreset {
+  Duration get duration => switch (this) {
+    FlashDurationPreset.short => const Duration(milliseconds: 150),
+    FlashDurationPreset.normal => const Duration(milliseconds: 300),
+    FlashDurationPreset.long => const Duration(milliseconds: 500),
+  };
+
+  static FlashDurationPreset fromWire(String? value) {
+    return switch (value) {
+      '짧게' => FlashDurationPreset.short,
+      '길게' => FlashDurationPreset.long,
+      _ => FlashDurationPreset.normal,
     };
   }
 }
@@ -113,6 +154,31 @@ class SfxEffect {
   }
 }
 
+class FlashEffect {
+  final bool enabled;
+  final FlashColorPreset colorPreset;
+  final FlashDurationPreset durationPreset;
+
+  const FlashEffect({
+    this.enabled = false,
+    this.colorPreset = FlashColorPreset.red,
+    this.durationPreset = FlashDurationPreset.normal,
+  });
+
+  factory FlashEffect.fromJson(Map<String, dynamic>? json) {
+    if (json == null) return const FlashEffect();
+    return FlashEffect(
+      enabled: json['enabled'] as bool? ?? false,
+      colorPreset: FlashColorPresetPlayback.fromWire(
+        json['colorPreset'] as String?,
+      ),
+      durationPreset: FlashDurationPresetPlayback.fromWire(
+        json['durationPreset'] as String?,
+      ),
+    );
+  }
+}
+
 class HapticEffect {
   final bool enabled;
   final HapticDurationPreset durationPreset;
@@ -137,12 +203,14 @@ class NodeEffects {
   final BlackoutEffect blackout;
   final ShakeEffect shake;
   final SfxEffect sfx;
+  final FlashEffect flash;
   final HapticEffect haptic;
 
   const NodeEffects({
     this.blackout = const BlackoutEffect(),
     this.shake = const ShakeEffect(),
     this.sfx = const SfxEffect(),
+    this.flash = const FlashEffect(),
     this.haptic = const HapticEffect(),
   });
 
@@ -154,6 +222,7 @@ class NodeEffects {
       ),
       shake: ShakeEffect.fromJson(json['shake'] as Map<String, dynamic>?),
       sfx: SfxEffect.fromJson(json['sfx'] as Map<String, dynamic>?),
+      flash: FlashEffect.fromJson(json['flash'] as Map<String, dynamic>?),
       haptic: HapticEffect.fromJson(json['haptic'] as Map<String, dynamic>?),
     );
   }

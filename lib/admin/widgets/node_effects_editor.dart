@@ -6,11 +6,9 @@ import 'admin_theme.dart';
 import 'labeled_field.dart';
 import 'sfx_picker_field.dart';
 
-/// "연출 효과" 섹션 — 프리셋 전용 4종(암전/화면 흔들림/효과음/진동)만
-/// 다룬다 — 자유 설정이 없어서 비개발자 작가도 무슨 값을 넣어야 할지 고민할
-/// 필요가 없다. 실제 재생(사운드 파일, 진동 API)은 아직 안 붙어 있다 —
-/// 여기서 고른 값은 지금은 그냥 기록만 되고, 리더가 실제로 재생하게 만드는
-/// 건 에셋이 준비된 다음 패스의 몫이다.
+/// "연출 효과" 섹션 — 프리셋 전용 5종(암전/화면 흔들림/효과음/화면 플래시/
+/// 진동)만 다룬다 — 자유 설정이 없어서 비개발자 작가도 무슨 값을 넣어야
+/// 할지 고민할 필요가 없다.
 ///
 /// 접고 펴는 건 이 위젯 바깥(node_editor.dart의 "연출 효과" 필/토글)이
 /// 맡는다 — 예전엔 여기 자체가 ExpansionTile이었는데, 노드 에디터 전체를
@@ -81,6 +79,23 @@ class NodeEffectsEditor extends StatelessWidget {
               sfx: sfxId == null
                   ? effects.sfx.copyWith(clearSfxId: true)
                   : effects.sfx.copyWith(sfxId: sfxId),
+            ),
+          ),
+        ),
+        const SizedBox(height: 14),
+        _FlashEffectRow(
+          flash: effects.flash,
+          onEnabledChanged: (value) => onChanged(
+            effects.copyWith(flash: effects.flash.copyWith(enabled: value)),
+          ),
+          onColorChanged: (preset) => onChanged(
+            effects.copyWith(
+              flash: effects.flash.copyWith(colorPreset: preset),
+            ),
+          ),
+          onDurationChanged: (preset) => onChanged(
+            effects.copyWith(
+              flash: effects.flash.copyWith(durationPreset: preset),
             ),
           ),
         ),
@@ -193,6 +208,164 @@ class _SfxEffectRow extends StatelessWidget {
           ),
         ],
       ],
+    );
+  }
+}
+
+/// "화면 플래시" 행 전용 — 나머지 프리셋 행(_EffectRow<T>)은 축 하나(지속
+/// 시간 또는 강도)만 고르면 되지만, 플래시는 색(FlashColorPreset)과 지속
+/// 시간(FlashDurationPreset) 두 축을 동시에 골라야 해서 드롭다운을 두 개
+/// 나란히 놓는다 — 그 점만 빼면 체크박스+라벨 구조는 _EffectRow와 같다.
+class _FlashEffectRow extends StatelessWidget {
+  final FlashEffect flash;
+  final ValueChanged<bool> onEnabledChanged;
+  final ValueChanged<FlashColorPreset> onColorChanged;
+  final ValueChanged<FlashDurationPreset> onDurationChanged;
+
+  const _FlashEffectRow({
+    required this.flash,
+    required this.onEnabledChanged,
+    required this.onColorChanged,
+    required this.onDurationChanged,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        SizedBox(
+          width: 24,
+          height: 24,
+          child: Checkbox(
+            value: flash.enabled,
+            fillColor: WidgetStateProperty.resolveWith(
+              (states) => states.contains(WidgetState.selected)
+                  ? AdminColors.gold
+                  : AdminColors.checkboxUncheckedFill,
+            ),
+            checkColor: AdminColors.checkboxCheckColor,
+            side: BorderSide(
+              color: AdminColors.checkboxUncheckedBorder,
+              width: 1.5,
+            ),
+            onChanged: (checked) => onEnabledChanged(checked ?? false),
+          ),
+        ),
+        const SizedBox(width: 8),
+        Expanded(
+          child: Padding(
+            padding: const EdgeInsets.only(top: 2),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  '화면 플래시',
+                  style: TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                    color: AdminColors.ivory,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  '화면 전체가 짧게 색으로 번쩍여요 (피격/섬광/냉기)',
+                  style: TextStyle(fontSize: 11, color: AdminColors.muted),
+                ),
+              ],
+            ),
+          ),
+        ),
+        const SizedBox(width: 10),
+        Column(
+          crossAxisAlignment: CrossAxisAlignment.end,
+          children: [
+            SizedBox(
+              width: 128,
+              child: _PresetDropdown<FlashColorPreset>(
+                value: flash.colorPreset,
+                options: FlashColorPreset.values,
+                optionLabel: (p) => p.label,
+                enabled: flash.enabled,
+                onChanged: onColorChanged,
+              ),
+            ),
+            const SizedBox(height: 6),
+            SizedBox(
+              width: 128,
+              child: _PresetDropdown<FlashDurationPreset>(
+                value: flash.durationPreset,
+                options: FlashDurationPreset.values,
+                optionLabel: (p) => p.label,
+                enabled: flash.enabled,
+                onChanged: onDurationChanged,
+              ),
+            ),
+          ],
+        ),
+      ],
+    );
+  }
+}
+
+/// _EffectRow<T>의 드롭다운 부분만 떼어낸 것 — _FlashEffectRow가 한 행에
+/// 드롭다운을 두 개(색/지속 시간) 세로로 쌓아야 해서 재사용한다.
+class _PresetDropdown<T> extends StatelessWidget {
+  final T value;
+  final List<T> options;
+  final String Function(T) optionLabel;
+  final bool enabled;
+  final ValueChanged<T> onChanged;
+
+  const _PresetDropdown({
+    required this.value,
+    required this.options,
+    required this.optionLabel,
+    required this.enabled,
+    required this.onChanged,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return DropdownButtonFormField<T>(
+      initialValue: value,
+      isDense: true,
+      isExpanded: true,
+      decoration: adminInputDecoration(),
+      dropdownColor: AdminColors.inputDropdownMenuBg,
+      style: TextStyle(
+        color: enabled ? AdminColors.inputText : AdminColors.muted,
+        fontSize: 12.5,
+      ),
+      selectedItemBuilder: (context) => [
+        for (final option in options)
+          Align(
+            alignment: Alignment.centerLeft,
+            child: Text(
+              optionLabel(option),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              softWrap: false,
+            ),
+          ),
+      ],
+      items: [
+        for (final option in options)
+          DropdownMenuItem<T>(
+            value: option,
+            child: Text(
+              optionLabel(option),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              softWrap: false,
+            ),
+          ),
+      ],
+      onChanged: enabled
+          ? (value) {
+              if (value != null) onChanged(value);
+            }
+          : null,
     );
   }
 }

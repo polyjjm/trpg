@@ -32,7 +32,7 @@ Feature-first layout under `lib/features/<feature>/{pages,widgets,models,service
 
 `main.dart` (`MyApp` → `MainPage`, the title screen) → `CatalogShellPage` (`features/catalog`, the library/home tab bar) → `StoryPackDetailPage` → `InteractiveReader`/`LinearReader` (`lib/reader/`, picked by `storyPack.format` — see "Reader system" below), all pushed/popped via `Navigator.push`/`pop` with typed result objects rather than a router package (no named routes, no `go_router`/`Navigator 2.0`).
 
-The old hardcoded `features/story/widgets/story_page.dart` (`StoryPage`) has been retired — it rendered the hand-written `features/story/data/story_nodes.dart` content directly. That file's actual node content is no longer read by anything; only its `storyStartNodeId` sentinel constant (`'intro_01'`) still gets imported, purely as a placeholder value — `GameStateProvider` uses it as `GameState`'s initial `startingNodeId`, and `StoryPackDetailPage`/`EncounterPage` compare against it as a crude "has the player made progress yet" check (a known limitation: `GameState.currentNodeId` is still global, not per-pack — unchanged by the reader work). `EncounterPage` itself is no longer routed to from anywhere in the app — it's dead code that hasn't been deleted, not an active screen.
+The old hardcoded `features/story/widgets/story_page.dart` (`StoryPage`) has been retired — it rendered the hand-written `features/story/data/story_nodes.dart` content directly. That file's actual node content is no longer read by anything, and its `storyStartNodeId` sentinel constant (`'intro_01'`) is now unused dead code too (kept, not deleted) — `GameState` no longer takes a `startingNodeId`/keeps a global `currentNodeId` at all; per-pack read position now lives in `GameState`'s `Map<String, ReadingProgress>` (see "Reader system" below), so this old sentinel has nothing left to feed. `EncounterPage` itself is no longer routed to from anywhere in the app — it's dead code that hasn't been deleted, not an active screen.
 
 ### Reader system (`lib/reader/`)
 
@@ -40,10 +40,11 @@ Real per-pack content flows from Firestore (`storyPacks/{packId}/nodes`, reading
 
 `SceneFrame` (`lib/reader/shared/scene_frame.dart`) is the shared full-screen node renderer both reader types build on: it types out `blocks` (paragraph/beat/image) in order, fades in a background banner, and — once typing completes — fades in a type-specific action area supplied by the caller via `actionAreaBuilder`. It also owns a collapsible bottom settings sheet (TTS play/pause via `lib/reader/shared/tts_controller.dart` wrapping `flutter_tts`, BGM mute via `AudioService`, font selector, typing-animation toggle) backed by a per-user `users/{uid}/readerPrefs/settings` Firestore doc (`ReaderPrefsRepository`, `lib/reader/shared/data/reader_prefs_repository.dart`).
 
-- `InteractiveReader` (`lib/reader/interactive/`): `storyPack.type == 'interactive'`. Renders `node.choices` as buttons; tapping one calls `GameState.goToNode(choice.nextNodeId)` and swaps to that node in place (no new route per node).
+- `InteractiveReader` (`lib/reader/interactive/`): `storyPack.type == 'interactive'`. Renders `node.choices` as buttons; tapping one calls `GameState.recordNodeVisit(packId: ..., nodeId: choice.nextNodeId)` and swaps to that node in place (no new route per node).
 - `LinearReader` (`lib/reader/linear/`): `storyPack.type == 'linear'`. Renders a single "다음" button following `node.nextNodeId`, or "완료" when it's null.
-- Both reuse `GameState.ownsPack`/`visitedNodeCount`/`previewNodeLimit` for the free-preview paywall (`lib/reader/shared/paywall.dart`) — note this progress tracking is still global on `GameState`, not per-pack (a pre-existing limitation, unchanged by the reader work).
-- **Not yet implemented**: actual playback of the `effects` scene-presentation fields (blackout/shake/sfx/haptic — see "Node content schema" below). The schema and admin authoring UI exist; `SceneFrame` doesn't read or play them yet.
+- Both reuse `GameState.ownsPack`/`previewNodeLimit` for the free-preview paywall (`lib/reader/shared/paywall.dart`), now reading the per-pack `visitedNodeCount` off `GameState.progressFor(packId)` (see below) instead of a global counter.
+- **Per-pack reading progress**: `GameState` holds `Map<String, ReadingProgress> _readingProgress` keyed by `packId` (`lib/core/state/reading_progress.dart`) — `currentNodeId`/`visitedNodeCount`/`lastReadAt` per pack, replacing the old global `GameState.currentNodeId`/`visitedNodeCount` scalars (a previously-documented known limitation, now fixed). Signed-in users get this persisted to `users/{uid}/readingProgress/{packId}` via `ReadingProgressRepository` (`lib/core/state/reading_progress_repository.dart`) — written directly by `InteractiveReader`/`LinearReader` at the same point they call `recordNodeVisit`/`resetPackProgress`, not through `CloudSyncController` (which only still owns the single `users/{uid}/save/current` blob — inventory/level/hearts/cash/ownedPackIds — via `GameState.toJson()`/`loadFromJson()`, schema v6+, which no longer carries `currentNodeId`/`visitedNodeCount` at all). Guest/signed-out play keeps the same map purely in memory — separate per pack within the session, gone on restart, same as the rest of guest `GameState`. On opening a reader, if `GameState.progressFor(packId)` is empty it falls back to a Firestore lookup (signed-in only) before defaulting to the pack's first node; `StoryPackDetailPage` does the same lookup proactively so its "이어보기"/"읽기 시작" button label and 진행률 metadata reflect the real per-pack signal instead of the old global placeholder.
+- Both readers implement all four `effects` scene-presentation types (blackout/shake/sfx/haptic) plus the newer `flash` type — see "Node content schema" below. `SceneFrame` fires every enabled effect concurrently (fire-and-forget, no `await` chain between them) exactly once per node visit, right as `actionAreaBuilder` fades in.
 
 ### Panel system (`lib/features/panel`)
 
@@ -215,13 +216,20 @@ file), nodes carry:
   field's own options).
 - `effects` (nullable, preset-only): scene-presentation effects — `blackout`
   (`{enabled, durationPreset: 0.5s|1s|2s}`), `shake` (`{enabled, intensityPreset: 약하게|보통|강하게}`),
-  `sfx` (`{enabled, preset: 문 여는 소리|발소리|비명|심장박동}`), `haptic`
-  (`{enabled, durationPreset: 짧게|길게}`) — modeled in `lib/admin/models/node_effects.dart`,
-  edited via a collapsible "연출 효과" section in `NodeEditor`
+  `sfx` (`{enabled, sfxId: string?}` — a `sfxLibrary/{sfxId}` reference, not a fixed preset; see
+  "SFX library" below), `flash` (`{enabled, colorPreset: 빨강(피격)|하양(섬광)|파랑(냉기),
+  durationPreset: 짧게|보통|길게}`), `haptic` (`{enabled, durationPreset: 짧게|길게}`) — modeled in
+  `lib/admin/models/node_effects.dart`, edited via a collapsible "연출 효과" section in `NodeEditor`
   (`lib/admin/widgets/node_effects_editor.dart`), a peer of the 배경 이미지/본문/선택지 sections,
-  not a separate tab. Deliberately preset-only, no free-form config, so non-developer authors
-  never have to guess at a value. **Schema and editor UI only** — no actual playback is wired up
-  yet (no audio files exist, no vibration API calls); see "Reader system" above.
+  not a separate tab. Deliberately preset-only (except `sfx`, which points at an uploaded library
+  file), so non-developer authors never have to guess at a value. **Playback is fully wired up**:
+  the reader has its own parallel model (`lib/reader/shared/models/node_effects.dart` — never
+  imports `lib/admin/`) and `SceneFrame` (`lib/reader/shared/scene_frame.dart`) triggers every
+  enabled effect concurrently, exactly once per node visit, the moment typing finishes — blackout/
+  flash render as independent `AnimatedOpacity` color overlays in `SceneFrame`'s `Stack`, shake as
+  a decaying-sine `Transform.translate` via an `AnimationController`, sfx via
+  `AudioService.instance.playSfx` (resolved `sfxId → storageUrl` through the same join pattern as
+  `backgroundImage`, in `StoryReaderRepository`), haptic via `HapticFeedback`.
 
 ### Image library
 
@@ -233,6 +241,22 @@ filter chips with live counts per category; the same category filter narrows
 pack default background pickers, both scoped to `배경`). A "카테고리 변경" action per card
 re-tags an image after the fact — useful for images uploaded before this field existed, which
 read as 기타 by default.
+
+### SFX library
+
+Mirrors the image library pattern: `sfxLibrary/{sfxId}` (shared across all packs/authors — not
+per-pack) is a lightweight Firestore index (`name`/`category`/`storageUrl`/`uploadedBy`/
+`createdAt`) pointing at a file under Storage `admin/story_sfx/{sfxId}.mp3` (fixed extension in
+the path, unlike images which keep the original filename). `category` is a fixed 5-value enum
+(문/발소리/비명/심장박동/기타), edited in the "효과음 라이브러리" tab (`SfxLibraryTab`,
+`lib/admin/pages/sfx_library_tab.dart`) — filter chips + live counts + name search
+(`LibrarySearchField`, shared with `ImageLibraryTab`'s own search box) + upload (`file_picker`'s
+`FileType.audio`) + a per-card preview-play button (`AudioService.instance.playSfx`, which
+already spins up a short-lived `AudioPlayer` per call, independent of the BGM player). The node
+editor's SFX picker (`SfxPickerField`, `lib/admin/widgets/sfx_picker_field.dart`) is the
+`ImagePickerField` pattern adapted the same way — thumbnail slot replaced by a play button, plus
+its own category filter chips baked in (unlike `ImagePickerField`, which is always called with a
+single fixed `filterCategory` from its call site).
 
 ### Bulk content entry (linear packs)
 

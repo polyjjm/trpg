@@ -1,8 +1,9 @@
 /// 노드 연출 효과 — 프리셋 전용(자유 설정 없음)이라 작가가 값을 몰라도
-/// 안전하게 고를 수 있다. 실제 재생(사운드 파일, 진동 API 연동)은 나중
-/// 패스의 몫이고, 지금은 리더에 아직 반영되지 않는 "작가의 의도 기록"일
-/// 뿐이다 — SceneFrame(lib/reader/shared/scene_frame.dart)이 이걸 실제로
-/// 재생하게 만드는 건 별도 작업이다.
+/// 안전하게 고를 수 있다. 다섯 종(암전/화면 흔들림/효과음/화면 플래시/진동)
+/// 전부 SceneFrame(lib/reader/shared/scene_frame.dart)이 실제로 재생한다 —
+/// 리더는 이 파일을 직접 쓰지 않고, 같은 필드를 다시 파싱하는 별개 모델
+/// (lib/reader/shared/models/node_effects.dart)로 읽는다(admin 코드를 리더
+/// 빌드에 끌고 들어가지 않기 위해서 — CLAUDE.md 참고).
 library;
 
 enum BlackoutDurationPreset { half, one, two }
@@ -39,6 +40,44 @@ extension ShakeIntensityPresetJson on ShakeIntensityPreset {
     return ShakeIntensityPreset.values.firstWhere(
       (p) => p.wireValue == value,
       orElse: () => ShakeIntensityPreset.normal,
+    );
+  }
+}
+
+enum FlashColorPreset { red, white, blue }
+
+extension FlashColorPresetJson on FlashColorPreset {
+  String get wireValue => switch (this) {
+    FlashColorPreset.red => '빨강(피격)',
+    FlashColorPreset.white => '하양(섬광)',
+    FlashColorPreset.blue => '파랑(냉기)',
+  };
+
+  String get label => wireValue;
+
+  static FlashColorPreset fromWire(String? value) {
+    return FlashColorPreset.values.firstWhere(
+      (p) => p.wireValue == value,
+      orElse: () => FlashColorPreset.red,
+    );
+  }
+}
+
+enum FlashDurationPreset { short, normal, long }
+
+extension FlashDurationPresetJson on FlashDurationPreset {
+  String get wireValue => switch (this) {
+    FlashDurationPreset.short => '짧게',
+    FlashDurationPreset.normal => '보통',
+    FlashDurationPreset.long => '길게',
+  };
+
+  String get label => wireValue;
+
+  static FlashDurationPreset fromWire(String? value) {
+    return FlashDurationPreset.values.firstWhere(
+      (p) => p.wireValue == value,
+      orElse: () => FlashDurationPreset.normal,
     );
   }
 }
@@ -158,6 +197,54 @@ class SfxEffect {
   }
 }
 
+/// 피격/섬광/냉기처럼 색으로 의미가 갈리는 화면 플래시 — 순간적으로 색이
+/// 확 들어왔다 durationPreset에 걸쳐 빠지는 연출이다. blackout(암전)과 같은
+/// "화면 전체 오버레이" 계열이지만 색이 검정 고정이 아니라 프리셋으로
+/// 고른다는 점이 다르다 — 그래서 durationPreset도 blackout과 값 구간이 달라
+/// (0.5s/1s/2s가 아니라 짧게/보통/길게) 별개 enum(FlashDurationPreset)을 쓴다.
+class FlashEffect {
+  final bool enabled;
+  final FlashColorPreset colorPreset;
+  final FlashDurationPreset durationPreset;
+
+  const FlashEffect({
+    this.enabled = false,
+    this.colorPreset = FlashColorPreset.red,
+    this.durationPreset = FlashDurationPreset.normal,
+  });
+
+  factory FlashEffect.fromJson(Map<String, dynamic>? json) {
+    if (json == null) return const FlashEffect();
+    return FlashEffect(
+      enabled: json['enabled'] as bool? ?? false,
+      colorPreset: FlashColorPresetJson.fromWire(
+        json['colorPreset'] as String?,
+      ),
+      durationPreset: FlashDurationPresetJson.fromWire(
+        json['durationPreset'] as String?,
+      ),
+    );
+  }
+
+  Map<String, dynamic> toJson() => {
+    'enabled': enabled,
+    'colorPreset': colorPreset.wireValue,
+    'durationPreset': durationPreset.wireValue,
+  };
+
+  FlashEffect copyWith({
+    bool? enabled,
+    FlashColorPreset? colorPreset,
+    FlashDurationPreset? durationPreset,
+  }) {
+    return FlashEffect(
+      enabled: enabled ?? this.enabled,
+      colorPreset: colorPreset ?? this.colorPreset,
+      durationPreset: durationPreset ?? this.durationPreset,
+    );
+  }
+}
+
 class HapticEffect {
   final bool enabled;
   final HapticDurationPreset durationPreset;
@@ -197,12 +284,14 @@ class NodeEffects {
   final BlackoutEffect blackout;
   final ShakeEffect shake;
   final SfxEffect sfx;
+  final FlashEffect flash;
   final HapticEffect haptic;
 
   const NodeEffects({
     this.blackout = const BlackoutEffect(),
     this.shake = const ShakeEffect(),
     this.sfx = const SfxEffect(),
+    this.flash = const FlashEffect(),
     this.haptic = const HapticEffect(),
   });
 
@@ -214,6 +303,7 @@ class NodeEffects {
       ),
       shake: ShakeEffect.fromJson(json['shake'] as Map<String, dynamic>?),
       sfx: SfxEffect.fromJson(json['sfx'] as Map<String, dynamic>?),
+      flash: FlashEffect.fromJson(json['flash'] as Map<String, dynamic>?),
       haptic: HapticEffect.fromJson(json['haptic'] as Map<String, dynamic>?),
     );
   }
@@ -222,6 +312,7 @@ class NodeEffects {
     'blackout': blackout.toJson(),
     'shake': shake.toJson(),
     'sfx': sfx.toJson(),
+    'flash': flash.toJson(),
     'haptic': haptic.toJson(),
   };
 
@@ -229,12 +320,14 @@ class NodeEffects {
     BlackoutEffect? blackout,
     ShakeEffect? shake,
     SfxEffect? sfx,
+    FlashEffect? flash,
     HapticEffect? haptic,
   }) {
     return NodeEffects(
       blackout: blackout ?? this.blackout,
       shake: shake ?? this.shake,
       sfx: sfx ?? this.sfx,
+      flash: flash ?? this.flash,
       haptic: haptic ?? this.haptic,
     );
   }

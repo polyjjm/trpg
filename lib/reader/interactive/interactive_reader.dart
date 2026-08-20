@@ -1,6 +1,11 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
+import '../../core/auth/auth_scope.dart';
+import '../../core/state/game_state.dart';
 import '../../core/state/game_state_scope.dart';
+import '../../core/state/reading_progress_repository.dart';
 import '../../features/catalog/models/story_pack.dart';
 import '../shared/data/story_reader_repository.dart';
 import '../shared/models/choice.dart';
@@ -26,6 +31,8 @@ class InteractiveReader extends StatefulWidget {
 
 class _InteractiveReaderState extends State<InteractiveReader> {
   final StoryReaderRepository _repository = StoryReaderRepository();
+  final ReadingProgressRepository _progressRepository =
+      ReadingProgressRepository();
 
   Map<String, ResolvedStoryNode> _nodesById = {};
   String? _currentNodeId;
@@ -57,10 +64,18 @@ class _InteractiveReaderState extends State<InteractiveReader> {
 
       // fetchPublishedNodes()가 이미 order 오름차순으로 정렬해 반환한다.
       final entryId = nodes.first.node.id;
+      final nodesById = {for (final n in nodes) n.node.id: n};
+
+      final resumeNodeId = await _resolveResumeNodeId(
+        entryId: entryId,
+        validNodeIds: nodesById.keys.toSet(),
+      );
+      if (!mounted) return;
+
       setState(() {
-        _nodesById = {for (final n in nodes) n.node.id: n};
+        _nodesById = nodesById;
         _entryNodeId = entryId;
-        _currentNodeId = entryId;
+        _currentNodeId = resumeNodeId;
         _loading = false;
       });
     } catch (_) {
@@ -72,6 +87,36 @@ class _InteractiveReaderState extends State<InteractiveReader> {
     }
   }
 
+  /// 이 팩에 저장된 위치가 있으면 그 노드에서, 없으면 [entryId](처음)부터
+  /// 시작한다. 메모리(GameState — 게스트, 또는 이번 세션에 StoryPackDetailPage가
+  /// 이미 미리 불러와 채워 둔 로그인 사용자)를 먼저 보고, 거기 없을 때만
+  /// Firestore(users/{uid}/readingProgress/{packId})를 확인한다.
+  Future<String> _resolveResumeNodeId({
+    required String entryId,
+    required Set<String> validNodeIds,
+  }) async {
+    final gameState = GameStateScope.of(context);
+    var progress = gameState.progressFor(widget.pack.id);
+
+    if (progress == null) {
+      final uid = AuthScope.of(context).userId;
+      if (uid != null) {
+        final loaded = await _progressRepository.load(uid, widget.pack.id);
+        if (!mounted) return entryId;
+        if (loaded != null) {
+          gameState.seedPackProgress(widget.pack.id, loaded);
+          progress = loaded;
+        }
+      }
+    }
+
+    final savedNodeId = progress?.currentNodeId;
+    if (savedNodeId != null && validNodeIds.contains(savedNodeId)) {
+      return savedNodeId;
+    }
+    return entryId;
+  }
+
   Future<void> _handleChoice(Choice choice) async {
     if (!_nodesById.containsKey(choice.nextNodeId)) return;
 
@@ -80,14 +125,16 @@ class _InteractiveReaderState extends State<InteractiveReader> {
     final previewLimitReached =
         !pack.isFree &&
         !gameState.ownsPack(pack.id) &&
-        gameState.visitedNodeCount >= pack.previewNodeLimit;
+        (gameState.progressFor(pack.id)?.visitedNodeCount ?? 0) >=
+            pack.previewNodeLimit;
 
     if (previewLimitReached) {
       final purchased = await requestPackPurchase(context, gameState, pack);
       if (!purchased || !mounted) return;
     }
 
-    gameState.goToNode(choice.nextNodeId);
+    gameState.recordNodeVisit(packId: pack.id, nodeId: choice.nextNodeId);
+    unawaited(_persistProgress(gameState));
     if (!mounted) return;
     setState(() => _currentNodeId = choice.nextNodeId);
   }
@@ -95,8 +142,25 @@ class _InteractiveReaderState extends State<InteractiveReader> {
   void _restart() {
     final entryId = _entryNodeId;
     if (entryId == null) return;
-    GameStateScope.of(context).resetProgress(entryId);
+    final gameState = GameStateScope.of(context);
+    gameState.resetProgress();
+    gameState.resetPackProgress(widget.pack.id, entryId);
+    unawaited(_persistProgress(gameState));
     setState(() => _currentNodeId = entryId);
+  }
+
+  /// 로그인 사용자만 Firestore에 저장한다 — 게스트는 GameState의 메모리
+  /// 상태만으로 이번 세션 안에서의 팩별 분리를 이미 만족한다.
+  Future<void> _persistProgress(GameState gameState) async {
+    final uid = AuthScope.of(context).userId;
+    if (uid == null) return;
+    final progress = gameState.progressFor(widget.pack.id);
+    if (progress == null) return;
+    try {
+      await _progressRepository.save(uid, widget.pack.id, progress);
+    } catch (e) {
+      debugPrint('읽기 진행 상황 저장 실패: $e');
+    }
   }
 
   @override
