@@ -14,6 +14,12 @@ class LocalAuthService implements AuthService {
   String? get userId => null;
 
   @override
+  String? get displayName => null;
+
+  @override
+  String? get photoUrl => null;
+
+  @override
   Future<AuthResult> signIn() async {
     // TODO: 실제 로그인 공급자 연동 지점.
     return const AuthResult(

@@ -12,7 +12,8 @@ import '../models/story_pack.dart';
 /// 팩 문서의 top-level title/genres/description/coverImageId는 작가가 "지금
 /// 편집 중인" 값이라 아직 승인 안 된 변경이 섞여 있을 수 있다.
 class StoryPackRepository {
-  StoryPackRepository({FirebaseFirestore? firestore}) : _firestore = firestore ?? FirebaseFirestore.instance;
+  StoryPackRepository({FirebaseFirestore? firestore})
+    : _firestore = firestore ?? FirebaseFirestore.instance;
 
   final FirebaseFirestore _firestore;
 
@@ -24,15 +25,24 @@ class StoryPackRepository {
         .asyncMap(_toVisiblePacks);
   }
 
-  Future<List<StoryPack>> _toVisiblePacks(QuerySnapshot<Map<String, dynamic>> snapshot) async {
+  Future<List<StoryPack>> _toVisiblePacks(
+    QuerySnapshot<Map<String, dynamic>> snapshot,
+  ) async {
     if (snapshot.docs.isEmpty) return const [];
 
     final publishedPackIds = await _fetchPackIdsWithPublishedNode();
-    final candidates = snapshot.docs.where((doc) => publishedPackIds.contains(doc.id)).toList();
+    final candidates = snapshot.docs
+        .where((doc) => publishedPackIds.contains(doc.id))
+        .toList();
     if (candidates.isEmpty) return const [];
 
     final coverImageIds = candidates
-        .map((doc) => (doc.data()['liveMetadata'] as Map<String, dynamic>?)?['coverImageId'] as String?)
+        .map(
+          (doc) =>
+              (doc.data()['liveMetadata']
+                      as Map<String, dynamic>?)?['coverImageId']
+                  as String?,
+        )
         .whereType<String>()
         .toSet();
     final coverUrls = await _fetchImageUrls(coverImageIds);
@@ -43,16 +53,21 @@ class StoryPackRepository {
       final coverImageId = live?['coverImageId'] as String?;
       return StoryPack(
         id: doc.id,
-        title: live?['title'] as String? ?? data['title'] as String? ?? '(제목 없음)',
+        title:
+            live?['title'] as String? ?? data['title'] as String? ?? '(제목 없음)',
         description: live?['description'] as String? ?? '',
         authorName: data['authorName'] as String? ?? '알 수 없음',
         coverImageUrl: coverImageId != null ? coverUrls[coverImageId] : null,
         price: 0,
-        format: (data['type'] as String?) == 'linear' ? StoryPackFormat.linear : StoryPackFormat.interactive,
+        format: (data['type'] as String?) == 'linear'
+            ? StoryPackFormat.linear
+            : StoryPackFormat.interactive,
         genres: (live?['genres'] as List<dynamic>?)?.cast<String>() ?? const [],
         ttsEnabled: data['ttsEnabled'] as bool? ?? false,
         ambientBgm: data['ambientBgm'] as String?,
         defaultBackgroundImage: data['defaultBackgroundImage'] as String?,
+        avgRating: (data['avgRating'] as num?)?.toDouble(),
+        reviewCount: (data['reviewCount'] as num?)?.toInt() ?? 0,
       );
     }).toList();
   }
@@ -60,14 +75,22 @@ class StoryPackRepository {
   /// 팩이 "발행된 노드가 최소 1개 있는지"는 collectionGroup 조회로 한 번에
   /// 구한다 — 팩마다 nodes 서브컬렉션을 따로 조회하지 않는다.
   Future<Set<String>> _fetchPackIdsWithPublishedNode() async {
-    final snapshot = await _firestore.collectionGroup('nodes').where('status', isEqualTo: 'published').get();
+    final snapshot = await _firestore
+        .collectionGroup('nodes')
+        .where('status', isEqualTo: 'published')
+        .get();
     return snapshot.docs.map((doc) => doc.reference.parent.parent!.id).toSet();
   }
 
   Future<Map<String, String>> _fetchImageUrls(Set<String> imageIds) async {
     if (imageIds.isEmpty) return {};
-    final snapshot =
-        await _firestore.collection('images').where(FieldPath.documentId, whereIn: imageIds.toList()).get();
-    return {for (final doc in snapshot.docs) doc.id: doc.data()['url'] as String? ?? ''};
+    final snapshot = await _firestore
+        .collection('images')
+        .where(FieldPath.documentId, whereIn: imageIds.toList())
+        .get();
+    return {
+      for (final doc in snapshot.docs)
+        doc.id: doc.data()['url'] as String? ?? '',
+    };
   }
 }

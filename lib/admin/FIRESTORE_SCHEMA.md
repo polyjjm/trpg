@@ -71,6 +71,74 @@ metadataRejectionReason: string?
 게임 쪽 `StoryPack`(lib/features/catalog/models/story_pack.dart)과 이름을 맞춰,
 나중에 `price`(int, 원 단위) 필드를 추가할 여지도 남겨 둔다.
 
+```
+avgRating: number?   // 리뷰 평균(1~5). 리뷰가 하나도 없으면 null.
+reviewCount: int      // 기본 0.
+```
+
+이 둘은 클라이언트가 직접 쓰지 않는다 — `storyPacks/{packId}/reviews`(아래) 쓰기를
+트리거로 하는 Cloud Function(`functions/src/index.ts`의 `onReviewWritten`)이
+Admin SDK로 갱신한다. `firestore.rules`의 `storyPacks/{packId}` update 규칙
+어디에도 이 두 필드를 클라이언트가 쓰도록 허용한 조항이 없다 — Admin SDK는
+애초에 규칙 자체를 우회하므로 별도 예외 규칙도 필요 없다.
+
+## storyPacks/{packId}/reviews/{uid}
+
+```
+rating: int              // 1~5.
+text: string
+createdAt: timestamp
+updatedAt: timestamp
+authorDisplayName: string
+authorPhotoUrl: string?
+```
+
+문서 id가 작성자 uid다 — "이 팩에 유저 하나당 리뷰 하나"가 스키마 자체로
+강제된다. 다시 쓰면(재작성) 같은 문서를 update하고, `createdAt`은 절대 안
+바뀐다(규칙이 강제) — `updatedAt`만 매번 서버 타임스탬프로 갱신된다.
+
+## storyPacks/{packId}/comments/{commentId}
+
+```
+uid: string
+text: string
+createdAt: timestamp
+authorDisplayName: string
+authorPhotoUrl: string?
+isDeleted: bool             // 기본 false. 소프트 삭제 — 본인 댓글만, 이 필드만 바꿀 수 있다.
+parentCommentId: string?    // null이면 최상위 댓글, 아니면 부모 댓글 id(답글 — 한 단계만).
+likeCount: int               // 기본 0. 클라이언트가 직접 안 쓴다(아래 likes 참고).
+```
+
+리뷰와 달리 문서 id가 자동 생성이다(한 유저가 여러 개 남길 수 있어서) —
+그래서 작성자를 알아보려면 `uid` 필드가 필요하다.
+
+답글은 `parentCommentId`로 딱 한 단계만 중첩된다 — 답글의 답글은 UI에도
+없고, `firestore.rules`의 `isValidParentComment()`가 `parentCommentId`가
+가리키는 문서 자신도 `parentCommentId == null`이어야 한다고 검증해서 서버
+쪽에서도 막는다. 최상위 댓글 목록은 `where('isDeleted', isEqualTo: false)
+.where('parentCommentId', isEqualTo: null).orderBy('createdAt', descending:
+true)`로 페이지네이션하고(복합 색인 필요, 아래 참고), 답글은 각 최상위
+댓글마다 `where('parentCommentId', isEqualTo: 부모id).where('isDeleted',
+isEqualTo: false).orderBy('createdAt')`로 따로 조회한다(페이지네이션 없이
+한 번에, 스레드가 보통 짧아서 — `StoryPackCommentRepository.fetchReplies`).
+실제 삭제나 텍스트 수정은 없다(관리자 모더레이션 UI는 이후 범위).
+
+## storyPacks/{packId}/comments/{commentId}/likes/{uid}
+
+```
+createdAt: timestamp
+```
+
+문서 존재 = 좋아요, 부재 = 좋아요 안 함(리뷰와 같은 "문서 id = uid" upsert
+패턴, 자기 좋아요 카운트를 따로 쿼리할 필요가 없다). 본인 uid 경로만
+만들거나 지울 수 있다. `likeCount`(위 댓글 문서)는 이 서브컬렉션 쓰기를
+트리거로 하는 Cloud Function(`functions/src/index.ts`의
+`onCommentLikeWritten`, `onReviewWritten`과 완전히 같은 재집계 패턴)이
+갱신한다 — 클라이언트는 매 렌더링마다 `likes`를 세지 않고, 댓글 문서의
+`likeCount`만 구독한다. 내 좋아요 여부는 `likes/{내 uid}` 문서 하나의
+존재 여부만 보고 판단한다(서브컬렉션 전체를 훑지 않는다).
+
 ## storyPacks/{packId}/nodes/{nodeId}
 
 ```
@@ -273,6 +341,15 @@ active: bool         // true→false로 바꿔 목록에서만 숨긴다(삭제 
 
 - `genres`: `GenreRepository.watchActiveGenres()` — `where('active', isEqualTo: true).orderBy('sortOrder')`
 - `storyPacks`: `AdminStoryRepository.watchPacksForAuthor(authorId)` — `where('authorId', isEqualTo: authorId).orderBy('title')`
+- `comments`(최상위): `StoryPackCommentRepository.fetchPage()` — `where('isDeleted',
+  isEqualTo: false).where('parentCommentId', isEqualTo: null).orderBy('createdAt',
+  descending: true)`.
+- `comments`(답글): `StoryPackCommentRepository.fetchReplies()` — `where('parentCommentId',
+  isEqualTo: 부모id).where('isDeleted', isEqualTo: false).orderBy('createdAt')`.
+  정렬 방향이 위 최상위 쿼리와 반대(오름차순)라 별개 색인이다.
+  `reviews`는 색인이 필요 없다 — `StoryPackReviewRepository.fetchPage()`가 동등 필터
+  없이 `orderBy('createdAt', descending: true)`만 쓰므로 Firestore 자동 단일 필드
+  색인으로 충분하다.
 
 `fieldOverrides`에는 별도로 하나 더 있다 — `nodes` 컬렉션의 `pendingAction`
 필드를 `COLLECTION_GROUP` 범위에서도 쿼리할 수 있게 하는 오버라이드다.
@@ -344,6 +421,29 @@ service cloud.firestore {
     function isPackOwnedBy(packId) {
       return isSignedIn()
         && get(/databases/$(database)/documents/storyPacks/$(packId)).data.authorId == myUid();
+    }
+
+    // isPackOwnedBy(packId)는 "작가 편집 권한"을 묻는다 — 아래 둘은 "독자가
+    // 리뷰/댓글을 달 자격이 있는가"를 묻는, 완전히 다른 질문이다.
+    function readerOwnsPack(packId) {
+      return isSignedIn()
+        && exists(/databases/$(database)/documents/users/$(myUid())/save/current)
+        && packId in get(/databases/$(database)/documents/users/$(myUid())/save/current).data.get('ownedPackIds', []);
+    }
+
+    function isPackFree(packId) {
+      return get(/databases/$(database)/documents/storyPacks/$(packId)).data.get('price', 0) <= 0;
+    }
+
+    function canReviewPack(packId) {
+      return isSignedIn() && (isPackFree(packId) || readerOwnsPack(packId));
+    }
+
+    // 답글(parentCommentId)이 가리키는 문서가 실제 존재하고, 그 문서 자신도
+    // 최상위(parentCommentId == null)인지 — 답글의 답글을 서버에서도 막는다.
+    function isValidParentComment(packId, parentId) {
+      return exists(/databases/$(database)/documents/storyPacks/$(packId)/comments/$(parentId))
+        && get(/databases/$(database)/documents/storyPacks/$(packId)/comments/$(parentId)).data.get('parentCommentId', null) == null;
     }
 
     // 기존 게임 세이브 데이터 — 본인만 읽고 쓴다.
@@ -476,6 +576,57 @@ service cloud.firestore {
         // 즉시 지울 수 있다(deleteNodeDoc). 이미 발행된 노드의 삭제는 admin이
         // 삭제 요청을 승인(approveNode)하는 경로로만 이뤄진다.
         allow delete: if (isPackOwnedBy(packId) && resource.data.liveSnapshot == null) || isAdmin();
+      }
+
+      // reviews/{uid} — 문서 id가 작성자 uid. avgRating/reviewCount 집계는
+      // Cloud Function(functions/src/index.ts)이 Admin SDK로 쓰므로 여기
+      // 규칙과 무관하다.
+      match /reviews/{reviewId} {
+        allow read: if isSignedIn();
+
+        allow create: if isSignedIn() && reviewId == myUid() && canReviewPack(packId)
+          && request.resource.data.rating is int
+          && request.resource.data.rating >= 1 && request.resource.data.rating <= 5;
+
+        allow update: if isSignedIn() && reviewId == myUid() && canReviewPack(packId)
+          && request.resource.data.rating is int
+          && request.resource.data.rating >= 1 && request.resource.data.rating <= 5
+          && request.resource.data.createdAt == resource.data.createdAt;
+      }
+
+      // comments/{commentId} — id 자동 생성이라 uid를 필드로 저장한다.
+      // parentCommentId(답글, 한 단계만 — isValidParentComment가 강제)와
+      // likeCount(Cloud Function 전용)는 update 시점에 고정된다. 수정은
+      // 본인 댓글의 isDeleted 플래그를 세우는 것만 허용(그 외 필드는 update
+      // 요청에서도 원래 값과 같아야 한다) — 사실상 소프트 삭제 전용.
+      match /comments/{commentId} {
+        allow read: if isSignedIn();
+
+        allow create: if isSignedIn() && canReviewPack(packId)
+          && request.resource.data.uid == myUid()
+          && request.resource.data.isDeleted == false
+          && request.resource.data.get('likeCount', 0) == 0
+          && (
+            request.resource.data.get('parentCommentId', null) == null
+            || isValidParentComment(packId, request.resource.data.parentCommentId)
+          );
+
+        allow update: if isSignedIn() && resource.data.uid == myUid()
+          && request.resource.data.uid == resource.data.uid
+          && request.resource.data.text == resource.data.text
+          && request.resource.data.authorDisplayName == resource.data.authorDisplayName
+          && request.resource.data.authorPhotoUrl == resource.data.authorPhotoUrl
+          && request.resource.data.createdAt == resource.data.createdAt
+          && request.resource.data.get('parentCommentId', null) == resource.data.get('parentCommentId', null)
+          && request.resource.data.get('likeCount', 0) == resource.data.get('likeCount', 0)
+          && request.resource.data.isDeleted == true;
+
+        // likes/{uid} — 문서 존재 = 좋아요. 본인 uid 경로만 만들거나 지울 수
+        // 있다. likeCount 집계는 Cloud Function(Admin SDK)의 몫.
+        match /likes/{uid} {
+          allow read: if isSignedIn();
+          allow create, delete: if isSignedIn() && uid == myUid();
+        }
       }
     }
 

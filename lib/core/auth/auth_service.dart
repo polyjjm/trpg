@@ -11,6 +11,11 @@ abstract class AuthService {
   /// 로그인된 사용자의 고유 id. 로그인하지 않았다면 null.
   String? get userId;
 
+  /// 리뷰/댓글 작성자 표시에 쓰는 로그인 공급자 프로필 값 — 로그인 안 했거나
+  /// 공급자가 값을 안 주면 null(호출부가 "익명" 등으로 대체한다).
+  String? get displayName;
+  String? get photoUrl;
+
   Future<AuthResult> signIn();
 
   Future<void> signOut();
@@ -22,9 +27,5 @@ class AuthResult {
   final String? userId;
   final String? errorMessage;
 
-  const AuthResult({
-    required this.success,
-    this.userId,
-    this.errorMessage,
-  });
+  const AuthResult({required this.success, this.userId, this.errorMessage});
 }

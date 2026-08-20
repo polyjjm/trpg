@@ -8,6 +8,8 @@ import '../../../reader/interactive/interactive_reader.dart';
 import '../../../reader/linear/linear_reader.dart';
 import '../models/genre_style.dart';
 import '../models/story_pack.dart';
+import '../widgets/pack_comments_section.dart';
+import '../widgets/pack_reviews_section.dart';
 
 const Color _ivory = Color(0xFFE2D4BF);
 const List<Color> _brandGradient = [Color(0xFFFF6B4A), Color(0xFFFFB648)];
@@ -77,6 +79,10 @@ class _StoryPackDetailPageState extends State<StoryPackDetailPage> {
     final gameState = GameStateScope.of(context);
     final owned = pack.isFree || gameState.ownsPack(pack.id);
     final hasProgress = _progress != null;
+    // 리뷰/댓글 작성 자격 — 소유(또는 무료)뿐 아니라 로그인도 돼 있어야 한다.
+    // owned만으로는 게스트도 true가 될 수 있는데(무료 팩), Firestore 쓰기
+    // 자체가 로그인을 요구하니(firestore.rules) 여기서 미리 걸러야 한다.
+    final canReview = owned && AuthScope.of(context).userId != null;
 
     return Scaffold(
       backgroundColor: Colors.black,
@@ -115,6 +121,14 @@ class _StoryPackDetailPageState extends State<StoryPackDetailPage> {
                   label: owned ? (hasProgress ? '이어보기' : '읽기 시작') : '결제하기',
                   onTap: () => _handleAction(context, owned),
                 ),
+                const SizedBox(height: 32),
+                Container(height: 1, color: Colors.white.withOpacity(0.08)),
+                const SizedBox(height: 24),
+                PackReviewsSection(pack: pack, eligible: canReview),
+                const SizedBox(height: 28),
+                Container(height: 1, color: Colors.white.withOpacity(0.08)),
+                const SizedBox(height: 24),
+                PackCommentsSection(pack: pack, eligible: canReview),
               ],
             ),
           ),
@@ -270,7 +284,7 @@ class _GenreTypeBadge extends StatelessWidget {
   }
 }
 
-/// 진행률/엔딩 발견/가격을 나란히 보여주는 요약 행.
+/// 진행률/엔딩 발견/평점/가격을 나란히 보여주는 요약 행.
 ///
 /// - 가격은 실데이터(pack.price/isFree)를 그대로 쓴다.
 /// - 진행률([hasProgress])은 이제 진짜 팩별 신호다 — GameState.progressFor(pack.id)
@@ -283,6 +297,10 @@ class _GenreTypeBadge extends StatelessWidget {
 ///   개념 자체가 실제 콘텐츠 모델(AdminStoryNode)에도 GameState에도 없어서
 ///   항상 0으로 표시되는 고정 placeholder다. 실제 엔딩 추적 시스템이 생기기
 ///   전까지는 숫자가 절대 바뀌지 않는다.
+/// - 평점(pack.avgRating/reviewCount)은 storyPacks 문서에 비정규화된 값을
+///   그대로 보여준다 — 매번 reviews 서브컬렉션을 훑어 평균을 내지 않는다,
+///   그 집계는 Cloud Function(functions/src/index.ts)이 리뷰 쓰기마다
+///   서버에서 갱신한다. 리뷰가 하나도 없으면(avgRating == null) "리뷰 없음".
 class _MetadataRow extends StatelessWidget {
   final StoryPack pack;
   final bool hasProgress;
@@ -291,12 +309,22 @@ class _MetadataRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final avgRating = pack.avgRating;
+
     final items = <Widget>[
       _MetadataItem(label: '진행률', value: hasProgress ? '진행 중' : '시작 전'),
     ];
     if (pack.format == StoryPackFormat.interactive) {
       items.add(const _MetadataItem(label: '엔딩 발견', value: '0개'));
     }
+    items.add(
+      _MetadataItem(
+        label: '평점',
+        value: avgRating == null
+            ? '리뷰 없음'
+            : '★${avgRating.toStringAsFixed(1)} (${pack.reviewCount})',
+      ),
+    );
     items.add(
       _MetadataItem(label: '가격', value: pack.isFree ? '무료' : '₩${pack.price}'),
     );

@@ -1,1 +1,43 @@
-{"flutter":{"platforms":{"android":{"default":{"projectId":"trpg-213c1","appId":"1:886364664177:android:1fc6d9220d0801776d06d0","fileOutput":"android/app/google-services.json"}},"dart":{"lib/firebase_options.dart":{"projectId":"trpg-213c1","configurations":{"android":"1:886364664177:android:1fc6d9220d0801776d06d0","ios":"1:886364664177:ios:3065c051195047926d06d0","web":"1:886364664177:web:b4b91cc0ef6037e26d06d0"}}}}},"firestore":{"rules":"firestore.rules","indexes":"firestore.indexes.json"}}
+{
+  "flutter": {
+    "platforms": {
+      "android": {
+        "default": {
+          "projectId": "trpg-213c1",
+          "appId": "1:886364664177:android:1fc6d9220d0801776d06d0",
+          "fileOutput": "android/app/google-services.json"
+        }
+      },
+      "dart": {
+        "lib/firebase_options.dart": {
+          "projectId": "trpg-213c1",
+          "configurations": {
+            "android": "1:886364664177:android:1fc6d9220d0801776d06d0",
+            "ios": "1:886364664177:ios:3065c051195047926d06d0",
+            "web": "1:886364664177:web:b4b91cc0ef6037e26d06d0"
+          }
+        }
+      }
+    }
+  },
+  "firestore": {
+    "rules": "firestore.rules",
+    "indexes": "firestore.indexes.json"
+  },
+  "functions": [
+    {
+      "source": "functions",
+      "codebase": "default",
+      "ignore": [
+        "node_modules",
+        ".git",
+        "firebase-debug.log",
+        "firebase-debug.*.log",
+        "*.local"
+      ],
+      "predeploy": [
+        "npm --prefix \"$RESOURCE_DIR\" run build"
+      ]
+    }
+  ]
+}

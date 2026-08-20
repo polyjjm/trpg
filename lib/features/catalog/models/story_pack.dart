@@ -5,9 +5,9 @@ enum StoryPackFormat { interactive, linear }
 
 extension StoryPackFormatLabel on StoryPackFormat {
   String get label => switch (this) {
-        StoryPackFormat.interactive => '인터랙티브',
-        StoryPackFormat.linear => '선형',
-      };
+    StoryPackFormat.interactive => '인터랙티브',
+    StoryPackFormat.linear => '선형',
+  };
 }
 
 /// 라이브러리(카탈로그)에 진열되는 이야기 팩 한 편.
@@ -54,6 +54,14 @@ class StoryPack {
   /// 이 필드를 top-level storyPacks 문서에서 곧장 읽는다.
   final String? defaultBackgroundImage;
 
+  /// 리뷰 평균 평점(1~5)과 개수 — storyPacks 문서에 비정규화된 값을 그대로
+  /// 읽는다(reviews 서브컬렉션을 매번 훑어 계산하지 않는다). 이 값을 최신
+  /// 상태로 유지하는 건 리뷰 쓰기를 트리거로 하는 Cloud Function
+  /// (functions/src/index.ts)의 몫이다 — 클라이언트는 절대 이 두 필드에
+  /// 직접 쓰지 않는다. 리뷰가 하나도 없으면 avgRating은 null.
+  final double? avgRating;
+  final int reviewCount;
+
   const StoryPack({
     required this.id,
     required this.title,
@@ -67,6 +75,8 @@ class StoryPack {
     this.ttsEnabled = false,
     this.ambientBgm,
     this.defaultBackgroundImage,
+    this.avgRating,
+    this.reviewCount = 0,
   });
 
   bool get isFree => price <= 0;
