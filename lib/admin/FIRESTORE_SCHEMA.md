@@ -144,6 +144,24 @@ url: string            // Firebase Storage 다운로드 URL
 올라간다. 이 문서는 그 파일을 가리키는 색인일 뿐이다 — 노드 배경/선택지 이미지를
 고를 때 이 컬렉션에서 목록을 불러온다.
 
+## sfxLibrary/{sfxId}
+
+```
+name: string             // 원본 파일명
+category: string          // '문' | '발소리' | '비명' | '심장박동' | '기타' (AdminSfxCategory)
+storageUrl: string        // Firebase Storage 다운로드 URL
+uploadedBy: string?       // 업로드한 유저의 uid
+createdAt: timestamp
+```
+
+images/{imageId}와 같은 색인 패턴이다 — 실제 오디오 파일은 Firebase Storage의
+`admin/story_sfx/{sfxId}.mp3`에 올라간다(images와 달리 원본 파일명을 경로에
+이어붙이지 않고 고정 확장자를 쓴다). 노드의 연출 효과(`effects.sfx`,
+node_effects.dart)가 `sfxId`로 이 컬렉션을 참조한다 — 프리셋 고정값이 아니라
+작가가 직접 올린 파일을 가리킨다. 리더 쪽 StoryReaderRepository가 이 컬렉션의
+`storageUrl`을 조인해 `ResolvedStoryNode.sfxUrl`로 넘겨준다(실제 재생은 아직
+SceneFrame에 붙어 있지 않다 — "Reader system" 섹션 참고).
+
 ## writerNotices/{noticeId}
 
 ```
@@ -474,6 +492,15 @@ service cloud.firestore {
       allow create, delete: if isAuthorOrAdmin();
     }
 
+    // sfxLibrary/{sfxId} — images와 같은 공유 색인 문서. uploadedBy가 있지만
+    // images의 uploaderId 부재와 같은 이유로 아직 본인 것만으로 좁히지 않는다
+    // — 모든 author/admin이 공유하는 라이브러리다. 카테고리 변경(update)도
+    // images와 마찬가지로 author/admin 누구나 할 수 있다.
+    match /sfxLibrary/{sfxId} {
+      allow read: if isSignedIn();
+      allow create, update, delete: if isAuthorOrAdmin();
+    }
+
     // writerNotices/{noticeId} — packId로 소유 스토리팩을 가리킨다.
     match /writerNotices/{noticeId} {
       allow read: if isSignedIn();
@@ -493,6 +520,13 @@ rules_version = '2';
 service firebase.storage {
   match /b/{bucket}/o {
     match /admin/story_images/{allPaths=**} {
+      allow read: if request.auth != null;
+      allow write: if request.auth != null &&
+        firestore.get(/databases/(default)/documents/users/$(request.auth.uid)).data.role in ['author', 'admin'];
+    }
+
+    // admin/story_sfx/{sfxId}.mp3 — story_images와 같은 role 모델.
+    match /admin/story_sfx/{allPaths=**} {
       allow read: if request.auth != null;
       allow write: if request.auth != null &&
         firestore.get(/databases/(default)/documents/users/$(request.auth.uid)).data.role in ['author', 'admin'];

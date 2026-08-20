@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
 
+import '../models/admin_sfx.dart';
 import '../models/node_effects.dart';
 import 'admin_theme.dart';
 import 'labeled_field.dart';
+import 'sfx_picker_field.dart';
 
 /// "연출 효과" 섹션 — 프리셋 전용 4종(암전/화면 흔들림/효과음/진동)만
 /// 다룬다 — 자유 설정이 없어서 비개발자 작가도 무슨 값을 넣어야 할지 고민할
@@ -17,11 +19,13 @@ import 'labeled_field.dart';
 /// 그대로 옮겨왔다 — 실제 편집 로직/각 행의 모양은 손대지 않았다.
 class NodeEffectsEditor extends StatelessWidget {
   final NodeEffects effects;
+  final List<AdminSfx> sfxLibrary;
   final ValueChanged<NodeEffects> onChanged;
 
   const NodeEffectsEditor({
     super.key,
     required this.effects,
+    required this.sfxLibrary,
     required this.onChanged,
   });
 
@@ -66,18 +70,18 @@ class NodeEffectsEditor extends StatelessWidget {
           ),
         ),
         const SizedBox(height: 14),
-        _EffectRow<SfxPreset>(
-          label: '효과음',
-          description: '프리셋 효과음 중 하나를 골라요',
-          enabled: effects.sfx.enabled,
+        _SfxEffectRow(
+          sfx: effects.sfx,
+          sfxLibrary: sfxLibrary,
           onEnabledChanged: (value) => onChanged(
             effects.copyWith(sfx: effects.sfx.copyWith(enabled: value)),
           ),
-          presetValue: effects.sfx.preset,
-          presetOptions: SfxPreset.values,
-          presetLabel: (p) => p.label,
-          onPresetChanged: (preset) => onChanged(
-            effects.copyWith(sfx: effects.sfx.copyWith(preset: preset)),
+          onSfxIdChanged: (sfxId) => onChanged(
+            effects.copyWith(
+              sfx: sfxId == null
+                  ? effects.sfx.copyWith(clearSfxId: true)
+                  : effects.sfx.copyWith(sfxId: sfxId),
+            ),
           ),
         ),
         const SizedBox(height: 14),
@@ -102,6 +106,92 @@ class NodeEffectsEditor extends StatelessWidget {
           '체크한 효과는 이 노드의 텍스트가 나타나기 시작할 때 함께 재생돼요.',
           style: TextStyle(fontSize: 11, color: AdminColors.muted),
         ),
+      ],
+    );
+  }
+}
+
+/// "효과음" 행 전용 — 나머지 세 행(_EffectRow<T>)은 고정 프리셋 목록 중
+/// 하나를 고르는 좁은 드롭다운이면 충분하지만, 효과음은 라이브러리에서
+/// 카테고리로 좁혀가며 고르고 미리 들어볼 수 있어야 해서(SfxPickerField)
+/// 체크박스 줄 아래에 그 피커를 통째로 펼쳐 넣는 별도 레이아웃을 쓴다 —
+/// _BackgroundSection이 ImagePickerField를 펼쳐 넣는 방식과 같다.
+class _SfxEffectRow extends StatelessWidget {
+  final SfxEffect sfx;
+  final List<AdminSfx> sfxLibrary;
+  final ValueChanged<bool> onEnabledChanged;
+  final ValueChanged<String?> onSfxIdChanged;
+
+  const _SfxEffectRow({
+    required this.sfx,
+    required this.sfxLibrary,
+    required this.onEnabledChanged,
+    required this.onSfxIdChanged,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            SizedBox(
+              width: 24,
+              height: 24,
+              child: Checkbox(
+                value: sfx.enabled,
+                fillColor: WidgetStateProperty.resolveWith(
+                  (states) => states.contains(WidgetState.selected)
+                      ? AdminColors.gold
+                      : AdminColors.checkboxUncheckedFill,
+                ),
+                checkColor: AdminColors.checkboxCheckColor,
+                side: BorderSide(
+                  color: AdminColors.checkboxUncheckedBorder,
+                  width: 1.5,
+                ),
+                onChanged: (checked) => onEnabledChanged(checked ?? false),
+              ),
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Padding(
+                padding: const EdgeInsets.only(top: 2),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      '효과음',
+                      style: TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w600,
+                        color: AdminColors.ivory,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      '효과음 라이브러리에 올린 파일 중 하나를 골라요',
+                      style: TextStyle(fontSize: 11, color: AdminColors.muted),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ],
+        ),
+        if (sfx.enabled) ...[
+          const SizedBox(height: 8),
+          Padding(
+            padding: const EdgeInsets.only(left: 32),
+            child: SfxPickerField(
+              currentId: sfx.sfxId,
+              sfxLibrary: sfxLibrary,
+              onChanged: onSfxIdChanged,
+            ),
+          ),
+        ],
       ],
     );
   }

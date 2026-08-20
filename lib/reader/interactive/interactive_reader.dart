@@ -78,7 +78,9 @@ class _InteractiveReaderState extends State<InteractiveReader> {
     final gameState = GameStateScope.of(context);
     final pack = widget.pack;
     final previewLimitReached =
-        !pack.isFree && !gameState.ownsPack(pack.id) && gameState.visitedNodeCount >= pack.previewNodeLimit;
+        !pack.isFree &&
+        !gameState.ownsPack(pack.id) &&
+        gameState.visitedNodeCount >= pack.previewNodeLimit;
 
     if (previewLimitReached) {
       final purchased = await requestPackPurchase(context, gameState, pack);
@@ -101,12 +103,7 @@ class _InteractiveReaderState extends State<InteractiveReader> {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: Colors.black,
-      body: Stack(
-        children: [
-          _buildBody(context),
-          const ReaderBackButton(),
-        ],
-      ),
+      body: Stack(children: [_buildBody(context), const ReaderBackButton()]),
     );
   }
 
@@ -118,14 +115,20 @@ class _InteractiveReaderState extends State<InteractiveReader> {
     final errorMessage = _errorMessage;
     if (errorMessage != null) {
       return Center(
-        child: Text(errorMessage, style: TextStyle(fontSize: 14, color: _ivory.withOpacity(0.7))),
+        child: Text(
+          errorMessage,
+          style: TextStyle(fontSize: 14, color: _ivory.withOpacity(0.7)),
+        ),
       );
     }
 
     final current = _nodesById[_currentNodeId];
     if (current == null) {
       return Center(
-        child: Text('노드를 찾을 수 없어요.', style: TextStyle(fontSize: 14, color: _ivory.withOpacity(0.7))),
+        child: Text(
+          '노드를 찾을 수 없어요.',
+          style: TextStyle(fontSize: 14, color: _ivory.withOpacity(0.7)),
+        ),
       );
     }
 
@@ -135,6 +138,8 @@ class _InteractiveReaderState extends State<InteractiveReader> {
       key: ValueKey(current.node.id),
       blocks: current.node.blocks,
       backgroundImageUrl: current.backgroundImageUrl,
+      effects: current.node.effects,
+      sfxUrl: current.sfxUrl,
       ttsAllowed: widget.pack.ttsEnabled,
       actionAreaBuilder: (context) => choices.isEmpty
           ? _EndingActionArea(onRestart: _restart)
@@ -143,7 +148,10 @@ class _InteractiveReaderState extends State<InteractiveReader> {
               children: [
                 for (var i = 0; i < choices.length; i++) ...[
                   if (i > 0) const SizedBox(height: 10),
-                  _ChoiceButton(label: choices[i].label, onTap: () => _handleChoice(choices[i])),
+                  _ChoiceButton(
+                    label: choices[i].label,
+                    onTap: () => _handleChoice(choices[i]),
+                  ),
                 ],
               ],
             ),
@@ -176,7 +184,11 @@ class _ChoiceButton extends StatelessWidget {
               child: Text(
                 label,
                 textAlign: TextAlign.center,
-                style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w800, color: Colors.white),
+                style: const TextStyle(
+                  fontSize: 15,
+                  fontWeight: FontWeight.w800,
+                  color: Colors.white,
+                ),
               ),
             ),
           ),
@@ -199,4 +211,3 @@ class _EndingActionArea extends StatelessWidget {
     return _ChoiceButton(label: '처음부터', onTap: onRestart);
   }
 }
-

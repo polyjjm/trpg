@@ -1,6 +1,7 @@
 import 'bgm_override.dart';
 import 'choice.dart';
 import 'node_block.dart';
+import 'node_effects.dart';
 
 /// storyPacks/{storyId}/nodes/{nodeId} 문서 — 인터랙티브/선형 스토리 공통으로
 /// 쓰는 리더 전용 노드 모델. admin 쪽 AdminStoryNode(lib/admin/models/
@@ -26,6 +27,12 @@ class StoryNode {
   /// 기본 ambientBgm을 그대로 이어서 쓴다.
   final BgmOverride? bgmOverride;
 
+  /// 연출 효과(암전/화면 흔들림/효과음/진동) — SceneFrame이 타이핑 완료
+  /// 시점에 재생한다. sfx.sfxId는 URL이 아니라 sfxLibrary/{sfxId} 참조라,
+  /// [backgroundImage]와 같은 이유로 데이터 레이어(StoryReaderRepository)가
+  /// 실제 재생 URL로 조인해 ResolvedStoryNode.sfxUrl에 담아 준다.
+  final NodeEffects effects;
+
   final List<NodeBlock> blocks;
 
   /// storyPack.type == 'interactive'인 팩의 노드만 값을 갖는다. 선형
@@ -42,6 +49,7 @@ class StoryNode {
     this.backgroundImage,
     this.backgroundAppliesForward = true,
     this.bgmOverride,
+    this.effects = const NodeEffects(),
     required this.blocks,
     this.choices,
     this.nextNodeId,
@@ -55,24 +63,31 @@ class StoryNode {
       id: id,
       order: (json['order'] as num?)?.toInt() ?? 0,
       backgroundImage: json['backgroundImage'] as String?,
-      backgroundAppliesForward: json['backgroundAppliesForward'] as bool? ?? true,
-      bgmOverride: bgmOverrideJson != null ? BgmOverride.fromJson(bgmOverrideJson) : null,
-      blocks: (json['blocks'] as List<dynamic>?)
+      backgroundAppliesForward:
+          json['backgroundAppliesForward'] as bool? ?? true,
+      bgmOverride: bgmOverrideJson != null
+          ? BgmOverride.fromJson(bgmOverrideJson)
+          : null,
+      effects: NodeEffects.fromJson(json['effects'] as Map<String, dynamic>?),
+      blocks:
+          (json['blocks'] as List<dynamic>?)
               ?.map((e) => NodeBlock.fromJson(e as Map<String, dynamic>))
               .toList() ??
           const [],
-      choices: choicesJson?.map((e) => Choice.fromJson(e as Map<String, dynamic>)).toList(),
+      choices: choicesJson
+          ?.map((e) => Choice.fromJson(e as Map<String, dynamic>))
+          .toList(),
       nextNodeId: json['nextNodeId'] as String?,
     );
   }
 
   Map<String, dynamic> toFirestore() => {
-        'order': order,
-        'backgroundImage': backgroundImage,
-        'backgroundAppliesForward': backgroundAppliesForward,
-        'bgmOverride': bgmOverride?.toJson(),
-        'blocks': blocks.map((b) => b.toJson()).toList(),
-        'choices': choices?.map((c) => c.toJson()).toList(),
-        'nextNodeId': nextNodeId,
-      };
+    'order': order,
+    'backgroundImage': backgroundImage,
+    'backgroundAppliesForward': backgroundAppliesForward,
+    'bgmOverride': bgmOverride?.toJson(),
+    'blocks': blocks.map((b) => b.toJson()).toList(),
+    'choices': choices?.map((c) => c.toJson()).toList(),
+    'nextNodeId': nextNodeId,
+  };
 }

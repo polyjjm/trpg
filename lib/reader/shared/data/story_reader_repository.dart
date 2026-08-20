@@ -10,7 +10,16 @@ class ResolvedStoryNode {
   final StoryNode node;
   final String? backgroundImageUrl;
 
-  const ResolvedStoryNode({required this.node, required this.backgroundImageUrl});
+  /// sfxLibrary/{sfxId}에서 조인한 다운로드 URL — node.sfxId가 있을 때만
+  /// 값을 갖는다. SceneFrame은 아직 이 값을 재생하지 않는다(node_effects.dart
+  /// 참고) — 지금은 리더가 바로 꽂아 쓸 수 있는 형태로 미리 resolve만 해 둔다.
+  final String? sfxUrl;
+
+  const ResolvedStoryNode({
+    required this.node,
+    required this.backgroundImageUrl,
+    this.sfxUrl,
+  });
 }
 
 /// storyPacks/{packId}/nodes에서 리더가 실제로 보여줄 콘텐츠를 읽어온다.
@@ -20,7 +29,8 @@ class ResolvedStoryNode {
 /// 이유로, 리더는 반드시 liveSnapshot만 읽는다. top-level 필드를 읽으면 아직
 /// 승인 안 된 수정 중인 내용이 새어 나갈 수 있다.
 class StoryReaderRepository {
-  StoryReaderRepository({FirebaseFirestore? firestore}) : _firestore = firestore ?? FirebaseFirestore.instance;
+  StoryReaderRepository({FirebaseFirestore? firestore})
+    : _firestore = firestore ?? FirebaseFirestore.instance;
 
   final FirebaseFirestore _firestore;
 
@@ -34,7 +44,9 @@ class StoryReaderRepository {
     String packId, {
     String? packDefaultBackgroundImageId,
   }) async {
-    final snapshot = await _nodes(packId).where('status', isEqualTo: 'published').get();
+    final snapshot = await _nodes(
+      packId,
+    ).where('status', isEqualTo: 'published').get();
 
     final nodes = <StoryNode>[];
     for (final doc in snapshot.docs) {
@@ -52,28 +64,58 @@ class StoryReaderRepository {
     };
     final imageUrls = await _fetchImageUrls(imageIds);
 
+    final sfxIds = nodes
+        .where((n) => n.effects.sfx.enabled)
+        .map((n) => n.effects.sfx.sfxId)
+        .whereType<String>()
+        .toSet();
+    final sfxUrls = await _fetchSfxUrls(sfxIds);
+
     return [
       for (final node in nodes)
         ResolvedStoryNode(
           node: node,
-          backgroundImageUrl: imageUrls[node.backgroundImage ??
-              resolveInheritedBackgroundImage(
-                nodes: nodes.map((n) => (
-                      order: n.order,
-                      backgroundImage: n.backgroundImage,
-                      backgroundAppliesForward: n.backgroundAppliesForward,
-                    )),
-                targetOrder: node.order,
-                packDefaultBackgroundImage: packDefaultBackgroundImageId,
-              )],
+          backgroundImageUrl:
+              imageUrls[node.backgroundImage ??
+                  resolveInheritedBackgroundImage(
+                    nodes: nodes.map(
+                      (n) => (
+                        order: n.order,
+                        backgroundImage: n.backgroundImage,
+                        backgroundAppliesForward: n.backgroundAppliesForward,
+                      ),
+                    ),
+                    targetOrder: node.order,
+                    packDefaultBackgroundImage: packDefaultBackgroundImageId,
+                  )],
+          sfxUrl: node.effects.sfx.enabled
+              ? sfxUrls[node.effects.sfx.sfxId]
+              : null,
         ),
     ];
   }
 
   Future<Map<String, String>> _fetchImageUrls(Set<String> imageIds) async {
     if (imageIds.isEmpty) return {};
-    final snapshot =
-        await _firestore.collection('images').where(FieldPath.documentId, whereIn: imageIds.toList()).get();
-    return {for (final doc in snapshot.docs) doc.id: doc.data()['url'] as String? ?? ''};
+    final snapshot = await _firestore
+        .collection('images')
+        .where(FieldPath.documentId, whereIn: imageIds.toList())
+        .get();
+    return {
+      for (final doc in snapshot.docs)
+        doc.id: doc.data()['url'] as String? ?? '',
+    };
+  }
+
+  Future<Map<String, String>> _fetchSfxUrls(Set<String> sfxIds) async {
+    if (sfxIds.isEmpty) return {};
+    final snapshot = await _firestore
+        .collection('sfxLibrary')
+        .where(FieldPath.documentId, whereIn: sfxIds.toList())
+        .get();
+    return {
+      for (final doc in snapshot.docs)
+        doc.id: doc.data()['storageUrl'] as String? ?? '',
+    };
   }
 }

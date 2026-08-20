@@ -43,26 +43,6 @@ extension ShakeIntensityPresetJson on ShakeIntensityPreset {
   }
 }
 
-enum SfxPreset { doorOpen, footsteps, scream, heartbeat }
-
-extension SfxPresetJson on SfxPreset {
-  String get wireValue => switch (this) {
-    SfxPreset.doorOpen => '문 여는 소리',
-    SfxPreset.footsteps => '발소리',
-    SfxPreset.scream => '비명',
-    SfxPreset.heartbeat => '심장박동',
-  };
-
-  String get label => wireValue;
-
-  static SfxPreset fromWire(String? value) {
-    return SfxPreset.values.firstWhere(
-      (p) => p.wireValue == value,
-      orElse: () => SfxPreset.doorOpen,
-    );
-  }
-}
-
 enum HapticDurationPreset { short, long }
 
 extension HapticDurationPresetJson on HapticDurationPreset {
@@ -105,7 +85,10 @@ class BlackoutEffect {
     'durationPreset': durationPreset.wireValue,
   };
 
-  BlackoutEffect copyWith({bool? enabled, BlackoutDurationPreset? durationPreset}) {
+  BlackoutEffect copyWith({
+    bool? enabled,
+    BlackoutDurationPreset? durationPreset,
+  }) {
     return BlackoutEffect(
       enabled: enabled ?? this.enabled,
       durationPreset: durationPreset ?? this.durationPreset,
@@ -145,24 +128,33 @@ class ShakeEffect {
   }
 }
 
+/// [sfxId]는 sfxLibrary/{sfxId} 참조다(URL 아님) — images의 backgroundImage와
+/// 같은 패턴. 프리셋 고정값이었던 예전 SfxPreset 대신, 작가가 효과음
+/// 라이브러리(sfx_library_tab.dart)에 업로드한 실제 파일을 가리킨다.
 class SfxEffect {
   final bool enabled;
-  final SfxPreset preset;
+  final String? sfxId;
 
-  const SfxEffect({this.enabled = false, this.preset = SfxPreset.doorOpen});
+  const SfxEffect({this.enabled = false, this.sfxId});
 
   factory SfxEffect.fromJson(Map<String, dynamic>? json) {
     if (json == null) return const SfxEffect();
     return SfxEffect(
       enabled: json['enabled'] as bool? ?? false,
-      preset: SfxPresetJson.fromWire(json['preset'] as String?),
+      sfxId: json['sfxId'] as String?,
     );
   }
 
-  Map<String, dynamic> toJson() => {'enabled': enabled, 'preset': preset.wireValue};
+  Map<String, dynamic> toJson() => {'enabled': enabled, 'sfxId': sfxId};
 
-  SfxEffect copyWith({bool? enabled, SfxPreset? preset}) {
-    return SfxEffect(enabled: enabled ?? this.enabled, preset: preset ?? this.preset);
+  /// sfxId는 다른 프리셋 필드와 달리 "선택 해제"가 곧 null이라, 일반적인
+  /// `sfxId ?? this.sfxId` 패턴을 쓰면 null로 되돌릴 방법이 없어진다 —
+  /// [clearSfxId]를 true로 주면 [sfxId] 인자와 무관하게 null로 지운다.
+  SfxEffect copyWith({bool? enabled, String? sfxId, bool clearSfxId = false}) {
+    return SfxEffect(
+      enabled: enabled ?? this.enabled,
+      sfxId: clearSfxId ? null : (sfxId ?? this.sfxId),
+    );
   }
 }
 
@@ -217,7 +209,9 @@ class NodeEffects {
   factory NodeEffects.fromJson(Map<String, dynamic>? json) {
     if (json == null) return const NodeEffects();
     return NodeEffects(
-      blackout: BlackoutEffect.fromJson(json['blackout'] as Map<String, dynamic>?),
+      blackout: BlackoutEffect.fromJson(
+        json['blackout'] as Map<String, dynamic>?,
+      ),
       shake: ShakeEffect.fromJson(json['shake'] as Map<String, dynamic>?),
       sfx: SfxEffect.fromJson(json['sfx'] as Map<String, dynamic>?),
       haptic: HapticEffect.fromJson(json['haptic'] as Map<String, dynamic>?),

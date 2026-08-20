@@ -1,6 +1,8 @@
 import 'dart:async';
+import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import '../../core/audio/audio_service.dart';
 import '../../core/auth/auth_scope.dart';
@@ -8,6 +10,7 @@ import '../../features/story/widgets/typewriter_text.dart';
 import 'data/reader_prefs_repository.dart';
 import 'models/node_block.dart';
 import 'models/node_block_type.dart';
+import 'models/node_effects.dart';
 import 'models/reader_prefs.dart';
 import 'tts_controller.dart';
 
@@ -46,19 +49,34 @@ class SceneFrame extends StatefulWidget {
   /// 액션 영역 — 인터랙티브는 선택지 버튼들, 선형은 "다음"/"완료" 버튼.
   final WidgetBuilder actionAreaBuilder;
 
+  /// 이 노드의 연출 효과(암전/화면 흔들림/효과음/진동) — 본문 타이핑이 끝나는
+  /// 시점(= actionAreaBuilder가 페이드인하는 시점)에 넷 다 동시에(순서를
+  /// 기다리지 않고 각자) 트리거된다. 기본값(모두 꺼짐)이라 effects를 안
+  /// 넘기는 호출부는 그냥 아무 일도 일어나지 않는다.
+  final NodeEffects effects;
+
+  /// effects.sfx.sfxId를 sfxLibrary/{sfxId}로 조인해 이미 resolve된 다운로드
+  /// URL(StoryReaderRepository.fetchPublishedNodes 참고). effects.sfx.enabled가
+  /// true인데 이 값이 null/빈 문자열이면(라이브러리 문서가 지워졌거나 URL
+  /// 조인이 안 됐거나) 조용히 재생을 건너뛴다 — 절대 예외를 던지지 않는다.
+  final String? sfxUrl;
+
   const SceneFrame({
     super.key,
     required this.blocks,
     required this.actionAreaBuilder,
     this.backgroundImageUrl,
     this.ttsAllowed = false,
+    this.effects = const NodeEffects(),
+    this.sfxUrl,
   });
 
   @override
   State<SceneFrame> createState() => _SceneFrameState();
 }
 
-class _SceneFrameState extends State<SceneFrame> {
+class _SceneFrameState extends State<SceneFrame>
+    with SingleTickerProviderStateMixin {
   final ReaderPrefsRepository _prefsRepository = ReaderPrefsRepository();
   final TtsController _tts = TtsController();
 
@@ -75,6 +93,22 @@ class _SceneFrameState extends State<SceneFrame> {
   bool _bgVisible = false;
   bool _sheetExpanded = false;
 
+  /// 이 노드 인스턴스(= 이 State)에서 연출 효과를 이미 재생했는지 — 타이핑
+  /// 완료(_typingDone) 시점에 한 번만 트리거하고, 그 뒤 rebuild/setState가
+  /// 몇 번을 더 일어나도 다시 재생하지 않는다. SceneFrame은 노드가 바뀔
+  /// 때마다 새 key로 새 인스턴스가 만들어지는 게 전제라(클래스 상단 doc
+  /// 참고), 이 플래그도 노드 전환마다 자연스럽게 새로 초기화된다.
+  bool _effectsPlayed = false;
+
+  double _blackoutOpacity = 0;
+  Duration _blackoutFadeDuration = const Duration(milliseconds: 250);
+
+  late final AnimationController _shakeController = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 500),
+  );
+  double _shakeAmplitude = 0;
+
   bool get _typingDone => _blockIndex >= widget.blocks.length;
 
   @override
@@ -84,7 +118,15 @@ class _SceneFrameState extends State<SceneFrame> {
       if (mounted) setState(() => _ttsPlaying = playing);
     });
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) setState(() => _bgVisible = true);
+      if (!mounted) return;
+      setState(() => _bgVisible = true);
+      // 블록이 아예 없는 노드는 _advance()/_skipAll() 어느 쪽도 호출될 일이
+      // 없어서 _typingDone이 시작부터 true다 — 여기서도 한 번 확인해 둔다.
+      // initState 안에서 곧바로 부르지 않는 이유: _triggerBlackout이
+      // setState를 부르는데, 첫 프레임이 빌드되기 전(initState 시점)에
+      // setState를 거는 건 프레임워크가 막는 타이밍이라 postFrameCallback으로
+      // 미룬다 — _bgVisible과 같은 이유.
+      _maybePlayEffects();
     });
   }
 
@@ -108,6 +150,7 @@ class _SceneFrameState extends State<SceneFrame> {
     _prefsSub?.cancel();
     _ttsPlayingSub?.cancel();
     _tts.dispose();
+    _shakeController.dispose();
     super.dispose();
   }
 
@@ -120,11 +163,86 @@ class _SceneFrameState extends State<SceneFrame> {
   void _advance() {
     if (_blockIndex >= widget.blocks.length) return;
     setState(() => _blockIndex += 1);
+    _maybePlayEffects();
   }
 
   void _skipAll() {
     if (_typingDone) return;
     setState(() => _blockIndex = widget.blocks.length);
+    _maybePlayEffects();
+  }
+
+  /// 본문이 다 드러난(_typingDone) 순간(= actionAreaBuilder가 페이드인하는
+  /// 바로 그 타이밍) 켜져 있는 연출 효과를 전부 "동시에" 트리거한다 — 서로
+  /// await하지 않고 각자 fire-and-forget으로 시작해서, 하나의 재생/애니메이션이
+  /// 끝날 때까지 다음 걸 기다리는 일이 없다. [_effectsPlayed]가 유일한 가드다.
+  void _maybePlayEffects() {
+    if (_effectsPlayed || !_typingDone) return;
+    _effectsPlayed = true;
+
+    final effects = widget.effects;
+    if (effects.blackout.enabled) {
+      _triggerBlackout(effects.blackout.durationPreset.duration);
+    }
+    if (effects.shake.enabled) {
+      _triggerShake(effects.shake.intensityPreset.amplitudePx);
+    }
+    if (effects.sfx.enabled) {
+      // await하지 않는다 — 재생 완료를 기다리면 haptic 등 뒤 트리거가 밀린다.
+      unawaited(_triggerSfx(widget.sfxUrl));
+    }
+    if (effects.haptic.enabled) {
+      _triggerHaptic(effects.haptic.durationPreset);
+    }
+  }
+
+  void _triggerBlackout(Duration total) {
+    final half = Duration(milliseconds: (total.inMilliseconds / 2).round());
+    setState(() {
+      _blackoutFadeDuration = half;
+      _blackoutOpacity = 1;
+    });
+    Future.delayed(half, () {
+      if (!mounted) return;
+      setState(() => _blackoutOpacity = 0);
+    });
+  }
+
+  void _triggerShake(double amplitudePx) {
+    _shakeAmplitude = amplitudePx;
+    _shakeController
+      ..reset()
+      ..forward();
+  }
+
+  /// sfxId가 없거나(노드가 효과음을 안 골랐거나), sfxLibrary 조인이 실패했거나
+  /// (문서가 지워짐 등) URL 자체가 로드에 실패해도 디버그 로그만 남기고
+  /// 조용히 넘어간다 — AudioService.playSfx는 BGM 플레이어와 별개인 매번 새
+  /// AudioPlayer 인스턴스를 쓰고, 자기 내부에서 이미 예외를 삼킨다.
+  ///
+  /// 후속 작업: AudioService의 BGM 음소거(_bgmMuted/setBgmMuted)는 지금 BGM
+  /// 플레이어 볼륨에만 적용되고 playSfx()는 그 값을 전혀 보지 않는다 — 여기서도
+  /// 마찬가지로 BGM 음소거 여부와 무관하게 항상 재생한다. "설정 시트의 BGM
+  /// 끄기가 노드 효과음까지 묶어서 끌지, 별개로 둘지"는 별도의 SFX 음소거
+  /// 플래그(readerPrefs 등)를 먼저 설계해야 하는 제품 결정이라 이번 패스에서는
+  /// 건드리지 않는다.
+  Future<void> _triggerSfx(String? url) async {
+    if (url == null || url.isEmpty) {
+      debugPrint('노드 효과음 재생 안 함: sfxUrl이 없어요(sfxId 미선택 또는 라이브러리 조인 실패).');
+      return;
+    }
+    await AudioService.instance.playSfx(url);
+  }
+
+  void _triggerHaptic(HapticDurationPreset preset) {
+    if (preset == HapticDurationPreset.short) {
+      HapticFeedback.lightImpact();
+    } else {
+      HapticFeedback.mediumImpact();
+      Future.delayed(const Duration(milliseconds: 150), () {
+        HapticFeedback.mediumImpact();
+      });
+    }
   }
 
   /// 이미지 블록/애니메이션이 꺼진 텍스트 블록처럼 "타이핑 없이 즉시 지나가는"
@@ -140,7 +258,11 @@ class _SceneFrameState extends State<SceneFrame> {
 
   String get _combinedTtsText {
     return widget.blocks
-        .map((b) => b.type == NodeBlockType.image ? (b.caption ?? '') : (b.ttsText ?? ''))
+        .map(
+          (b) => b.type == NodeBlockType.image
+              ? (b.caption ?? '')
+              : (b.ttsText ?? ''),
+        )
         .where((s) => s.trim().isNotEmpty)
         .join('. ');
   }
@@ -167,56 +289,91 @@ class _SceneFrameState extends State<SceneFrame> {
       color: Colors.black,
       child: Stack(
         children: [
-          Column(
-            children: [
-              _BackgroundBanner(url: widget.backgroundImageUrl, visible: _bgVisible),
-              Expanded(
-                child: Padding(
-                  padding: const EdgeInsets.fromLTRB(22, 16, 22, 44),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      SizedBox(
-                        height: 28,
-                        child: !_typingDone
-                            ? Align(
-                                alignment: Alignment.centerRight,
-                                child: TextButton(
-                                  onPressed: _skipAll,
-                                  style: TextButton.styleFrom(foregroundColor: _ivory.withOpacity(0.75)),
-                                  child: const Text('전체 보기', style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w700)),
-                                ),
-                              )
-                            : null,
-                      ),
-                      Expanded(
-                        child: SingleChildScrollView(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              for (var i = 0; i < widget.blocks.length && i <= _blockIndex; i++)
-                                _buildBlock(widget.blocks[i], index: i),
-                            ],
+          AnimatedBuilder(
+            animation: _shakeController,
+            builder: (context, child) {
+              final t = _shakeController.value;
+              // 감쇠하는 사인파 — (1 - t)가 진폭을 서서히 0으로 줄여서
+              // 지속시간 끝에 원위치로 자연스럽게 멎는다.
+              final dx = _shakeAmplitude * math.sin(t * 6 * math.pi) * (1 - t);
+              return Transform.translate(offset: Offset(dx, 0), child: child);
+            },
+            child: Column(
+              children: [
+                _BackgroundBanner(
+                  url: widget.backgroundImageUrl,
+                  visible: _bgVisible,
+                ),
+                Expanded(
+                  child: Padding(
+                    padding: const EdgeInsets.fromLTRB(22, 16, 22, 44),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        SizedBox(
+                          height: 28,
+                          child: !_typingDone
+                              ? Align(
+                                  alignment: Alignment.centerRight,
+                                  child: TextButton(
+                                    onPressed: _skipAll,
+                                    style: TextButton.styleFrom(
+                                      foregroundColor: _ivory.withOpacity(0.75),
+                                    ),
+                                    child: const Text(
+                                      '전체 보기',
+                                      style: TextStyle(
+                                        fontSize: 12.5,
+                                        fontWeight: FontWeight.w700,
+                                      ),
+                                    ),
+                                  ),
+                                )
+                              : null,
+                        ),
+                        Expanded(
+                          child: SingleChildScrollView(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                for (
+                                  var i = 0;
+                                  i < widget.blocks.length && i <= _blockIndex;
+                                  i++
+                                )
+                                  _buildBlock(widget.blocks[i], index: i),
+                              ],
+                            ),
                           ),
                         ),
-                      ),
-                      const SizedBox(height: 16),
-                      AnimatedOpacity(
-                        opacity: _typingDone ? 1 : 0,
-                        duration: const Duration(milliseconds: 320),
-                        curve: Curves.easeOut,
-                        child: IgnorePointer(
-                          ignoring: !_typingDone,
-                          child: widget.actionAreaBuilder(context),
+                        const SizedBox(height: 16),
+                        AnimatedOpacity(
+                          opacity: _typingDone ? 1 : 0,
+                          duration: const Duration(milliseconds: 320),
+                          curve: Curves.easeOut,
+                          child: IgnorePointer(
+                            ignoring: !_typingDone,
+                            child: widget.actionAreaBuilder(context),
+                          ),
                         ),
-                      ),
-                    ],
+                      ],
+                    ),
                   ),
                 ),
-              ),
-            ],
+              ],
+            ),
           ),
           Positioned(left: 0, right: 0, bottom: 0, child: _buildBottomSheet()),
+          Positioned.fill(
+            child: IgnorePointer(
+              child: AnimatedOpacity(
+                opacity: _blackoutOpacity,
+                duration: _blackoutFadeDuration,
+                curve: Curves.easeInOut,
+                child: const ColoredBox(color: Colors.black),
+              ),
+            ),
+          ),
         ],
       ),
     );
@@ -227,7 +384,8 @@ class _SceneFrameState extends State<SceneFrame> {
 
     switch (block.type) {
       case NodeBlockType.image:
-        if (!completed) _scheduleAutoAdvance(index, delay: const Duration(milliseconds: 550));
+        if (!completed)
+          _scheduleAutoAdvance(index, delay: const Duration(milliseconds: 550));
         return _ImageBlockView(block: block);
       case NodeBlockType.paragraph:
       case NodeBlockType.beat:
@@ -302,7 +460,8 @@ class _SceneFrameState extends State<SceneFrame> {
       onToggleTts: _toggleTtsPlayback,
       onToggleBgm: _toggleBgm,
       onFontSelected: (fontId) => _updatePrefs(_prefs.copyWith(fontId: fontId)),
-      onAnimationToggled: (enabled) => _updatePrefs(_prefs.copyWith(animationEnabled: enabled)),
+      onAnimationToggled: (enabled) =>
+          _updatePrefs(_prefs.copyWith(animationEnabled: enabled)),
     );
   }
 }
@@ -386,14 +545,22 @@ class _ImageBlockView extends StatelessWidget {
           ClipRRect(
             borderRadius: BorderRadius.circular(12),
             child: url != null && url.isNotEmpty
-                ? Image.network(url, fit: BoxFit.cover, errorBuilder: (_, _, _) => const SizedBox.shrink())
+                ? Image.network(
+                    url,
+                    fit: BoxFit.cover,
+                    errorBuilder: (_, _, _) => const SizedBox.shrink(),
+                  )
                 : const SizedBox.shrink(),
           ),
           if (block.caption != null && block.caption!.isNotEmpty) ...[
             const SizedBox(height: 6),
             Text(
               block.caption!,
-              style: TextStyle(fontSize: 12.5, color: _ivory.withOpacity(0.6), fontStyle: FontStyle.italic),
+              style: TextStyle(
+                fontSize: 12.5,
+                color: _ivory.withOpacity(0.6),
+                fontStyle: FontStyle.italic,
+              ),
             ),
           ],
         ],
@@ -462,20 +629,27 @@ class _ReaderSettingsSheet extends StatelessWidget {
                       children: [
                         if (ttsAllowed)
                           _SheetIconToggle(
-                            icon: ttsPlaying ? Icons.pause_circle_rounded : Icons.play_circle_rounded,
+                            icon: ttsPlaying
+                                ? Icons.pause_circle_rounded
+                                : Icons.play_circle_rounded,
                             label: 'TTS',
                             active: ttsPlaying,
                             onTap: onToggleTts,
                           ),
                         if (ttsAllowed) const SizedBox(width: 14),
                         _SheetIconToggle(
-                          icon: prefs.bgmEnabled ? Icons.music_note_rounded : Icons.music_off_rounded,
+                          icon: prefs.bgmEnabled
+                              ? Icons.music_note_rounded
+                              : Icons.music_off_rounded,
                           label: 'BGM',
                           active: prefs.bgmEnabled,
                           onTap: onToggleBgm,
                         ),
                         const Spacer(),
-                        const Text('글자 애니메이션', style: TextStyle(color: _ivory, fontSize: 12.5)),
+                        const Text(
+                          '글자 애니메이션',
+                          style: TextStyle(color: _ivory, fontSize: 12.5),
+                        ),
                         Switch(
                           value: prefs.animationEnabled,
                           activeThumbColor: _gold,
@@ -508,7 +682,10 @@ class _ReaderSettingsSheet extends StatelessWidget {
     return Container(
       width: 44,
       height: 5,
-      decoration: BoxDecoration(color: Colors.white24, borderRadius: BorderRadius.circular(999)),
+      decoration: BoxDecoration(
+        color: Colors.white24,
+        borderRadius: BorderRadius.circular(999),
+      ),
     );
   }
 }
@@ -519,7 +696,12 @@ class _SheetIconToggle extends StatelessWidget {
   final bool active;
   final VoidCallback onTap;
 
-  const _SheetIconToggle({required this.icon, required this.label, required this.active, required this.onTap});
+  const _SheetIconToggle({
+    required this.icon,
+    required this.label,
+    required this.active,
+    required this.onTap,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -530,9 +712,20 @@ class _SheetIconToggle extends StatelessWidget {
         padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
         child: Row(
           children: [
-            Icon(icon, color: active ? _gold : _ivory.withOpacity(0.5), size: 26),
+            Icon(
+              icon,
+              color: active ? _gold : _ivory.withOpacity(0.5),
+              size: 26,
+            ),
             const SizedBox(width: 6),
-            Text(label, style: TextStyle(color: active ? _gold : _ivory.withOpacity(0.5), fontSize: 12.5, fontWeight: FontWeight.w700)),
+            Text(
+              label,
+              style: TextStyle(
+                color: active ? _gold : _ivory.withOpacity(0.5),
+                fontSize: 12.5,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
           ],
         ),
       ),
@@ -545,7 +738,11 @@ class _FontChip extends StatelessWidget {
   final bool selected;
   final VoidCallback onTap;
 
-  const _FontChip({required this.label, required this.selected, required this.onTap});
+  const _FontChip({
+    required this.label,
+    required this.selected,
+    required this.onTap,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -555,9 +752,15 @@ class _FontChip extends StatelessWidget {
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
         decoration: BoxDecoration(
-          color: selected ? _gold.withOpacity(0.18) : Colors.white.withOpacity(0.05),
+          color: selected
+              ? _gold.withOpacity(0.18)
+              : Colors.white.withOpacity(0.05),
           borderRadius: BorderRadius.circular(999),
-          border: Border.all(color: selected ? _gold.withOpacity(0.6) : Colors.white.withOpacity(0.12)),
+          border: Border.all(
+            color: selected
+                ? _gold.withOpacity(0.6)
+                : Colors.white.withOpacity(0.12),
+          ),
         ),
         child: Text(
           label,

@@ -73,7 +73,9 @@ class _LinearReaderState extends State<LinearReader> {
     final gameState = GameStateScope.of(context);
     final pack = widget.pack;
     final previewLimitReached =
-        !pack.isFree && !gameState.ownsPack(pack.id) && gameState.visitedNodeCount >= pack.previewNodeLimit;
+        !pack.isFree &&
+        !gameState.ownsPack(pack.id) &&
+        gameState.visitedNodeCount >= pack.previewNodeLimit;
 
     if (previewLimitReached) {
       final purchased = await requestPackPurchase(context, gameState, pack);
@@ -89,12 +91,7 @@ class _LinearReaderState extends State<LinearReader> {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: Colors.black,
-      body: Stack(
-        children: [
-          _buildBody(context),
-          const ReaderBackButton(),
-        ],
-      ),
+      body: Stack(children: [_buildBody(context), const ReaderBackButton()]),
     );
   }
 
@@ -106,14 +103,20 @@ class _LinearReaderState extends State<LinearReader> {
     final errorMessage = _errorMessage;
     if (errorMessage != null) {
       return Center(
-        child: Text(errorMessage, style: TextStyle(fontSize: 14, color: _ivory.withOpacity(0.7))),
+        child: Text(
+          errorMessage,
+          style: TextStyle(fontSize: 14, color: _ivory.withOpacity(0.7)),
+        ),
       );
     }
 
     final current = _nodesById[_currentNodeId];
     if (current == null) {
       return Center(
-        child: Text('챕터를 찾을 수 없어요.', style: TextStyle(fontSize: 14, color: _ivory.withOpacity(0.7))),
+        child: Text(
+          '챕터를 찾을 수 없어요.',
+          style: TextStyle(fontSize: 14, color: _ivory.withOpacity(0.7)),
+        ),
       );
     }
 
@@ -123,10 +126,14 @@ class _LinearReaderState extends State<LinearReader> {
       key: ValueKey(current.node.id),
       blocks: current.node.blocks,
       backgroundImageUrl: current.backgroundImageUrl,
+      effects: current.node.effects,
+      sfxUrl: current.sfxUrl,
       ttsAllowed: widget.pack.ttsEnabled,
       actionAreaBuilder: (context) => _NextButton(
         label: nextNodeId == null ? '완료' : '다음',
-        onTap: nextNodeId == null ? () => Navigator.pop(context) : () => _goToNext(nextNodeId),
+        onTap: nextNodeId == null
+            ? () => Navigator.pop(context)
+            : () => _goToNext(nextNodeId),
       ),
     );
   }
@@ -154,7 +161,14 @@ class _NextButton extends StatelessWidget {
             borderRadius: BorderRadius.circular(14),
             onTap: onTap,
             child: Center(
-              child: Text(label, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w800, color: Colors.white)),
+              child: Text(
+                label,
+                style: const TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.w800,
+                  color: Colors.white,
+                ),
+              ),
             ),
           ),
         ),
@@ -162,4 +176,3 @@ class _NextButton extends StatelessWidget {
     );
   }
 }
-

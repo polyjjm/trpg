@@ -8,6 +8,7 @@ import '../../core/platform/open_external_link.dart';
 import '../../core/user/user_profile_repository.dart';
 import '../data/admin_notice_repository.dart';
 import '../data/admin_image_repository.dart';
+import '../data/admin_sfx_repository.dart';
 import '../data/admin_story_repository.dart';
 import '../data/node_edit_session_cache.dart';
 import '../models/admin_story_pack.dart';
@@ -18,9 +19,10 @@ import 'admin_gate_page.dart';
 import 'image_library_tab.dart';
 import 'notices_tab.dart';
 import 'pack_settings_page.dart';
+import 'sfx_library_tab.dart';
 import 'story_tab_view.dart';
 
-enum _AdminTab { story, images, notices }
+enum _AdminTab { story, images, sfx, notices }
 
 /// 로그인 + 역할 확인(author/admin) 통과 후 보이는 "작가 도구" 본체 —
 /// 콘텐츠 편집(스토리 노드/이미지 라이브러리/공지사항)만 다룬다. author와
@@ -51,6 +53,7 @@ class AuthorToolPage extends StatefulWidget {
 class _AuthorToolPageState extends State<AuthorToolPage> {
   final AdminStoryRepository _storyRepository = AdminStoryRepository();
   final AdminImageRepository _imageRepository = AdminImageRepository();
+  final AdminSfxRepository _sfxRepository = AdminSfxRepository();
   final AdminNoticeRepository _noticeRepository = AdminNoticeRepository();
   final UserProfileRepository _userProfileRepository = UserProfileRepository();
 
@@ -216,10 +219,16 @@ class _AuthorToolPageState extends State<AuthorToolPage> {
           pack: activePack,
           repository: _storyRepository,
           imageRepository: _imageRepository,
+          sfxRepository: _sfxRepository,
           sessionCache: _sessionCache,
         );
       case _AdminTab.images:
         return ImageLibraryTab(repository: _imageRepository);
+      case _AdminTab.sfx:
+        return SfxLibraryTab(
+          repository: _sfxRepository,
+          currentUserId: widget.authService.userId,
+        );
       case _AdminTab.notices:
         if (activePackId == null) return _noPackSelectedPlaceholder();
         return NoticesTab(
@@ -508,6 +517,11 @@ class _NavTabs extends StatelessWidget {
             label: '이미지 라이브러리',
             selected: active == _AdminTab.images,
             onTap: () => onSelected(_AdminTab.images),
+          ),
+          _NavTab(
+            label: '효과음 라이브러리',
+            selected: active == _AdminTab.sfx,
+            onTap: () => onSelected(_AdminTab.sfx),
           ),
           _NavTab(
             label: '공지사항',

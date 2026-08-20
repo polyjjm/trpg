@@ -2,10 +2,12 @@ import 'package:flutter/material.dart';
 
 import '../../core/story/background_image_inheritance.dart';
 import '../data/admin_image_repository.dart';
+import '../data/admin_sfx_repository.dart';
 import '../data/admin_story_repository.dart';
 import '../data/node_edit_session_cache.dart';
 import '../data/node_id_suggestion.dart';
 import '../models/admin_image.dart';
+import '../models/admin_sfx.dart';
 import '../models/admin_story_node.dart';
 import '../models/admin_story_node_summary.dart';
 import '../models/admin_story_pack.dart';
@@ -60,6 +62,7 @@ class StoryTabView extends StatefulWidget {
   final AdminStoryPack pack;
   final AdminStoryRepository repository;
   final AdminImageRepository imageRepository;
+  final AdminSfxRepository sfxRepository;
 
   /// 저장 안 한 편집 내용의 세션 캐시 — AuthorToolPage가 소유해서 팩 전환/탭
   /// 전환에도 살아남는다(자세한 설명은 node_edit_session_cache.dart 참고).
@@ -74,6 +77,7 @@ class StoryTabView extends StatefulWidget {
     required this.pack,
     required this.repository,
     required this.imageRepository,
+    required this.sfxRepository,
     required this.sessionCache,
   });
 
@@ -98,6 +102,11 @@ class _StoryTabViewState extends State<StoryTabView> {
   /// 이유로 build()에서 매번 새로 구독하지 않는다.
   late final Stream<List<AdminImage>> _imagesStream = widget.imageRepository
       .watchImages();
+
+  /// 효과음 라이브러리도 이미지와 같은 이유로(팩과 무관하게 공유, build()마다
+  /// 새로 구독하지 않음) 한 번만 만든다.
+  late final Stream<List<AdminSfx>> _sfxLibraryStream = widget.sfxRepository
+      .watchSfxLibrary();
 
   String? _selectedNodeId;
   AdminStoryNode? _editingNode;
@@ -576,6 +585,44 @@ class _StoryTabViewState extends State<StoryTabView> {
     );
   }
 
+  /// 임시저장의 핵심 로직 — Firestore에 쓰고 세션 캐시에서 지운다. 개별
+  /// 패널의 "임시저장" 버튼([_handleSaveDraft])과 그래프 화면의 "전체
+  /// 임시저장"([_handleBulkSaveDraftAll])이 둘 다 이 메서드 하나를 그대로
+  /// 쓴다 — 어느 쪽이든 저장 로직 자체는 하나뿐이어야 한다.
+  Future<void> _saveDraftForNode(AdminStoryNode node) async {
+    node.dirty = false;
+    await widget.repository.saveNode(widget.packId, node);
+    if (!mounted) return;
+    // 저장됐으니 이제 Firestore가 최신이다 — 캐시에 남겨 두면 다음에 열 때
+    // 방금 저장한 내용을 "아직 저장 안 된 것"처럼 잘못 보여주게 된다.
+    widget.sessionCache.remove(widget.packId, node.id);
+  }
+
+  /// 승인 요청의 핵심 로직 — [_saveDraftForNode]와 같은 이유로 개별 패널의
+  /// "승인 요청 보내기"([_handleRequestApproval])와 그래프 화면의 "전체
+  /// 승인 요청 보내기"([_handleBulkRequestApprovalAll])가 공유한다. 확인
+  /// 다이얼로그는 호출부 책임이다 — 일괄 처리 쪽은 "N개를 한 번에 보낼까요"
+  /// 하나로 묻고, 개별 쪽은 지금처럼 노드 하나 기준 문구로 묻는다.
+  Future<void> _requestApprovalForNode(AdminStoryNode node) async {
+    final isNew = node.isNew;
+    node.pendingAction = isNew ? PendingAction.create : PendingAction.edit;
+    node.dirty = false;
+    await widget.repository.saveNode(widget.packId, node);
+    if (!mounted) return;
+    widget.sessionCache.remove(widget.packId, node.id);
+  }
+
+  /// 방금 저장한 노드가 지금 패널에 열려 있던 바로 그 노드였다면, "새 노드
+  /// 만들기로 방금 생성됨" 컨텍스트([_creationSourceId]/
+  /// [_creationSourceChoiceIndex])도 같이 정리한다 — 캐시 엔트리가 사라진
+  /// 뒤에도 헤더에 "새 노드 (...)"가 계속 남아있으면 안 된다.
+  void _clearCreationContextIfSaved(String savedNodeId) {
+    if (_editingNode?.id != savedNodeId) return;
+    if (widget.sessionCache.has(widget.packId, savedNodeId)) return;
+    _creationSourceId = null;
+    _creationSourceChoiceIndex = null;
+  }
+
   Future<void> _handleSaveDraft() async {
     final node = _editingNode;
     if (node == null) return;
@@ -583,16 +630,10 @@ class _StoryTabViewState extends State<StoryTabView> {
     await _fillCreationChoiceLabelIfNeeded();
     if (!mounted) return;
 
-    node.dirty = false;
-
-    await widget.repository.saveNode(widget.packId, node);
+    await _saveDraftForNode(node);
     if (!mounted) return;
 
-    // 저장됐으니 이제 Firestore가 최신이다 — 캐시에 남겨 두면 다음에 열 때
-    // 방금 저장한 내용을 "아직 저장 안 된 것"처럼 잘못 보여주게 된다.
-    widget.sessionCache.remove(widget.packId, node.id);
-    _creationSourceId = null;
-    _creationSourceChoiceIndex = null;
+    _clearCreationContextIfSaved(node.id);
     setState(() {});
 
     _showToast(context, '임시저장됨 ✓ (승인 요청 전까지는 아무한테도 안 보여요)');
@@ -605,25 +646,90 @@ class _StoryTabViewState extends State<StoryTabView> {
     await _fillCreationChoiceLabelIfNeeded();
     if (!mounted) return;
 
-    final isNew = node.isNew;
-    final message = isNew
+    final message = node.isNew
         ? '신규 등록 승인 요청을 보낼까요? 상위 관리자가 승인해야 플레이어에게 보여요.'
         : '수정 승인 요청을 보낼까요? 상위 관리자가 승인하기 전까지는 지금 연재 중인 이전 버전이 그대로 보여요.';
     final confirmed = await showConfirmDialog(context, message);
     if (!confirmed || !mounted) return;
 
-    node.pendingAction = isNew ? PendingAction.create : PendingAction.edit;
-    node.dirty = false;
-
-    await widget.repository.saveNode(widget.packId, node);
+    await _requestApprovalForNode(node);
     if (!mounted) return;
 
-    widget.sessionCache.remove(widget.packId, node.id);
-    _creationSourceId = null;
-    _creationSourceChoiceIndex = null;
+    _clearCreationContextIfSaved(node.id);
     setState(() {});
 
     _showToast(context, '승인 요청 보냄 ✓ 상위 관리자 승인 대기 중');
+  }
+
+  /// "구조 보기"의 "전체 임시저장" — 지금 이 팩의 세션 캐시에 있는 노드
+  /// 전부를 [_saveDraftForNode] 하나로 순서대로 저장한다. 개별 저장과
+  /// 똑같이 확인 다이얼로그 없이 바로 진행한다("나만 보임"이라 위험이
+  /// 낮다는 게 개별 임시저장 버튼과 같은 판단).
+  Future<void> _handleBulkSaveDraftAll() async {
+    final ids = widget.sessionCache.nodeIdsForPack(widget.packId).toList();
+    if (ids.isEmpty) return;
+
+    final failed = <String>[];
+    var succeeded = 0;
+    for (final id in ids) {
+      final node = widget.sessionCache.get(widget.packId, id);
+      if (node == null) continue;
+      try {
+        await _saveDraftForNode(node);
+        if (!mounted) return;
+        succeeded += 1;
+        _clearCreationContextIfSaved(id);
+      } catch (_) {
+        failed.add(id);
+      }
+    }
+
+    if (!mounted) return;
+    setState(() {});
+
+    if (failed.isEmpty) {
+      _showToast(context, '$succeeded개 노드를 임시저장했어요 ✓');
+    } else {
+      _showFailureToast(context, action: '임시저장', failedIds: failed);
+    }
+  }
+
+  /// "구조 보기"의 "전체 승인 요청 보내기" — 개별 승인 요청과 같은 확인
+  /// 다이얼로그를 한 번만 띄운 뒤(노드 수만큼 여러 번 묻지 않는다),
+  /// [_requestApprovalForNode]로 전부 처리한다.
+  Future<void> _handleBulkRequestApprovalAll() async {
+    final ids = widget.sessionCache.nodeIdsForPack(widget.packId).toList();
+    if (ids.isEmpty) return;
+
+    final confirmed = await showConfirmDialog(
+      context,
+      '${ids.length}개 노드의 변경사항을 한 번에 승인 요청 보낼까요? 상위 관리자가 승인해야 플레이어에게 반영돼요.',
+    );
+    if (!confirmed || !mounted) return;
+
+    final failed = <String>[];
+    var succeeded = 0;
+    for (final id in ids) {
+      final node = widget.sessionCache.get(widget.packId, id);
+      if (node == null) continue;
+      try {
+        await _requestApprovalForNode(node);
+        if (!mounted) return;
+        succeeded += 1;
+        _clearCreationContextIfSaved(id);
+      } catch (_) {
+        failed.add(id);
+      }
+    }
+
+    if (!mounted) return;
+    setState(() {});
+
+    if (failed.isEmpty) {
+      _showToast(context, '$succeeded개 노드의 승인 요청을 보냈어요 ✓ 상위 관리자 승인 대기 중');
+    } else {
+      _showFailureToast(context, action: '승인 요청', failedIds: failed);
+    }
   }
 
   Future<void> _handleCancelDeleteRequest() async {
@@ -634,6 +740,31 @@ class _StoryTabViewState extends State<StoryTabView> {
     await widget.repository.saveNode(widget.packId, node);
     if (!mounted) return;
     setState(() {});
+  }
+
+  /// NodeEditor.onChanged — "노드별로 쓰기"의 NodeEditor와 "구조 보기"의
+  /// [_NodeEditorPanel]이 둘 다 이 메서드 하나를 그대로 쓴다(같은 편집
+  /// 세션을 공유하므로 로직도 하나면 충분하다).
+  void _handleEditorChanged(AdminStoryNode editingNode) {
+    // 노드 ID 입력칸은 신규 초안일 때만 편집 가능하고, 그 동안 사용자가
+    // id를 바꿨을 수 있다 — 그러면 캐시 키도 옮겨야 예전 id로 캐시된
+    // 항목이 유령으로 남지 않는다.
+    if (_selectedNodeId != null && _selectedNodeId != editingNode.id) {
+      widget.sessionCache.remove(widget.packId, _selectedNodeId!);
+    }
+    widget.sessionCache.put(widget.packId, editingNode);
+    setState(() => _selectedNodeId = editingNode.id);
+  }
+
+  /// "구조 보기"의 편집 패널을 닫는다 — 그래프 화면은 그대로 두고 선택만
+  /// 해제한다("노드별로 쓰기"로 옮기지 않는다).
+  void _handleClosePanel() {
+    setState(() {
+      _selectedNodeId = null;
+      _editingNode = null;
+      _creationSourceId = null;
+      _creationSourceChoiceIndex = null;
+    });
   }
 
   @override
@@ -738,128 +869,148 @@ class _StoryTabViewState extends State<StoryTabView> {
               onChanged: (mode) => setState(() => _viewMode = mode),
             ),
             Expanded(
-              child: switch (_viewMode) {
-                _ViewMode.bulk => BulkNodeWriter(
-                  onSave: (pages) => _handleBulkSave(pages, rawSummaries),
-                ),
-                _ViewMode.map => StoryMapView(
-                  packId: widget.packId,
-                  packType: widget.pack.type,
-                  nodes: displaySummaries,
-                  unsavedNodeIds: unsavedNodeIds,
-                  sessionCache: widget.sessionCache,
-                  repository: widget.repository,
-                  onOpenNode: (id) {
-                    setState(() => _viewMode = _ViewMode.single);
-                    _selectNode(id);
-                  },
-                  onNodeCreatedFromDrag: (newNodeId, sourceId, choiceIndex) {
-                    setState(() => _viewMode = _ViewMode.single);
-                    _selectNode(
-                      newNodeId,
-                      creationSourceId: sourceId,
-                      creationSourceChoiceIndex: choiceIndex,
-                    );
-                  },
-                  onChanged: () => setState(() {}),
-                ),
-                _ViewMode.single => Row(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    StoryNodeSidebar(
-                      nodes: displaySummaries,
-                      selectedNodeId: _selectedNodeId,
-                      unsavedNodeIds: unsavedNodeIds,
-                      onAddNode: () => _handleAddNode(rawSummaries),
-                      onSelect: (id) {
-                        if (id == _selectedNodeId) return;
-                        _selectNode(id);
-                      },
-                      onDelete: (id) => _handleDeleteNode(id, rawSummaries),
-                      onReorder: (oldIndex, newIndex) =>
-                          _handleReorder(displaySummaries, oldIndex, newIndex),
-                      bulkSelectedIds: _bulkDeleteSelection,
-                      onToggleBulkSelect: _toggleBulkDeleteSelect,
-                      onToggleSelectAll: () =>
-                          _toggleBulkDeleteSelectAll(displaySummaries),
-                      onBulkDelete: _handleBulkDelete,
-                    ),
-                    Expanded(
-                      child: editingNode == null
-                          ? Center(
-                              child: Text(
-                                '노드를 선택하거나 새로 만들어주세요.',
-                                style: TextStyle(color: AdminColors.muted),
+              child: StreamBuilder<List<AdminImage>>(
+                stream: _imagesStream,
+                builder: (context, imgSnapshot) {
+                  final images = imgSnapshot.data ?? const <AdminImage>[];
+
+                  return StreamBuilder<List<AdminSfx>>(
+                    stream: _sfxLibraryStream,
+                    builder: (context, sfxSnapshot) {
+                      final sfxLibrary = sfxSnapshot.data ?? const <AdminSfx>[];
+
+                      return switch (_viewMode) {
+                        _ViewMode.bulk => BulkNodeWriter(
+                          onSave: (pages) =>
+                              _handleBulkSave(pages, rawSummaries),
+                        ),
+                        _ViewMode.map => StoryMapView(
+                          packId: widget.packId,
+                          packType: widget.pack.type,
+                          nodes: displaySummaries,
+                          unsavedNodeIds: unsavedNodeIds,
+                          sessionCache: widget.sessionCache,
+                          repository: widget.repository,
+                          // 더 이상 "노드별로 쓰기"로 넘어가지 않는다 — 그래프
+                          // 화면 안에서 바로 [_NodeEditorPanel]로 연다(같은
+                          // _selectNode가 _editingNode/_creationSourceId를
+                          // 채워 주면, 아래로 내려주는 editingNode 등이 자동으로
+                          // 그 값을 반영한다).
+                          onOpenNode: (id) => _selectNode(id),
+                          onNodeCreatedFromDrag:
+                              (newNodeId, sourceId, choiceIndex) => _selectNode(
+                                newNodeId,
+                                creationSourceId: sourceId,
+                                creationSourceChoiceIndex: choiceIndex,
                               ),
-                            )
-                          : StreamBuilder<List<AdminImage>>(
-                              stream: _imagesStream,
-                              builder: (context, imgSnapshot) {
-                                final images =
-                                    imgSnapshot.data ?? const <AdminImage>[];
-                                return NodeEditor(
-                                  // id 문자열이 아니라 객체 identity로
-                                  // 키를 잡는다 — "새 스토리 노드"를 두
-                                  // 번 누르면 두 번째도 같은 id를
-                                  // 제안할 수 있어서(취소된 적 없는
-                                  // 세션 캐시 기준 재확인), _selectedNodeId
-                                  // 문자열만으로는 항상 다른 값이라는
-                                  // 보장이 없다. ValueKey(id)를 쓰면
-                                  // Flutter가 "같은 위젯"으로 보고
-                                  // NodeBodyEditor의 TextFormField를
-                                  // 다시 만들지 않아 화면에 이전 내용이
-                                  // 남는다. editingNode는 세션이 바뀔
-                                  // 때마다 다른 인스턴스이므로 ObjectKey는
-                                  // id 충돌과 무관하게 항상 다시 마운트한다.
-                                  key: ObjectKey(editingNode),
-                                  node: editingNode,
-                                  dirty: widget.sessionCache.has(
-                                    widget.packId,
-                                    editingNode.id,
-                                  ),
-                                  isIdEditable: isNewUnsaved,
-                                  images: images,
-                                  packType: widget.pack.type,
-                                  candidates: displaySummaries,
-                                  inheritedBackgroundImageId:
-                                      inheritedBackgroundImageId,
-                                  creationSourceId:
-                                      _selectedNodeId == editingNode.id
-                                      ? _creationSourceId
-                                      : null,
-                                  onChanged: () {
-                                    // 노드 ID 입력칸은 신규 초안일 때만
-                                    // 편집 가능하고(isIdEditable), 그
-                                    // 동안 사용자가 id를 바꿨을 수 있다
-                                    // — 그러면 캐시 키도 옮겨야 예전
-                                    // id로 캐시된 항목이 유령으로
-                                    // 남지 않는다.
-                                    if (_selectedNodeId != null &&
-                                        _selectedNodeId != editingNode.id) {
-                                      widget.sessionCache.remove(
-                                        widget.packId,
-                                        _selectedNodeId!,
-                                      );
-                                    }
-                                    widget.sessionCache.put(
-                                      widget.packId,
-                                      editingNode,
-                                    );
-                                    setState(
-                                      () => _selectedNodeId = editingNode.id,
-                                    );
-                                  },
-                                  onSaveDraft: _handleSaveDraft,
-                                  onRequestApproval: _handleRequestApproval,
-                                  onCancelDeleteRequest:
-                                      _handleCancelDeleteRequest,
-                                );
+                          onChanged: () => setState(() {}),
+                          editingNode: editingNode,
+                          editingNodeDirty:
+                              editingNode != null &&
+                              widget.sessionCache.has(
+                                widget.packId,
+                                editingNode.id,
+                              ),
+                          editingNodeIdEditable: isNewUnsaved,
+                          images: images,
+                          inheritedBackgroundImageId:
+                              inheritedBackgroundImageId,
+                          editingNodeCreationSourceId:
+                              editingNode != null &&
+                                  _selectedNodeId == editingNode.id
+                              ? _creationSourceId
+                              : null,
+                          onEditorChanged: () =>
+                              _handleEditorChanged(editingNode!),
+                          onSaveDraft: _handleSaveDraft,
+                          onRequestApproval: _handleRequestApproval,
+                          onCancelDeleteRequest: _handleCancelDeleteRequest,
+                          onClosePanel: _handleClosePanel,
+                          onBulkSaveDraft: _handleBulkSaveDraftAll,
+                          onBulkRequestApproval: _handleBulkRequestApprovalAll,
+                          sfxLibrary: sfxLibrary,
+                        ),
+                        _ViewMode.single => Row(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: [
+                            StoryNodeSidebar(
+                              nodes: displaySummaries,
+                              selectedNodeId: _selectedNodeId,
+                              unsavedNodeIds: unsavedNodeIds,
+                              onAddNode: () => _handleAddNode(rawSummaries),
+                              onSelect: (id) {
+                                if (id == _selectedNodeId) return;
+                                _selectNode(id);
                               },
+                              onDelete: (id) =>
+                                  _handleDeleteNode(id, rawSummaries),
+                              onReorder: (oldIndex, newIndex) => _handleReorder(
+                                displaySummaries,
+                                oldIndex,
+                                newIndex,
+                              ),
+                              bulkSelectedIds: _bulkDeleteSelection,
+                              onToggleBulkSelect: _toggleBulkDeleteSelect,
+                              onToggleSelectAll: () =>
+                                  _toggleBulkDeleteSelectAll(displaySummaries),
+                              onBulkDelete: _handleBulkDelete,
                             ),
-                    ),
-                  ],
-                ),
-              },
+                            Expanded(
+                              child: editingNode == null
+                                  ? Center(
+                                      child: Text(
+                                        '노드를 선택하거나 새로 만들어주세요.',
+                                        style: TextStyle(
+                                          color: AdminColors.muted,
+                                        ),
+                                      ),
+                                    )
+                                  : NodeEditor(
+                                      // id 문자열이 아니라 객체 identity로 키를
+                                      // 잡는다 — "새 스토리 노드"를 두 번
+                                      // 누르면 두 번째도 같은 id를 제안할 수
+                                      // 있어서(취소된 적 없는 세션 캐시 기준
+                                      // 재확인), _selectedNodeId 문자열만으로는
+                                      // 항상 다른 값이라는 보장이 없다.
+                                      // ValueKey(id)를 쓰면 Flutter가 "같은
+                                      // 위젯"으로 보고 NodeBodyEditor의
+                                      // TextFormField를 다시 만들지 않아 화면에
+                                      // 이전 내용이 남는다. editingNode는
+                                      // 세션이 바뀔 때마다 다른 인스턴스이므로
+                                      // ObjectKey는 id 충돌과 무관하게 항상
+                                      // 다시 마운트한다.
+                                      key: ObjectKey(editingNode),
+                                      node: editingNode,
+                                      dirty: widget.sessionCache.has(
+                                        widget.packId,
+                                        editingNode.id,
+                                      ),
+                                      isIdEditable: isNewUnsaved,
+                                      images: images,
+                                      sfxLibrary: sfxLibrary,
+                                      packType: widget.pack.type,
+                                      candidates: displaySummaries,
+                                      inheritedBackgroundImageId:
+                                          inheritedBackgroundImageId,
+                                      creationSourceId:
+                                          _selectedNodeId == editingNode.id
+                                          ? _creationSourceId
+                                          : null,
+                                      onChanged: () =>
+                                          _handleEditorChanged(editingNode),
+                                      onSaveDraft: _handleSaveDraft,
+                                      onRequestApproval: _handleRequestApproval,
+                                      onCancelDeleteRequest:
+                                          _handleCancelDeleteRequest,
+                                    ),
+                            ),
+                          ],
+                        ),
+                      };
+                    },
+                  );
+                },
+              ),
             ),
           ],
         );
@@ -948,6 +1099,28 @@ class _ModeButton extends StatelessWidget {
       ),
     );
   }
+}
+
+/// "전체 임시저장"/"전체 승인 요청 보내기"가 일부 노드에서 실패했을 때
+/// 쓴다 — 실패한 노드 id를 그대로 나열해서, 조용히 몇 개가 빠졌는지 모르고
+/// 넘어가는 일이 없게 한다. 성공한 나머지는 이미 세션 캐시에서 지워졌으니
+/// (실패한 것만 계속 "수정됨"으로 남는다), 실패 목록 자체가 "이 노드들만
+/// 다시 시도하면 된다"는 안내이기도 하다.
+void _showFailureToast(
+  BuildContext context, {
+  required String action,
+  required List<String> failedIds,
+}) {
+  ScaffoldMessenger.of(context).showSnackBar(
+    SnackBar(
+      content: Text(
+        '$action 중 일부 실패: ${failedIds.join(', ')}',
+        style: TextStyle(color: AdminColors.rejectText),
+      ),
+      backgroundColor: AdminColors.rejectBg,
+      duration: const Duration(seconds: 6),
+    ),
+  );
 }
 
 void _showToast(BuildContext context, String message) {

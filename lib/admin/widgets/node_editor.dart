@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../models/admin_image.dart';
 import '../models/admin_image_category.dart';
+import '../models/admin_sfx.dart';
 import '../models/admin_story_node.dart';
 import '../models/admin_story_node_summary.dart';
 import '../models/pending_action.dart';
@@ -28,6 +29,7 @@ class NodeEditor extends StatefulWidget {
   final bool dirty;
   final bool isIdEditable;
   final List<AdminImage> images;
+  final List<AdminSfx> sfxLibrary;
   final StoryPackType packType;
 
   /// 이동 대상 후보(선택지/다음 노드 선택기용) — 저장된 노드 + 세션 캐시
@@ -56,6 +58,7 @@ class NodeEditor extends StatefulWidget {
     required this.dirty,
     required this.isIdEditable,
     required this.images,
+    required this.sfxLibrary,
     required this.packType,
     required this.candidates,
     required this.inheritedBackgroundImageId,
@@ -168,6 +171,7 @@ class _NodeEditorState extends State<NodeEditor> {
               const SizedBox(height: 12),
               NodeEffectsEditor(
                 effects: node.effects,
+                sfxLibrary: widget.sfxLibrary,
                 onChanged: (effects) {
                   node.effects = effects;
                   widget.onChanged();

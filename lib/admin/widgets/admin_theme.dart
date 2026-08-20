@@ -149,4 +149,17 @@ class AdminColors {
   static const imageCategoryChoiceText = Color(0xFF4B2E83);
   static const imageCategoryOtherBg = Color(0xFFE7E3DA);
   static const imageCategoryOtherText = Color(0xFF6B6355);
+
+  // 효과음 라이브러리 카테고리 배지(문/발소리/비명/심장박동/기타) — 이미지
+  // 카테고리 배지와 같은 파스텔 bg + 진한 텍스트 조합.
+  static const sfxCategoryDoorBg = Color(0xFFDCEAFB);
+  static const sfxCategoryDoorText = Color(0xFF1B4F8C);
+  static const sfxCategoryFootstepsBg = Color(0xFFE3F0DC);
+  static const sfxCategoryFootstepsText = Color(0xFF2F6B32);
+  static const sfxCategoryScreamBg = Color(0xFFFBDCE0);
+  static const sfxCategoryScreamText = Color(0xFF8C1B3B);
+  static const sfxCategoryHeartbeatBg = Color(0xFFFBE6DC);
+  static const sfxCategoryHeartbeatText = Color(0xFF8C4B1B);
+  static const sfxCategoryOtherBg = Color(0xFFE7E3DA);
+  static const sfxCategoryOtherText = Color(0xFF6B6355);
 }

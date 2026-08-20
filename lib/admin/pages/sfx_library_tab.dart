@@ -1,32 +1,37 @@
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 
-import '../data/admin_image_repository.dart';
-import '../models/admin_image.dart';
-import '../models/admin_image_category.dart';
+import '../../core/audio/audio_service.dart';
+import '../data/admin_sfx_repository.dart';
+import '../models/admin_sfx.dart';
+import '../models/admin_sfx_category.dart';
 import '../widgets/admin_theme.dart';
-import '../widgets/category_badge.dart';
-import '../widgets/category_picker_dialog.dart';
 import '../widgets/library_search_field.dart';
+import '../widgets/sfx_category_badge.dart';
+import '../widgets/sfx_category_picker_dialog.dart';
 
-/// "이미지 라이브러리" 탭 — 업로드(→ Firebase Storage) + 카테고리 필터 칩 +
-/// 그리드 목록. 라이브러리는 팩/작가 구분 없이 전체가 공유한다
-/// (FIRESTORE_SCHEMA.md) — 카테고리(배경/선택지/기타)는 그 공유 목록을
-/// 좁혀 보기 위한 고정 분류일 뿐, 팩별 데이터가 아니다.
-class ImageLibraryTab extends StatefulWidget {
-  final AdminImageRepository repository;
+/// "효과음 라이브러리" 탭 — ImageLibraryTab과 같은 구조(업로드 → Firebase
+/// Storage, 카테고리 필터 칩, 그리드 목록)에 미리듣기 재생 버튼만 더한다.
+/// 라이브러리는 팩/작가 구분 없이 전체가 공유한다 — images와 같은 이유다.
+class SfxLibraryTab extends StatefulWidget {
+  final AdminSfxRepository repository;
+  final String? currentUserId;
 
-  const ImageLibraryTab({super.key, required this.repository});
+  const SfxLibraryTab({
+    super.key,
+    required this.repository,
+    required this.currentUserId,
+  });
 
   @override
-  State<ImageLibraryTab> createState() => _ImageLibraryTabState();
+  State<SfxLibraryTab> createState() => _SfxLibraryTabState();
 }
 
-class _ImageLibraryTabState extends State<ImageLibraryTab> {
+class _SfxLibraryTabState extends State<SfxLibraryTab> {
   bool _isUploading = false;
 
   /// null이면 "전체".
-  AdminImageCategory? _filter;
+  AdminSfxCategory? _filter;
 
   final _searchController = TextEditingController();
   String _searchQuery = '';
@@ -39,21 +44,19 @@ class _ImageLibraryTabState extends State<ImageLibraryTab> {
 
   Future<void> _handleUpload() async {
     final result = await FilePicker.platform.pickFiles(
-      type: FileType.image,
+      type: FileType.audio,
       allowMultiple: true,
       withData: true,
     );
     if (result == null || result.files.isEmpty) return;
     if (!mounted) return;
 
-    // 한 번에 고른 파일 전부에 같은 분류를 적용한다 — 파일마다 따로 고르게
-    // 하면 여러 장 업로드가 번거로워진다. 취소하면(다이얼로그 밖 탭 포함)
-    // 업로드 자체를 하지 않는다 — "건너뛰기"는 기본값(기타)을 그대로 두고
-    // "업로드"를 누르는 것이지, 다이얼로그를 닫는 게 아니다.
-    final category = await showDialog<AdminImageCategory>(
+    // 한 번에 고른 파일 전부에 같은 분류를 적용한다 — ImageLibraryTab과 같은
+    // 이유(여러 개 업로드가 매번 고르게 하면 번거로워진다).
+    final category = await showDialog<AdminSfxCategory>(
       context: context,
-      builder: (_) => const CategoryPickerDialog(
-        initial: AdminImageCategory.other,
+      builder: (_) => const SfxCategoryPickerDialog(
+        initial: AdminSfxCategory.other,
         title: '카테고리 선택',
         confirmLabel: '업로드',
       ),
@@ -66,13 +69,14 @@ class _ImageLibraryTabState extends State<ImageLibraryTab> {
       final bytes = file.bytes;
       if (bytes == null) continue;
       try {
-        await widget.repository.uploadImage(
+        await widget.repository.uploadSfx(
           bytes: bytes,
           fileName: file.name,
           category: category,
+          uploadedBy: widget.currentUserId,
         );
       } catch (e) {
-        debugPrint('이미지 업로드 실패: $e');
+        debugPrint('효과음 업로드 실패: $e');
       }
     }
 
@@ -80,17 +84,17 @@ class _ImageLibraryTabState extends State<ImageLibraryTab> {
     setState(() => _isUploading = false);
   }
 
-  Future<void> _handleChangeCategory(AdminImage image) async {
-    final category = await showDialog<AdminImageCategory>(
+  Future<void> _handleChangeCategory(AdminSfx sfx) async {
+    final category = await showDialog<AdminSfxCategory>(
       context: context,
-      builder: (_) => CategoryPickerDialog(
-        initial: image.category,
+      builder: (_) => SfxCategoryPickerDialog(
+        initial: sfx.category,
         title: '카테고리 변경',
         confirmLabel: '변경',
       ),
     );
-    if (category == null || category == image.category) return;
-    await widget.repository.updateCategory(image.id, category);
+    if (category == null || category == sfx.category) return;
+    await widget.repository.updateCategory(sfx.id, category);
   }
 
   @override
@@ -101,7 +105,7 @@ class _ImageLibraryTabState extends State<ImageLibraryTab> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
-            '이미지 라이브러리',
+            '효과음 라이브러리',
             style: TextStyle(
               fontSize: 16,
               color: AdminColors.ivory,
@@ -110,7 +114,7 @@ class _ImageLibraryTabState extends State<ImageLibraryTab> {
           ),
           const SizedBox(height: 6),
           Text(
-            '여기에 업로드한 이미지를 노드 배경이나 선택지 전용 이미지로 고를 수 있어요.',
+            '여기에 업로드한 효과음을 노드의 연출 효과("효과음")에서 고를 수 있어요.',
             style: TextStyle(fontSize: 12, color: AdminColors.muted),
           ),
           const SizedBox(height: 16),
@@ -126,7 +130,7 @@ class _ImageLibraryTabState extends State<ImageLibraryTab> {
               ),
               child: Center(
                 child: Text(
-                  _isUploading ? '업로드 중...' : '클릭해서 이미지 업로드 (여러 장 선택 가능)',
+                  _isUploading ? '업로드 중...' : '클릭해서 효과음 업로드 (여러 개 선택 가능)',
                   style: TextStyle(color: AdminColors.muted, fontSize: 13),
                 ),
               ),
@@ -135,27 +139,29 @@ class _ImageLibraryTabState extends State<ImageLibraryTab> {
           const SizedBox(height: 20),
           LibrarySearchField(
             controller: _searchController,
-            hintText: '이미지 이름 검색',
+            hintText: '효과음 이름 검색',
             onChanged: (value) => setState(() => _searchQuery = value),
           ),
           const SizedBox(height: 16),
-          StreamBuilder<List<AdminImage>>(
-            stream: widget.repository.watchImages(),
+          StreamBuilder<List<AdminSfx>>(
+            stream: widget.repository.watchSfxLibrary(),
             builder: (context, snapshot) {
-              final images = snapshot.data ?? const <AdminImage>[];
+              final sfxItems = snapshot.data ?? const <AdminSfx>[];
 
-              final counts = <AdminImageCategory, int>{
-                for (final category in AdminImageCategory.values)
-                  category: images.where((i) => i.category == category).length,
+              final counts = <AdminSfxCategory, int>{
+                for (final category in AdminSfxCategory.values)
+                  category: sfxItems
+                      .where((s) => s.category == category)
+                      .length,
               };
 
               final filter = _filter;
               final needle = _searchQuery.trim().toLowerCase();
-              final filtered = images
-                  .where((i) => filter == null || i.category == filter)
+              final filtered = sfxItems
+                  .where((s) => filter == null || s.category == filter)
                   .where(
-                    (i) =>
-                        needle.isEmpty || i.name.toLowerCase().contains(needle),
+                    (s) =>
+                        needle.isEmpty || s.name.toLowerCase().contains(needle),
                   )
                   .toList();
 
@@ -168,11 +174,11 @@ class _ImageLibraryTabState extends State<ImageLibraryTab> {
                     children: [
                       _FilterChip(
                         label: '전체',
-                        count: images.length,
+                        count: sfxItems.length,
                         selected: filter == null,
                         onTap: () => setState(() => _filter = null),
                       ),
-                      for (final category in AdminImageCategory.values)
+                      for (final category in AdminSfxCategory.values)
                         _FilterChip(
                           label: category.label,
                           count: counts[category] ?? 0,
@@ -184,11 +190,11 @@ class _ImageLibraryTabState extends State<ImageLibraryTab> {
                   const SizedBox(height: 16),
                   if (filtered.isEmpty)
                     Text(
-                      images.isEmpty
-                          ? '업로드된 이미지가 없어요.'
+                      sfxItems.isEmpty
+                          ? '업로드된 효과음이 없어요.'
                           : needle.isNotEmpty
                           ? '검색 결과가 없습니다.'
-                          : '이 카테고리에는 이미지가 없어요.',
+                          : '이 카테고리에는 효과음이 없어요.',
                       style: TextStyle(fontSize: 13, color: AdminColors.muted),
                     )
                   else
@@ -196,13 +202,11 @@ class _ImageLibraryTabState extends State<ImageLibraryTab> {
                       spacing: 14,
                       runSpacing: 14,
                       children: [
-                        for (final image in filtered)
-                          _ImageCard(
-                            image: image,
-                            onDelete: () =>
-                                widget.repository.deleteImage(image),
-                            onChangeCategory: () =>
-                                _handleChangeCategory(image),
+                        for (final sfx in filtered)
+                          _SfxCard(
+                            sfx: sfx,
+                            onDelete: () => widget.repository.deleteSfx(sfx),
+                            onChangeCategory: () => _handleChangeCategory(sfx),
                           ),
                       ],
                     ),
@@ -256,13 +260,16 @@ class _FilterChip extends StatelessWidget {
   }
 }
 
-class _ImageCard extends StatelessWidget {
-  final AdminImage image;
+/// ImageLibraryTab의 _ImageCard와 같은 카드 골격이지만, 효과음에는 썸네일이
+/// 없다 — 대신 위쪽에 재생 아이콘 자리를 두고, 누르면 AudioService로 바로
+/// 미리듣기를 재생한다(작가가 노드에 넣기 전에 소리를 확인할 수 있게).
+class _SfxCard extends StatelessWidget {
+  final AdminSfx sfx;
   final VoidCallback onDelete;
   final VoidCallback onChangeCategory;
 
-  const _ImageCard({
-    required this.image,
+  const _SfxCard({
+    required this.sfx,
     required this.onDelete,
     required this.onChangeCategory,
   });
@@ -282,27 +289,30 @@ class _ImageCard extends StatelessWidget {
         children: [
           Stack(
             children: [
-              SizedBox(
-                height: 90,
-                width: double.infinity,
-                child: Image.network(
-                  image.url,
-                  fit: BoxFit.cover,
-                  errorBuilder: (context, error, stackTrace) =>
-                      ColoredBox(color: AdminColors.panel2),
+              InkWell(
+                onTap: () => AudioService.instance.playSfx(sfx.storageUrl),
+                child: Container(
+                  height: 66,
+                  width: double.infinity,
+                  color: AdminColors.panel2,
+                  child: Icon(
+                    Icons.play_circle_fill_rounded,
+                    size: 32,
+                    color: AdminColors.gold,
+                  ),
                 ),
               ),
               Positioned(
                 top: 6,
                 left: 6,
-                child: CategoryBadge(category: image.category),
+                child: SfxCategoryBadge(category: sfx.category),
               ),
             ],
           ),
           Padding(
             padding: const EdgeInsets.all(8),
             child: Text(
-              image.name,
+              sfx.name,
               maxLines: 2,
               overflow: TextOverflow.ellipsis,
               style: TextStyle(fontSize: 11, color: AdminColors.muted),
