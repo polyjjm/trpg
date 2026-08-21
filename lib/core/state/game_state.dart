@@ -23,14 +23,30 @@ class GameState extends ChangeNotifier {
 
   ReadingProgress? progressFor(String packId) => _readingProgress[packId];
 
+  /// 가장 최근에 연 팩 — 홈 화면의 "이어읽기" 카드가 어느 팩을 보여줄지
+  /// 고르는 데 쓴다. [_readingProgress]는 Dart Map이라 삽입 순서만 보존하고
+  /// (기존 키를 다시 대입해도 순서가 안 바뀐다) "최근"을 알려주지 못해서
+  /// 별도로 둔 값이다 — 노드 이동/진행 상황을 불러오는 시점마다 갱신된다.
+  String? _lastOpenedPackId;
+  String? get lastOpenedPackId => _lastOpenedPackId;
+
   /// 노드 이동(선택지를 고르거나 "다음"을 눌렀을 때)마다 호출한다 —
-  /// visitedNodeCount를 1 늘리고 currentNodeId를 갱신한다.
-  void recordNodeVisit({required String packId, required String nodeId}) {
+  /// visitedNodeCount를 1 늘리고 currentNodeId를 갱신한다. [completed]는
+  /// 방금 이동한 노드가 이 팩의 마지막 노드(인터랙티브는 결말, 선형은 마지막
+  /// 챕터)인지 — 호출부(InteractiveReader/LinearReader)가 목적지 노드를 보고
+  /// 직접 판단해서 넘긴다.
+  void recordNodeVisit({
+    required String packId,
+    required String nodeId,
+    bool completed = false,
+  }) {
     final existing = _readingProgress[packId];
     _readingProgress[packId] = ReadingProgress(
       currentNodeId: nodeId,
       visitedNodeCount: (existing?.visitedNodeCount ?? 0) + 1,
+      completed: completed,
     );
+    _lastOpenedPackId = packId;
     notifyListeners();
   }
 
@@ -39,6 +55,7 @@ class GameState extends ChangeNotifier {
   /// 그 값 그대로 덮어쓴다("이동"이 아니라 "불러오기"라서).
   void seedPackProgress(String packId, ReadingProgress progress) {
     _readingProgress[packId] = progress;
+    _lastOpenedPackId = packId;
     notifyListeners();
   }
 
@@ -50,6 +67,7 @@ class GameState extends ChangeNotifier {
       currentNodeId: startingNodeId,
       visitedNodeCount: 0,
     );
+    _lastOpenedPackId = packId;
     notifyListeners();
   }
 

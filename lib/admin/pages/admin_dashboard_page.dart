@@ -10,6 +10,7 @@ import '../../core/user/user_profile_repository.dart';
 import '../data/admin_story_repository.dart';
 import '../data/author_application_repository.dart';
 import '../data/genre_repository.dart';
+import '../data/home_banner_repository.dart';
 import '../models/admin_story_pack.dart';
 import '../models/author_application.dart';
 import '../models/pending_node_ref.dart';
@@ -22,6 +23,7 @@ import 'approvals_tab.dart';
 import 'author_applications_tab.dart';
 import 'author_management_section.dart';
 import 'genre_management_section.dart';
+import 'home_banner_management_section.dart';
 import 'pack_approvals_tab.dart';
 
 enum _AdminSection {
@@ -33,6 +35,7 @@ enum _AdminSection {
   authorApplications,
   authorManagement,
   genreManagement,
+  homeBanners,
 }
 
 /// 플랫폼 운영 전용 페이지 — author 도구(AuthorToolPage)와 별개다. 콘텐츠
@@ -171,6 +174,7 @@ class _AdminDashboardShellState extends State<_AdminDashboardShell> {
       AuthorApplicationRepository();
   final UserProfileRepository _userProfileRepository = UserProfileRepository();
   final GenreRepository _genreRepository = GenreRepository();
+  final HomeBannerRepository _homeBannerRepository = HomeBannerRepository();
 
   _AdminSection _activeSection = _AdminSection.overview;
 
@@ -298,6 +302,11 @@ class _AdminDashboardShellState extends State<_AdminDashboardShell> {
         );
       case _AdminSection.genreManagement:
         return GenreManagementSection(repository: _genreRepository);
+      case _AdminSection.homeBanners:
+        return HomeBannerManagementSection(
+          repository: _homeBannerRepository,
+          packsStream: _packTitlesStream,
+        );
     }
   }
 }
@@ -485,6 +494,12 @@ class _Sidebar extends StatelessWidget {
             label: '장르 관리',
             selected: active == _AdminSection.genreManagement,
             onTap: () => onSelected(_AdminSection.genreManagement),
+          ),
+          _SidebarItem(
+            icon: Icons.view_carousel_rounded,
+            label: '홈 배너 관리',
+            selected: active == _AdminSection.homeBanners,
+            onTap: () => onSelected(_AdminSection.homeBanners),
           ),
         ],
       ),

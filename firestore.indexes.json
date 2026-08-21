@@ -9,6 +9,14 @@
       ]
     },
     {
+      "collectionGroup": "homeBanners",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "active", "order": "ASCENDING" },
+        { "fieldPath": "sortOrder", "order": "ASCENDING" }
+      ]
+    },
+    {
       "collectionGroup": "storyPacks",
       "queryScope": "COLLECTION",
       "fields": [

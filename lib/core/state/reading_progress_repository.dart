@@ -25,6 +25,7 @@ class ReadingProgressRepository {
     await _docFor(uid, packId).set({
       'currentNodeId': progress.currentNodeId,
       'visitedNodeCount': progress.visitedNodeCount,
+      'completed': progress.completed,
       'lastReadAt': FieldValue.serverTimestamp(),
     });
   }
@@ -44,6 +45,7 @@ class ReadingProgressRepository {
       currentNodeId: currentNodeId,
       visitedNodeCount: (data['visitedNodeCount'] as num?)?.toInt() ?? 0,
       lastReadAt: lastReadAtRaw is Timestamp ? lastReadAtRaw.toDate() : null,
+      completed: data['completed'] as bool? ?? false,
     );
   }
 }

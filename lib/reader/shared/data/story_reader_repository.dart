@@ -107,6 +107,17 @@ class StoryReaderRepository {
     };
   }
 
+  /// 리딩 세션이 시작될 때(InteractiveReader/LinearReader가 팩을 처음 열
+  /// 때) 정확히 한 번만 호출한다 — 노드를 넘길 때마다가 아니다. 랭킹 스냅샷
+  /// (rankingSnapshots, functions/src/index.ts의 computeDailyRankingSnapshot)
+  /// 의 원천 데이터. firestore.rules가 이 필드 하나만, +1로만 바뀌는 update를
+  /// 허용한다 — 다른 필드를 같이 바꾸거나 다른 값을 넣으려 하면 거부된다.
+  Future<void> incrementViewCount(String packId) async {
+    await _firestore.collection('storyPacks').doc(packId).update({
+      'viewCount': FieldValue.increment(1),
+    });
+  }
+
   Future<Map<String, String>> _fetchSfxUrls(Set<String> sfxIds) async {
     if (sfxIds.isEmpty) return {};
     final snapshot = await _firestore

@@ -30,9 +30,9 @@ class StoryPackRepository {
   ) async {
     if (snapshot.docs.isEmpty) return const [];
 
-    final publishedPackIds = await _fetchPackIdsWithPublishedNode();
+    final publishedNodeCounts = await _fetchPublishedNodeCounts();
     final candidates = snapshot.docs
-        .where((doc) => publishedPackIds.contains(doc.id))
+        .where((doc) => publishedNodeCounts.containsKey(doc.id))
         .toList();
     if (candidates.isEmpty) return const [];
 
@@ -68,18 +68,26 @@ class StoryPackRepository {
         defaultBackgroundImage: data['defaultBackgroundImage'] as String?,
         avgRating: (data['avgRating'] as num?)?.toDouble(),
         reviewCount: (data['reviewCount'] as num?)?.toInt() ?? 0,
+        publishedNodeCount: publishedNodeCounts[doc.id] ?? 0,
       );
     }).toList();
   }
 
-  /// 팩이 "발행된 노드가 최소 1개 있는지"는 collectionGroup 조회로 한 번에
-  /// 구한다 — 팩마다 nodes 서브컬렉션을 따로 조회하지 않는다.
-  Future<Set<String>> _fetchPackIdsWithPublishedNode() async {
+  /// 팩이 "발행된 노드가 최소 1개 있는지"(키가 있는지)와 "몇 개나 있는지"
+  /// (값)를 collectionGroup 조회 한 번으로 같이 구한다 — 팩마다 nodes
+  /// 서브컬렉션을 따로 조회하지 않는다. 개수는 StoryPack.publishedNodeCount로
+  /// 그대로 흘려보내 내 서재 탭의 진행률 바 계산에 쓴다.
+  Future<Map<String, int>> _fetchPublishedNodeCounts() async {
     final snapshot = await _firestore
         .collectionGroup('nodes')
         .where('status', isEqualTo: 'published')
         .get();
-    return snapshot.docs.map((doc) => doc.reference.parent.parent!.id).toSet();
+    final counts = <String, int>{};
+    for (final doc in snapshot.docs) {
+      final packId = doc.reference.parent.parent!.id;
+      counts[packId] = (counts[packId] ?? 0) + 1;
+    }
+    return counts;
   }
 
   Future<Map<String, String>> _fetchImageUrls(Set<String> imageIds) async {

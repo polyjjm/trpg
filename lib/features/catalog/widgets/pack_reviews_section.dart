@@ -58,6 +58,7 @@ class _PackReviewsSectionState extends State<PackReviewsSection> {
       final page = await _repository.fetchPage(
         widget.pack.id,
         startAfter: _lastDoc,
+        pageSize: 5,
       );
       if (!mounted) return;
       setState(() {
@@ -104,7 +105,7 @@ class _PackReviewsSectionState extends State<PackReviewsSection> {
     );
     if (result == null || !mounted) return;
 
-    await _repository.submitReview(
+    final review = await _repository.submitReview(
       packId: widget.pack.id,
       uid: uid,
       rating: result.rating,
@@ -114,16 +115,17 @@ class _PackReviewsSectionState extends State<PackReviewsSection> {
     );
     if (!mounted) return;
 
-    // 새로 쓴/고친 리뷰가 최신순 맨 위로 오도록 목록을 처음부터 다시 받는다 —
-    // 페이지 몇 장을 이미 불러온 상태에서 그 안 어딘가를 부분 갱신하는 것보다
-    // 훨씬 간단하고, 리뷰 작성은 자주 있는 일이 아니라 다시 불러오는 비용도
-    // 크지 않다.
+    // 이미 불러온 페이지 안에 내 기존 리뷰가 있으면(수정) 그 자리에서
+    // 바꿔치기하고, 없으면(신규, 또는 아직 안 불러온 뒷페이지에 있던 경우)
+    // 맨 위에 꽂는다 — 목록을 처음부터 다시 불러오지 않는다.
     setState(() {
-      _reviews.clear();
-      _lastDoc = null;
-      _hasMore = true;
+      final index = _reviews.indexWhere((r) => r.uid == uid);
+      if (index != -1) {
+        _reviews[index] = review;
+      } else {
+        _reviews.insert(0, review);
+      }
     });
-    _loadMore();
   }
 
   @override
@@ -199,7 +201,7 @@ class _PackReviewsSectionState extends State<PackReviewsSection> {
           )
         else
           for (final review in _reviews) _ReviewTile(review: review),
-        if (_loading)
+        if (_loading && _reviews.isEmpty)
           const Padding(
             padding: EdgeInsets.symmetric(vertical: 16),
             child: Center(
@@ -211,11 +213,20 @@ class _PackReviewsSectionState extends State<PackReviewsSection> {
             padding: const EdgeInsets.only(top: 4),
             child: Center(
               child: TextButton(
-                onPressed: _loadMore,
-                child: Text(
-                  '리뷰 더 보기',
-                  style: TextStyle(color: _ivory.withOpacity(0.7)),
-                ),
+                onPressed: _loading ? null : _loadMore,
+                child: _loading
+                    ? const SizedBox(
+                        width: 16,
+                        height: 16,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          color: _ivory,
+                        ),
+                      )
+                    : Text(
+                        '리뷰 더 보기',
+                        style: TextStyle(color: _ivory.withOpacity(0.7)),
+                      ),
               ),
             ),
           ),

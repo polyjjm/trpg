@@ -64,6 +64,7 @@ class _PackCommentsSectionState extends State<PackCommentsSection> {
       final page = await _repository.fetchPage(
         widget.pack.id,
         startAfter: _lastDoc,
+        pageSize: 5,
       );
       if (!mounted) return;
       setState(() {
@@ -102,7 +103,7 @@ class _PackCommentsSectionState extends State<PackCommentsSection> {
 
     setState(() => _posting = true);
     try {
-      await _repository.postComment(
+      final comment = await _repository.postComment(
         packId: widget.pack.id,
         uid: uid,
         text: text,
@@ -111,14 +112,8 @@ class _PackCommentsSectionState extends State<PackCommentsSection> {
       );
       if (!mounted) return;
       _inputController.clear();
-      // 방금 쓴 댓글이 맨 위로 오도록 처음부터 다시 불러온다 — 간단하고,
-      // 댓글 작성 빈도가 매번 다시 불러올 만큼 잦지 않다.
-      setState(() {
-        _comments.clear();
-        _lastDoc = null;
-        _hasMore = true;
-      });
-      await _loadMore();
+      // 이미 불러온 페이지 위에 바로 꽂는다 — 처음부터 다시 불러오지 않는다.
+      setState(() => _comments.insert(0, comment));
     } finally {
       if (mounted) setState(() => _posting = false);
     }
@@ -209,7 +204,7 @@ class _PackCommentsSectionState extends State<PackCommentsSection> {
               repository: _repository,
               onDeleted: () => _removeComment(comment.id),
             ),
-        if (_loading)
+        if (_loading && _comments.isEmpty)
           const Padding(
             padding: EdgeInsets.symmetric(vertical: 16),
             child: Center(
@@ -221,11 +216,20 @@ class _PackCommentsSectionState extends State<PackCommentsSection> {
             padding: const EdgeInsets.only(top: 4),
             child: Center(
               child: TextButton(
-                onPressed: _loadMore,
-                child: Text(
-                  '댓글 더 보기',
-                  style: TextStyle(color: _ivory.withOpacity(0.7)),
-                ),
+                onPressed: _loading ? null : _loadMore,
+                child: _loading
+                    ? const SizedBox(
+                        width: 16,
+                        height: 16,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          color: _ivory,
+                        ),
+                      )
+                    : Text(
+                        '댓글 더 보기',
+                        style: TextStyle(color: _ivory.withOpacity(0.7)),
+                      ),
               ),
             ),
           ),
@@ -375,7 +379,7 @@ class _TopLevelCommentTileState extends State<_TopLevelCommentTile> {
     final authService = AuthScope.of(context);
     setState(() => _postingReply = true);
     try {
-      await widget.repository.postComment(
+      final reply = await widget.repository.postComment(
         packId: widget.packId,
         uid: uid,
         text: text,
@@ -385,8 +389,12 @@ class _TopLevelCommentTileState extends State<_TopLevelCommentTile> {
       );
       if (!mounted) return;
       _replyController.clear();
-      setState(() => _replyInputVisible = false);
-      await _loadReplies();
+      // 답글은 페이지네이션이 없으니 전체를 다시 불러오지 않고 오래된 순
+      // 목록 맨 뒤에 바로 이어 붙인다.
+      setState(() {
+        _replyInputVisible = false;
+        _replies = [..._replies, reply];
+      });
     } finally {
       if (mounted) setState(() => _postingReply = false);
     }

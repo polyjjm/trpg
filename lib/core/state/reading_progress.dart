@@ -20,9 +20,16 @@ class ReadingProgress {
   /// 메모리 전용 진행 상황은 지금 UI 어디서도 이 값을 안 써서 null로 둔다.
   final DateTime? lastReadAt;
 
+  /// currentNodeId가 이 팩의 마지막 노드(인터랙티브는 choices가 없는 결말,
+  /// 선형은 nextNodeId가 없는 마지막 챕터)인지 — InteractiveReader/
+  /// LinearReader가 다음 노드로 넘어가는 시점에 그 목적지 노드가 마지막인지
+  /// 직접 판단해서 채운다(내 서재 탭의 완료 배지에 쓰인다).
+  final bool completed;
+
   const ReadingProgress({
     required this.currentNodeId,
     required this.visitedNodeCount,
     this.lastReadAt,
+    this.completed = false,
   });
 }

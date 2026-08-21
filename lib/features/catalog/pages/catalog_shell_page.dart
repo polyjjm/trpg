@@ -1,13 +1,14 @@
 import 'package:flutter/material.dart';
 
 import 'home_tab.dart';
+import 'my_library_tab.dart';
 import 'notice_list_tab.dart';
 import 'settings_tab.dart';
 
 const Color _ivory = Color(0xFFE2D4BF);
 const Color _gold = Color(0xFFF0E68C);
 
-/// 로그인 직후 항상 이 화면으로 들어온다 — 하단 탭(홈/공지사항/설정)을 가진
+/// 로그인 직후 항상 이 화면으로 들어온다 — 하단 탭(홈/내 서재/공지사항/설정)을 가진
 /// 라이브러리 셸. 각 탭은 IndexedStack으로 유지해 탭을 오갈 때 스크롤 위치와
 /// 상태(검색어, 배너 로드 등)가 보존된다.
 ///
@@ -37,6 +38,7 @@ class _CatalogShellPageState extends State<CatalogShellPage> {
         index: _index,
         children: [
           HomeTab(showAuthorModeLink: widget.showAuthorModeLink),
+          const MyLibraryTab(),
           const NoticeListTab(),
           const SettingsTab(),
         ],
@@ -69,8 +71,9 @@ class _CatalogBottomNav extends StatelessWidget {
           mainAxisAlignment: MainAxisAlignment.spaceEvenly,
           children: [
             _NavItem(icon: Icons.home_rounded, label: '홈', selected: index == 0, onTap: () => onChanged(0)),
-            _NavItem(icon: Icons.campaign_rounded, label: '공지사항', selected: index == 1, onTap: () => onChanged(1)),
-            _NavItem(icon: Icons.settings_rounded, label: '설정', selected: index == 2, onTap: () => onChanged(2)),
+            _NavItem(icon: Icons.bookmark_rounded, label: '내 서재', selected: index == 1, onTap: () => onChanged(1)),
+            _NavItem(icon: Icons.campaign_rounded, label: '공지사항', selected: index == 2, onTap: () => onChanged(2)),
+            _NavItem(icon: Icons.settings_rounded, label: '설정', selected: index == 3, onTap: () => onChanged(3)),
           ],
         ),
       ),

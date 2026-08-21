@@ -698,6 +698,16 @@ service firebase.storage {
       allow write: if request.auth != null &&
         firestore.get(/databases/(default)/documents/users/$(request.auth.uid)).data.role in ['author', 'admin'];
     }
+
+    // admin/home_banners/{bannerId}.jpg — "홈 배너 관리"(HomeBannerManagementSection)
+    // 업로드 경로. story_images/story_sfx와 달리 author는 이 화면에 아예
+    // 접근할 수 없다(AdminDashboardPage 전체가 admin 전용 게이트) — 그래서
+    // write를 admin으로만 좁힌다.
+    match /admin/home_banners/{allPaths=**} {
+      allow read: if request.auth != null;
+      allow write: if request.auth != null &&
+        firestore.get(/databases/(default)/documents/users/$(request.auth.uid)).data.role == 'admin';
+    }
   }
 }
 ```

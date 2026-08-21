@@ -90,7 +90,13 @@ class StoryPackCommentRepository {
 
   /// [parentCommentId]를 주면 답글로, 안 주면(기본 null) 최상위 댓글로 쓴다 —
   /// 문서 모양은 완전히 같고 이 필드 하나로 갈릴 뿐이다.
-  Future<void> postComment({
+  ///
+  /// 방금 쓴 댓글/답글을 로컬에서 그대로 되돌려준다 — 호출부가 목록을 처음부터
+  /// 다시 안 불러오고 이 값을 바로 목록에 꽂아 넣을 수 있게 하기 위해서다.
+  /// createdAt은 FieldValue.serverTimestamp()가 아직 로컬에서 안 풀려서
+  /// DateTime.now()로 근사한다 — 최상위 목록은 어차피 맨 위에 꽂으므로 실제
+  /// 서버 값과 몇 초 어긋나도 정렬에 영향이 없다.
+  Future<StoryPackComment> postComment({
     required String packId,
     required String uid,
     required String text,
@@ -98,7 +104,7 @@ class StoryPackCommentRepository {
     required String? authorPhotoUrl,
     String? parentCommentId,
   }) async {
-    await _comments(packId).add({
+    final doc = await _comments(packId).add({
       'uid': uid,
       'text': text,
       'authorDisplayName': authorDisplayName,
@@ -108,6 +114,18 @@ class StoryPackCommentRepository {
       'likeCount': 0,
       'createdAt': FieldValue.serverTimestamp(),
     });
+
+    return StoryPackComment(
+      id: doc.id,
+      uid: uid,
+      text: text,
+      createdAt: DateTime.now(),
+      authorDisplayName: authorDisplayName,
+      authorPhotoUrl: authorPhotoUrl,
+      isDeleted: false,
+      parentCommentId: parentCommentId,
+      likeCount: 0,
+    );
   }
 
   /// 본인 댓글만 지울 수 있다 — 보안 규칙이 isDeleted를 true로 바꾸는 것

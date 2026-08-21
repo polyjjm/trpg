@@ -74,7 +74,13 @@ class StoryPackReviewRepository {
   /// 두 번 왕복(조회 후 분기)하는 이유는 createdAt을 "최초 생성 시에만"
   /// 서버 타임스탬프로 찍기 위해서다 — set()으로 통째로 덮어쓰면 수정할
   /// 때마다 createdAt이 밀린다.
-  Future<void> submitReview({
+  ///
+  /// 방금 쓴/고친 리뷰를 로컬에서 그대로 되돌려준다 — [PackReviewsSection]이
+  /// 목록을 처음부터 다시 안 불러오고 이 값을 바로 맨 위에 꽂거나(신규) 기존
+  /// 항목을 제자리에서 바꿔치기(수정)할 수 있게 하기 위해서다. createdAt은
+  /// 신규일 땐 FieldValue.serverTimestamp()가 아직 로컬에서 안 풀려서
+  /// DateTime.now()로 근사하고, 수정일 땐 기존 문서에서 읽은 실제 값을 쓴다.
+  Future<StoryPackReview> submitReview({
     required String packId,
     required String uid,
     required int rating,
@@ -93,10 +99,25 @@ class StoryPackReviewRepository {
       'updatedAt': FieldValue.serverTimestamp(),
     };
 
+    final DateTime createdAt;
     if (existing.exists) {
       await doc.update(fields);
+      createdAt =
+          (existing.data()?['createdAt'] as Timestamp?)?.toDate() ??
+          DateTime.now();
     } else {
       await doc.set({...fields, 'createdAt': FieldValue.serverTimestamp()});
+      createdAt = DateTime.now();
     }
+
+    return StoryPackReview(
+      uid: uid,
+      rating: rating,
+      text: text,
+      createdAt: createdAt,
+      updatedAt: DateTime.now(),
+      authorDisplayName: authorDisplayName,
+      authorPhotoUrl: authorPhotoUrl,
+    );
   }
 }

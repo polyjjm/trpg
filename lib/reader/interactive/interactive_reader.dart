@@ -62,6 +62,9 @@ class _InteractiveReaderState extends State<InteractiveReader> {
         return;
       }
 
+      // 리딩 세션 시작 — 노드 이동마다가 아니라 팩을 여는 시점에 딱 한 번만.
+      unawaited(_repository.incrementViewCount(widget.pack.id));
+
       // fetchPublishedNodes()가 이미 order 오름차순으로 정렬해 반환한다.
       final entryId = nodes.first.node.id;
       final nodesById = {for (final n in nodes) n.node.id: n};
@@ -133,7 +136,13 @@ class _InteractiveReaderState extends State<InteractiveReader> {
       if (!purchased || !mounted) return;
     }
 
-    gameState.recordNodeVisit(packId: pack.id, nodeId: choice.nextNodeId);
+    final targetChoices =
+        _nodesById[choice.nextNodeId]?.node.choices ?? const <Choice>[];
+    gameState.recordNodeVisit(
+      packId: pack.id,
+      nodeId: choice.nextNodeId,
+      completed: targetChoices.isEmpty,
+    );
     unawaited(_persistProgress(gameState));
     if (!mounted) return;
     setState(() => _currentNodeId = choice.nextNodeId);

@@ -133,6 +133,24 @@ service cloud.firestore {
       allow write: if isAdmin();
     }
 
+    // homeBanners/{bannerId} — admin이 관리하는 홈 화면 히어로 배너. genres와
+    // 같은 패턴(admin만 쓰고, 로그인한 누구나 읽을 수 있다) — 리더 쪽
+    // HomeBannerRepository.watchActiveBanners()가 active/기간 필터링을
+    // 클라이언트에서 하므로, 규칙은 "로그인했는지"만 본다.
+    match /homeBanners/{bannerId} {
+      allow read: if isSignedIn();
+      allow write: if isAdmin();
+    }
+
+    // rankingSnapshots/{date} — "YYYY-MM-DD"(KST) 문서 id, {packIds: [...]}.
+    // functions/src/index.ts의 computeDailyRankingSnapshot(매일 KST 00:10
+    // 예약 실행)만 쓴다 — Admin SDK로 실행되므로 이 규칙을 우회한다. 클라
+    // 이언트(리더 홈 화면의 "실시간 랭킹" 섹션)는 읽기만 한다 — write 규칙이
+    // 아예 없으므로 기본값(거부)이 곧 "쓰기는 Cloud Function 전용"이다.
+    match /rankingSnapshots/{date} {
+      allow read: if isSignedIn();
+    }
+
     match /storyPacks/{packId} {
       allow read: if isSignedIn();
 
@@ -174,6 +192,15 @@ service cloud.firestore {
         && request.resource.data.description == resource.data.description
         && request.resource.data.get('coverImageId', null) == resource.data.get('coverImageId', null)
         && request.resource.data.authorId == resource.data.authorId;
+
+      // 리더가 리더 화면을 열 때(InteractiveReader/LinearReader, 리딩 세션당
+      // 한 번) viewCount를 딱 +1만 하는 업데이트 — 다른 필드는 절대 같이
+      // 못 바꾸고, 값도 정확히 "이전 값 + 1"이어야 한다. 랭킹 스냅샷
+      // (rankingSnapshots, functions/src/index.ts의
+      // computeDailyRankingSnapshot)의 원천 데이터라 신뢰할 수 있어야 한다.
+      allow update: if isSignedIn()
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['viewCount'])
+        && request.resource.data.viewCount == resource.data.get('viewCount', 0) + 1;
 
       allow delete: if isAdmin();
 
