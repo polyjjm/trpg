@@ -25,6 +25,10 @@ class ReaderPrefs {
   /// 유지되므로 데스크톱으로 돌아오면 다시 두 쪽이 된다.
   final String pageMode;
 
+  /// 본문 글자 크기 배율 — 0.9(작게) / 1.0(보통) / 1.15(크게).
+  /// 리더 설정에서 고르고, SceneFrame이 문단·비트 크기에 곱한다.
+  final double fontScale;
+
   final DateTime? lastNoticeReadAt;
 
   const ReaderPrefs({
@@ -34,6 +38,7 @@ class ReaderPrefs {
     required this.ttsEnabled,
     required this.bgmEnabled,
     required this.pageMode,
+    required this.fontScale,
     this.lastNoticeReadAt,
   });
 
@@ -46,7 +51,15 @@ class ReaderPrefs {
     ttsEnabled: false,
     bgmEnabled: true,
     pageMode: pageModeSingle,
+    fontScale: 1.0,
   );
+
+  /// 설정에 노출하는 글자 크기 선택지.
+  static const List<({double value, String label})> fontScaleOptions = [
+    (value: 0.9, label: '작게'),
+    (value: 1.0, label: '보통'),
+    (value: 1.15, label: '크게'),
+  ];
 
   static const String pageModeSingle = 'single';
   static const String pageModeSpread = 'spread';
@@ -63,6 +76,9 @@ class ReaderPrefs {
       // 모르는 값이 들어와도(예: 옛 문서, 오타) 조용히 한 쪽으로 떨어진다 —
       // 화면이 깨지는 것보다 낫다.
       pageMode: json['pageMode'] == pageModeSpread ? pageModeSpread : defaults.pageMode,
+      // 범위를 벗어난 값이 들어와도 화면이 깨지지 않게 잠근다.
+      fontScale: ((json['fontScale'] as num?)?.toDouble() ?? defaults.fontScale)
+          .clamp(0.8, 1.4),
       lastNoticeReadAt: (json['lastNoticeReadAt'] as Timestamp?)?.toDate(),
     );
   }
@@ -74,6 +90,7 @@ class ReaderPrefs {
         'ttsEnabled': ttsEnabled,
         'bgmEnabled': bgmEnabled,
         'pageMode': pageMode,
+        'fontScale': fontScale,
       };
 
   ReaderPrefs copyWith({
@@ -83,6 +100,7 @@ class ReaderPrefs {
     bool? ttsEnabled,
     bool? bgmEnabled,
     String? pageMode,
+    double? fontScale,
   }) {
     return ReaderPrefs(
       fontId: fontId ?? this.fontId,
@@ -91,6 +109,7 @@ class ReaderPrefs {
       ttsEnabled: ttsEnabled ?? this.ttsEnabled,
       bgmEnabled: bgmEnabled ?? this.bgmEnabled,
       pageMode: pageMode ?? this.pageMode,
+      fontScale: fontScale ?? this.fontScale,
       lastNoticeReadAt: lastNoticeReadAt,
     );
   }

@@ -56,6 +56,7 @@ class _LinearReaderState extends State<LinearReader> {
   List<String> _orderedIds = const [];
 
   String? _currentNodeId;
+  String? _entryNodeId;
   bool _loading = true;
   String? _errorMessage;
 
@@ -117,6 +118,7 @@ class _LinearReaderState extends State<LinearReader> {
       setState(() {
         _nodesById = nodesById;
         _orderedIds = orderedIds;
+        _entryNodeId = entryId;
         _currentNodeId = resumeNodeId;
         _loading = false;
       });
@@ -187,6 +189,18 @@ class _LinearReaderState extends State<LinearReader> {
     unawaited(_persistProgress(gameState));
     if (!mounted) return;
     setState(() => _currentNodeId = nextNodeId);
+  }
+
+  /// 첫 페이지로 되돌린다 — InteractiveReader의 '처음부터'와 같은 흐름이다.
+  /// 이 팩의 진행 상황만 초기화하고(resetPackProgress) 화면을 진입 페이지로
+  /// 돌린다.
+  void _restart() {
+    final entryId = _entryNodeId;
+    if (entryId == null) return;
+    final gameState = GameStateScope.of(context);
+    gameState.resetPackProgress(widget.pack.id, entryId);
+    unawaited(_persistProgress(gameState));
+    setState(() => _currentNodeId = entryId);
   }
 
   /// 로그인 사용자만 Firestore에 저장한다 — 게스트는 GameState의 메모리
@@ -270,13 +284,14 @@ class _LinearReaderState extends State<LinearReader> {
         effects: current.node.effects,
         sfxUrl: current.sfxUrl,
         ttsAllowed: widget.pack.ttsEnabled,
+        simplifiedSettings: true,
         chapterLabel: _chapterLabelFor(current.node.id),
         progressLabel: _progressLabelFor(current.node.id),
         onPageModeChanged: _handlePageModeChanged,
-        actionAreaBuilder: (context) => _NextButton(
-          label: nextNodeId == null ? '완료' : '다음',
+        actionAreaBuilder: (context) => _ActionRow(
           isLast: nextNodeId == null,
-          onTap: nextNodeId == null
+          onRestart: _restart,
+          onNext: nextNodeId == null
               ? () => Navigator.pop(context)
               : () => _goToNext(nextNodeId),
         ),
@@ -296,17 +311,91 @@ class _LinearReaderState extends State<LinearReader> {
       effects: current.node.effects,
       sfxUrl: current.sfxUrl,
       ttsAllowed: widget.pack.ttsEnabled,
+      simplifiedSettings: true,
       chapterLabel: _chapterLabelFor(current.node.id),
       progressLabel: _progressLabelFor(current.node.id),
       secondaryChapterLabel: _chapterLabelFor(nextNode.node.id),
       secondaryProgressLabel: _progressLabelFor(nextNode.node.id),
       onPageModeChanged: _handlePageModeChanged,
-      actionAreaBuilder: (context) => _NextButton(
-        label: afterId == null ? '완료' : '다음',
+      actionAreaBuilder: (context) => _ActionRow(
         isLast: afterId == null,
-        onTap: afterId == null
+        onRestart: _restart,
+        onNext: afterId == null
             ? () => Navigator.pop(context)
             : () => _goToNext(afterId, alsoVisited: nextNode.node.id),
+      ),
+    );
+  }
+}
+
+/// 지면 아래 액션 줄 — 마지막 페이지에서만 "처음부터"를 같이 보여준다.
+///
+/// 인터랙티브는 엔딩에서 '처음부터'가 나오는데 선형은 마지막에 '완료'뿐이라
+/// 다시 읽을 길이 없었다. 완료로 나가면 진행 위치가 마지막 페이지에 남아
+/// 상세 화면에서 '이어보기'를 눌러도 곧장 마지막 페이지로 돌아온다.
+class _ActionRow extends StatelessWidget {
+  final bool isLast;
+  final VoidCallback onRestart;
+  final VoidCallback onNext;
+
+  const _ActionRow({
+    required this.isLast,
+    required this.onRestart,
+    required this.onNext,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.end,
+      children: [
+        if (isLast) ...[
+          _GhostButton(label: '처음부터', onTap: onRestart),
+          const SizedBox(width: 10),
+        ],
+        _NextButton(label: isLast ? '완료' : '다음', isLast: isLast, onTap: onNext),
+      ],
+    );
+  }
+}
+
+/// 보조 동작 — 골드 인디케이터 없이 글자만. 같은 줄의 '완료'가 주 동작이라
+/// 둘이 같은 무게로 보이면 안 된다.
+class _GhostButton extends StatefulWidget {
+  final String label;
+  final VoidCallback onTap;
+
+  const _GhostButton({required this.label, required this.onTap});
+
+  @override
+  State<_GhostButton> createState() => _GhostButtonState();
+}
+
+class _GhostButtonState extends State<_GhostButton> {
+  bool _hovered = false;
+
+  @override
+  Widget build(BuildContext context) {
+    return MouseRegion(
+      cursor: SystemMouseCursors.click,
+      onEnter: (_) => setState(() => _hovered = true),
+      onExit: (_) => setState(() => _hovered = false),
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: widget.onTap,
+        child: Container(
+          height: 48,
+          padding: const EdgeInsets.symmetric(horizontal: 18),
+          alignment: Alignment.center,
+          child: Text(
+            widget.label,
+            style: TextStyle(
+              fontSize: 14,
+              fontWeight: FontWeight.w600,
+              color: _ivory.withOpacity(_hovered ? 0.95 : 0.6),
+            ),
+          ),
+        ),
       ),
     );
   }

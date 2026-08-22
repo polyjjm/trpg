@@ -105,6 +105,12 @@ class SceneFrame extends StatefulWidget {
   /// readerPrefs 문서가 없어 Firestore를 통해 전달되지 않는다.
   final ValueChanged<String>? onPageModeChanged;
 
+  /// true면 설정에서 글꼴·글자 크기·쪽 보기만 보여준다(선형 리더). false면
+  /// TTS·BGM·글자 애니메이션까지 전부 보여준다(인터랙티브). 선형은 책 모드에서
+  /// 타이핑을 쓰지 않으니 애니메이션 토글이 아무것도 하지 않고, 음향 컨트롤도
+  /// 읽는 데 방해가 된다는 판단이다.
+  final bool simplifiedSettings;
+
   const SceneFrame({
     super.key,
     required this.blocks,
@@ -120,6 +126,7 @@ class SceneFrame extends StatefulWidget {
     this.secondaryChapterLabel,
     this.secondaryProgressLabel,
     this.onPageModeChanged,
+    this.simplifiedSettings = false,
   });
 
   @override
@@ -383,6 +390,9 @@ class _SceneFrameState extends State<SceneFrame>
                 bottom: 0,
                 child: _ReaderSettingsPanel(
                   prefs: _prefs,
+                  simplified: widget.simplifiedSettings,
+                  onFontScaleSelected: (scale) =>
+                      _updatePrefs(_prefs.copyWith(fontScale: scale)),
                   ttsAllowed: widget.ttsAllowed,
                   ttsPlaying: _ttsPlaying,
                   onClose: _closeSettings,
@@ -440,7 +450,13 @@ class _SceneFrameState extends State<SceneFrame>
     final blocks = _buildVisibleBlocks();
     // 두 쪽은 나눌 분량이 있을 때만 펼친다 — 바로 밑에서 반으로 갈라
     // 담기 때문에, 문단이 하나밖이면 오른쪽 쪽이 통째로 뱈다.
-    final spread = _prefs.isSpread && blocks.length >= 2;
+    // ⚠️ spreadSplitIndex가 있으면 호출부가 이미 "두 페이지를 펼쳐 달라"고
+    // 정한 것이다 — 이때 자기 _prefs를 다시 보면 안 된다. 펼침으로 바뀌는
+    // 순간 리더가 넘기는 key가 달라져서(id1+id2) 이 State가 새로 만들어지고,
+    // _prefs는 문서 스냅샷이 다시 오기 전까지 기본값(한 쪽)이라 두 페이지를
+    // 받아 놓고도 한 쪽으로 그리게 된다(게스트는 스냅샷이 아예 안 온다).
+    final spread =
+        (widget.spreadSplitIndex != null || _prefs.isSpread) && blocks.length >= 2;
     final rightInset = _settingsOpen ? _settingsPanelWidth : 0.0;
 
     return Padding(
@@ -755,7 +771,10 @@ class _SceneFrameState extends State<SceneFrame>
         final style = _textStyleFor(isBeat: isBeat, fontId: _prefs.fontId);
         final text = block.text ?? '';
 
-        if (completed || !_prefs.animationEnabled) {
+        // 책 모드(배경 없는 지면)는 타이핑을 쓰지 않는다 — 책은 넘기면 지면이
+        // 이미 인쇄돼 있는 게 자연스럽고, 두 쪽 펼침에서는 왼쪽을 다 찍은 뒤
+        // 오른쪽이 시작해 대기가 두 배로 느껴졌다.
+        if (completed || !_prefs.animationEnabled || _isBookMode) {
           if (!completed) _scheduleAutoAdvance(index);
           return Padding(
             padding: EdgeInsets.only(bottom: isBeat ? 22 : 16),
@@ -779,7 +798,7 @@ class _SceneFrameState extends State<SceneFrame>
     final fontFamily = _fontFamilyFor(fontId);
     if (isBeat) {
       return TextStyle(
-        fontSize: 15,
+        fontSize: 15 * _prefs.fontScale,
         height: 2.0,
         color: _beatAccent,
         fontStyle: FontStyle.italic,
@@ -790,7 +809,7 @@ class _SceneFrameState extends State<SceneFrame>
       );
     }
     return TextStyle(
-      fontSize: 16,
+      fontSize: 16 * _prefs.fontScale,
       // 배경 이미지가 없는 책 모드에서는 줄간격을 넓혀 읽는 밀도를 낮춘다.
       height: _isBookMode ? _bookLineHeight : 1.75,
       color: _isBookMode ? _ivory : Colors.white,
@@ -866,6 +885,8 @@ class _SettingsTriggerButton extends StatelessWidget {
 /// 두 레이아웃이 각자 컨트롤을 들고 있다가 어긋나는 걸 막는다.
 class _ReaderSettingsPanel extends StatelessWidget {
   final ReaderPrefs prefs;
+  final bool simplified;
+  final ValueChanged<double> onFontScaleSelected;
   final bool ttsAllowed;
   final bool ttsPlaying;
   final VoidCallback onClose;
@@ -877,6 +898,8 @@ class _ReaderSettingsPanel extends StatelessWidget {
 
   const _ReaderSettingsPanel({
     required this.prefs,
+    required this.simplified,
+    required this.onFontScaleSelected,
     required this.ttsAllowed,
     required this.ttsPlaying,
     required this.onClose,
@@ -919,28 +942,33 @@ class _ReaderSettingsPanel extends StatelessWidget {
                 ],
               ),
               const SizedBox(height: 22),
-              Row(
-                children: [
-                  if (ttsAllowed) ...[
+              // 선형 리더는 글꼴·글자 크기·쪽 보기만 — TTS/BGM/애니메이션은 감춘다.
+              if (!simplified) ...[
+                Row(
+                  children: [
+                    if (ttsAllowed) ...[
+                      _SheetIconToggle(
+                        icon: ttsPlaying ? Icons.pause_circle_rounded : Icons.play_circle_rounded,
+                        label: 'TTS',
+                        active: ttsPlaying,
+                        onTap: onToggleTts,
+                      ),
+                      const SizedBox(width: 14),
+                    ],
                     _SheetIconToggle(
-                      icon: ttsPlaying ? Icons.pause_circle_rounded : Icons.play_circle_rounded,
-                      label: 'TTS',
-                      active: ttsPlaying,
-                      onTap: onToggleTts,
+                      icon: prefs.bgmEnabled ? Icons.music_note_rounded : Icons.music_off_rounded,
+                      label: 'BGM',
+                      active: prefs.bgmEnabled,
+                      onTap: onToggleBgm,
                     ),
-                    const SizedBox(width: 14),
                   ],
-                  _SheetIconToggle(
-                    icon: prefs.bgmEnabled ? Icons.music_note_rounded : Icons.music_off_rounded,
-                    label: 'BGM',
-                    active: prefs.bgmEnabled,
-                    onTap: onToggleBgm,
-                  ),
-                ],
-              ),
-              const SizedBox(height: 20),
-              Divider(height: 1, thickness: 1, color: Colors.white.withOpacity(0.08)),
-              const SizedBox(height: 20),
+                ),
+                const SizedBox(height: 20),
+                Divider(height: 1, thickness: 1, color: Colors.white.withOpacity(0.08)),
+                const SizedBox(height: 20),
+              ],
+              Text('글꼴', style: TextStyle(fontSize: 13, color: _ivory.withOpacity(0.8))),
+              const SizedBox(height: 10),
               Row(
                 children: [
                   for (final option in _fontOptions) ...[
@@ -948,6 +976,21 @@ class _ReaderSettingsPanel extends StatelessWidget {
                       label: option.label,
                       selected: prefs.fontId == option.id,
                       onTap: () => onFontSelected(option.id),
+                    ),
+                    const SizedBox(width: 8),
+                  ],
+                ],
+              ),
+              const SizedBox(height: 16),
+              Text('글자 크기', style: TextStyle(fontSize: 13, color: _ivory.withOpacity(0.8))),
+              const SizedBox(height: 10),
+              Row(
+                children: [
+                  for (final option in ReaderPrefs.fontScaleOptions) ...[
+                    _FontChip(
+                      label: option.label,
+                      selected: (prefs.fontScale - option.value).abs() < 0.001,
+                      onTap: () => onFontScaleSelected(option.value),
                     ),
                     const SizedBox(width: 8),
                   ],
@@ -978,7 +1021,7 @@ class _ReaderSettingsPanel extends StatelessWidget {
                 style: TextStyle(fontSize: 11.5, height: 1.6, color: _ivory.withOpacity(0.45)),
               ),
               const SizedBox(height: 16),
-              Row(
+              if (!simplified) Row(
                 children: [
                   const Text(
                     '글자 애니메이션',
