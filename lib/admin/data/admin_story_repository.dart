@@ -1,4 +1,5 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:flutter/foundation.dart' show debugPrint;
 
 import '../models/admin_story_node.dart';
 import '../models/admin_story_node_summary.dart';
@@ -117,6 +118,10 @@ class AdminStoryRepository {
     required List<String> genres,
     required String description,
     required String? coverImageId,
+    required int price,
+    required int? salePrice,
+    required DateTime? discountStartAt,
+    required DateTime? discountEndAt,
     required String? defaultBackgroundImage,
   }) async {
     await _packs.doc(packId).update({
@@ -124,6 +129,14 @@ class AdminStoryRepository {
       'genres': genres,
       'description': description,
       'coverImageId': coverImageId,
+      'price': price,
+      'salePrice': salePrice,
+      'discountStartAt': discountStartAt != null
+          ? Timestamp.fromDate(discountStartAt)
+          : null,
+      'discountEndAt': discountEndAt != null
+          ? Timestamp.fromDate(discountEndAt)
+          : null,
       'defaultBackgroundImage': defaultBackgroundImage,
     });
   }
@@ -160,13 +173,21 @@ class AdminStoryRepository {
     AdminStoryPack pack, {
     required String reviewerUid,
   }) async {
-    await _packs.doc(pack.id).update({
+    final payload = {
       'serializationStatus': PackSerializationStatus.approved.wireValue,
       'serializationReviewedBy': reviewerUid,
       'serializationReviewedAt': FieldValue.serverTimestamp(),
       'serializationRejectionReason': null,
       'liveMetadata': _metadataSnapshot(pack),
-    });
+    };
+    debugPrint('approveSerialization(${pack.id}) payload: $payload');
+    try {
+      await _packs.doc(pack.id).update(payload);
+      debugPrint('approveSerialization(${pack.id}) 성공');
+    } catch (e, stackTrace) {
+      debugPrint('approveSerialization(${pack.id}) 실패: $e\n$stackTrace');
+      rethrow;
+    }
   }
 
   /// 반려 — draft/rejected 재신청 때 다시 손볼 수 있도록 작가가 쓴 내용
@@ -207,12 +228,24 @@ class AdminStoryRepository {
     required List<String> genres,
     required String description,
     required String? coverImageId,
+    required int price,
+    required int? salePrice,
+    required DateTime? discountStartAt,
+    required DateTime? discountEndAt,
   }) async {
     await _packs.doc(packId).update({
       'title': title,
       'genres': genres,
       'description': description,
       'coverImageId': coverImageId,
+      'price': price,
+      'salePrice': salePrice,
+      'discountStartAt': discountStartAt != null
+          ? Timestamp.fromDate(discountStartAt)
+          : null,
+      'discountEndAt': discountEndAt != null
+          ? Timestamp.fromDate(discountEndAt)
+          : null,
       'pendingMetadataAction': 'edit',
       'metadataSubmittedAt': FieldValue.serverTimestamp(),
       'metadataRejectionReason': null,
@@ -223,13 +256,27 @@ class AdminStoryRepository {
     AdminStoryPack pack, {
     required String reviewerUid,
   }) async {
-    await _packs.doc(pack.id).update({
+    final payload = {
       'pendingMetadataAction': null,
       'metadataReviewedBy': reviewerUid,
       'metadataReviewedAt': FieldValue.serverTimestamp(),
       'metadataRejectionReason': null,
       'liveMetadata': _metadataSnapshot(pack),
-    });
+    };
+    debugPrint('approveMetadataEdit(${pack.id}) payload: $payload');
+    debugPrint(
+      'approveMetadataEdit(${pack.id}) pack 스냅샷: '
+      'price=${pack.price} salePrice=${pack.salePrice} '
+      'discountStartAt=${pack.discountStartAt} discountEndAt=${pack.discountEndAt} '
+      'title=${pack.title} genres=${pack.genres} coverImageId=${pack.coverImageId}',
+    );
+    try {
+      await _packs.doc(pack.id).update(payload);
+      debugPrint('approveMetadataEdit(${pack.id}) 성공');
+    } catch (e, stackTrace) {
+      debugPrint('approveMetadataEdit(${pack.id}) 실패: $e\n$stackTrace');
+      rethrow;
+    }
   }
 
   /// 반려 — liveMetadata(마지막 승인 버전)는 그대로 두고, 작가가 요청한
@@ -264,6 +311,14 @@ class AdminStoryRepository {
     'genres': pack.genres,
     'description': pack.description,
     'coverImageId': pack.coverImageId,
+    'price': pack.price,
+    'salePrice': pack.salePrice,
+    'discountStartAt': pack.discountStartAt != null
+        ? Timestamp.fromDate(pack.discountStartAt!)
+        : null,
+    'discountEndAt': pack.discountEndAt != null
+        ? Timestamp.fromDate(pack.discountEndAt!)
+        : null,
   };
 
   Stream<List<AdminStoryNodeSummary>> watchNodeSummaries(String packId) {

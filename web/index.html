@@ -93,6 +93,12 @@
 
   <title>Telo</title>
   <link rel="manifest" href="manifest.json">
+
+  <!-- Toss Payments SDK는 이 메인 앱 문서에는 없다 — 결제 팝업
+       (payment_popup_launch.html)이 자기 자신의 컨텍스트에서 따로 로드해서
+       쓴다(lib/core/payment/toss_payments_web.dart의 openTossPaymentPopup
+       참고). 그래야 결제 흐름이 팝업 창 안에서만 일어나고 이 메인 탭은 결제
+       도중 한 번도 이동/새로고침되지 않는다. -->
 </head>
 <body>
 <div id="app-loading">

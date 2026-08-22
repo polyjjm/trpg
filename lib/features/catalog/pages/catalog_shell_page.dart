@@ -1,5 +1,8 @@
 import 'package:flutter/material.dart';
 
+import '../../../core/auth/auth_scope.dart';
+import '../../../reader/shared/data/reader_prefs_repository.dart';
+import '../data/notice_repository.dart';
 import 'home_tab.dart';
 import 'my_library_tab.dart';
 import 'notice_list_tab.dart';
@@ -21,7 +24,14 @@ class CatalogShellPage extends StatefulWidget {
   /// 웹에서 author/admin 계정으로 열었을 때만 true — 홈 탭에만 전달된다.
   final bool showAuthorModeLink;
 
-  const CatalogShellPage({super.key, this.showAuthorModeLink = false});
+  /// 홈 탭의 스토리팩 스트림이 첫 스냅샷(데이터든 에러든)을 내놓는 순간 한
+  /// 번만 불린다 — MainPage가 이 콜백을 받아서야 부트스트랩 로딩 오버레이를
+  /// 걷어낸다. 그 전까지 [HomeTab]에 아직 아무 데이터도 없다는 이유로
+  /// "아직 연재 중인 스토리가 없어요" 같은 빈 상태 문구가 로딩 화면 대신
+  /// 잠깐 스쳐 지나가는 걸 막는다.
+  final VoidCallback? onContentReady;
+
+  const CatalogShellPage({super.key, this.showAuthorModeLink = false, this.onContentReady});
 
   @override
   State<CatalogShellPage> createState() => _CatalogShellPageState();
@@ -30,6 +40,44 @@ class CatalogShellPage extends StatefulWidget {
 class _CatalogShellPageState extends State<CatalogShellPage> {
   int _index = 0;
 
+  final NoticeRepository _noticeRepository = NoticeRepository();
+  final ReaderPrefsRepository _readerPrefsRepository = ReaderPrefsRepository();
+  late final Stream<DateTime?> _latestNoticeAtStream = _noticeRepository.watchLatestNoticeAt();
+
+  // AuthScope.of(context)는 initState에서 부르면 안 되는 타이밍이라(아직
+  // InheritedWidget 의존성 등록 전) — StoryPackDetailPage의 _resolvedProgress와
+  // 같은 가드 패턴으로 didChangeDependencies에서 딱 한 번만 uid를 정한다.
+  bool _resolvedAuth = false;
+  String? _uid;
+  Stream<DateTime?> _lastNoticeReadAtStream = Stream<DateTime?>.value(null);
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (_resolvedAuth) return;
+    _resolvedAuth = true;
+    _uid = AuthScope.of(context).userId;
+    final uid = _uid;
+    if (uid != null) {
+      _lastNoticeReadAtStream = _readerPrefsRepository.watch(uid).map((prefs) => prefs.lastNoticeReadAt);
+    }
+    // 게스트(uid == null)는 서버에 읽음 상태를 남길 계정이 없다 — 공지가
+    // 하나라도 있으면 항상 안 읽음으로 취급한다(기본값 Stream.value(null)
+    // 그대로 둔다).
+  }
+
+  /// 공지사항 탭(인덱스 2)으로 전환하는 순간 lastNoticeReadAt을 갱신한다.
+  /// 이 탭은 IndexedStack 안에 항상 마운트돼 있어서 NoticeListTab의
+  /// initState/didChangeDependencies로는 "실제로 열었을 때"를 알 수 없다
+  /// — 인덱스가 바뀌는 이 지점이 유일하게 정확한 "탭을 열었다" 신호다.
+  void _handleNavChanged(int index) {
+    setState(() => _index = index);
+    final uid = _uid;
+    if (index == 2 && uid != null) {
+      _readerPrefsRepository.markNoticesRead(uid);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -37,15 +85,30 @@ class _CatalogShellPageState extends State<CatalogShellPage> {
       body: IndexedStack(
         index: _index,
         children: [
-          HomeTab(showAuthorModeLink: widget.showAuthorModeLink),
+          HomeTab(showAuthorModeLink: widget.showAuthorModeLink, onContentReady: widget.onContentReady),
           const MyLibraryTab(),
-          const NoticeListTab(),
+          NoticeListTab(),
           const SettingsTab(),
         ],
       ),
-      bottomNavigationBar: _CatalogBottomNav(
-        index: _index,
-        onChanged: (index) => setState(() => _index = index),
+      bottomNavigationBar: StreamBuilder<DateTime?>(
+        stream: _latestNoticeAtStream,
+        builder: (context, latestSnapshot) {
+          return StreamBuilder<DateTime?>(
+            stream: _lastNoticeReadAtStream,
+            builder: (context, readSnapshot) {
+              final latest = latestSnapshot.data;
+              final lastRead = readSnapshot.data;
+              final hasUnreadNotice = latest != null && (lastRead == null || latest.isAfter(lastRead));
+
+              return _CatalogBottomNav(
+                index: _index,
+                onChanged: _handleNavChanged,
+                hasUnreadNotice: hasUnreadNotice,
+              );
+            },
+          );
+        },
       ),
     );
   }
@@ -54,8 +117,13 @@ class _CatalogShellPageState extends State<CatalogShellPage> {
 class _CatalogBottomNav extends StatelessWidget {
   final int index;
   final ValueChanged<int> onChanged;
+  final bool hasUnreadNotice;
 
-  const _CatalogBottomNav({required this.index, required this.onChanged});
+  const _CatalogBottomNav({
+    required this.index,
+    required this.onChanged,
+    required this.hasUnreadNotice,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -72,7 +140,13 @@ class _CatalogBottomNav extends StatelessWidget {
           children: [
             _NavItem(icon: Icons.home_rounded, label: '홈', selected: index == 0, onTap: () => onChanged(0)),
             _NavItem(icon: Icons.bookmark_rounded, label: '내 서재', selected: index == 1, onTap: () => onChanged(1)),
-            _NavItem(icon: Icons.campaign_rounded, label: '공지사항', selected: index == 2, onTap: () => onChanged(2)),
+            _NavItem(
+              icon: Icons.campaign_rounded,
+              label: '공지사항',
+              selected: index == 2,
+              onTap: () => onChanged(2),
+              showBadge: hasUnreadNotice,
+            ),
             _NavItem(icon: Icons.settings_rounded, label: '설정', selected: index == 3, onTap: () => onChanged(3)),
           ],
         ),
@@ -86,8 +160,15 @@ class _NavItem extends StatelessWidget {
   final String label;
   final bool selected;
   final VoidCallback onTap;
+  final bool showBadge;
 
-  const _NavItem({required this.icon, required this.label, required this.selected, required this.onTap});
+  const _NavItem({
+    required this.icon,
+    required this.label,
+    required this.selected,
+    required this.onTap,
+    this.showBadge = false,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -100,7 +181,26 @@ class _NavItem extends StatelessWidget {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(icon, color: color, size: 22),
+            Stack(
+              clipBehavior: Clip.none,
+              children: [
+                Icon(icon, color: color, size: 22),
+                if (showBadge)
+                  Positioned(
+                    right: -3,
+                    top: -2,
+                    child: Container(
+                      width: 8,
+                      height: 8,
+                      decoration: BoxDecoration(
+                        color: Colors.redAccent,
+                        shape: BoxShape.circle,
+                        border: Border.all(color: const Color(0xFF141414), width: 1.5),
+                      ),
+                    ),
+                  ),
+              ],
+            ),
             const SizedBox(height: 3),
             Text(label, style: TextStyle(color: color, fontSize: 11, fontWeight: FontWeight.w600)),
           ],

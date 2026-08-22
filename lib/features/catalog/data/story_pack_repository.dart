@@ -58,7 +58,10 @@ class StoryPackRepository {
         description: live?['description'] as String? ?? '',
         authorName: data['authorName'] as String? ?? '알 수 없음',
         coverImageUrl: coverImageId != null ? coverUrls[coverImageId] : null,
-        price: 0,
+        price: (live?['price'] as num?)?.toInt() ?? 0,
+        salePrice: (live?['salePrice'] as num?)?.toInt(),
+        discountStartAt: (live?['discountStartAt'] as Timestamp?)?.toDate(),
+        discountEndAt: (live?['discountEndAt'] as Timestamp?)?.toDate(),
         format: (data['type'] as String?) == 'linear'
             ? StoryPackFormat.linear
             : StoryPackFormat.interactive,
@@ -77,6 +80,54 @@ class StoryPackRepository {
   /// (값)를 collectionGroup 조회 한 번으로 같이 구한다 — 팩마다 nodes
   /// 서브컬렉션을 따로 조회하지 않는다. 개수는 StoryPack.publishedNodeCount로
   /// 그대로 흘려보내 내 서재 탭의 진행률 바 계산에 쓴다.
+  /// id 목록으로 팩을 직접 조회한다 — [watchVisiblePacks]처럼 라이브러리
+  /// 노출 조건(연재 승인 + 발행 노드 존재)을 따지지 않고, 표지/제목만 필요한
+  /// 가벼운 표시용 자리(번들 카드가 포함된 팩을 나열할 때)에 쓴다. 그래서
+  /// avgRating/publishedNodeCount 등 이 자리에서 안 쓰는 필드는 기본값으로
+  /// 채운다. 최대 30개(Firestore whereIn 제한) — 번들 하나에 담기는 팩
+  /// 개수가 이보다 많을 일은 없다고 본다.
+  Future<List<StoryPack>> fetchPacksByIds(List<String> ids) async {
+    if (ids.isEmpty) return const [];
+    final snapshot = await _firestore
+        .collection('storyPacks')
+        .where(FieldPath.documentId, whereIn: ids)
+        .get();
+    if (snapshot.docs.isEmpty) return const [];
+
+    final coverImageIds = snapshot.docs
+        .map(
+          (doc) =>
+              (doc.data()['liveMetadata']
+                      as Map<String, dynamic>?)?['coverImageId']
+                  as String?,
+        )
+        .whereType<String>()
+        .toSet();
+    final coverUrls = await _fetchImageUrls(coverImageIds);
+
+    return snapshot.docs.map((doc) {
+      final data = doc.data();
+      final live = data['liveMetadata'] as Map<String, dynamic>?;
+      final coverImageId = live?['coverImageId'] as String?;
+      return StoryPack(
+        id: doc.id,
+        title:
+            live?['title'] as String? ?? data['title'] as String? ?? '(제목 없음)',
+        description: live?['description'] as String? ?? '',
+        authorName: data['authorName'] as String? ?? '알 수 없음',
+        coverImageUrl: coverImageId != null ? coverUrls[coverImageId] : null,
+        price: (live?['price'] as num?)?.toInt() ?? 0,
+        salePrice: (live?['salePrice'] as num?)?.toInt(),
+        discountStartAt: (live?['discountStartAt'] as Timestamp?)?.toDate(),
+        discountEndAt: (live?['discountEndAt'] as Timestamp?)?.toDate(),
+        format: (data['type'] as String?) == 'linear'
+            ? StoryPackFormat.linear
+            : StoryPackFormat.interactive,
+        genres: (live?['genres'] as List<dynamic>?)?.cast<String>() ?? const [],
+      );
+    }).toList();
+  }
+
   Future<Map<String, int>> _fetchPublishedNodeCounts() async {
     final snapshot = await _firestore
         .collectionGroup('nodes')

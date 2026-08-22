@@ -4,14 +4,13 @@ import 'package:flutter/foundation.dart';
 import 'package:google_mobile_ads/google_mobile_ads.dart';
 
 import '../ads/ad_ids.dart';
-import 'cash_package.dart';
 import 'monetization_service.dart';
 
 /// AdMob 리워드 광고로 [MonetizationService.showRewardedAd]를 구현한 버전.
 ///
-/// 부활 아이템 구매(`purchaseRevivalItem`)와 캐시 패키지 구매(`purchaseCashPackage`)는
-/// 광고가 아니라 실제 인앱 결제(IAP) SDK가 필요한 영역이라, SDK가 정해지기 전까지는
-/// [NoOpMonetizationService]와 동일하게 항상 실패를 반환한다.
+/// 부활 아이템 구매(`purchaseRevivalItem`)는 광고가 아니라 실제 인앱 결제(IAP)
+/// SDK가 필요한 영역이라, SDK가 정해지기 전까지는 [NoOpMonetizationService]와
+/// 동일하게 항상 실패를 반환한다.
 class AdMobMonetizationService implements MonetizationService {
   AdMobMonetizationService();
 
@@ -108,11 +107,5 @@ class AdMobMonetizationService implements MonetizationService {
   Future<bool> purchaseRevivalItem() async {
     // TODO: 실제 인앱 결제(IAP) SDK 연동 지점.
     return false;
-  }
-
-  @override
-  Future<CashPurchaseResult> purchaseCashPackage(CashPackage package) async {
-    // TODO: 실제 인앱 결제(IAP) SDK 연동 지점.
-    return CashPurchaseResult.failure;
   }
 }

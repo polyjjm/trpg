@@ -25,8 +25,18 @@ class StoryPack {
   /// placeholder로 대체한다.
   final String? coverImageUrl;
 
-  /// 원 단위 가격. 결제 기능이 아직 없어 실데이터 팩은 전부 0(무료)으로 둔다.
+  /// 코인 단위 정가 — storyPacks 문서의 liveMetadata(admin이 승인한 마지막
+  /// 스냅샷)에서 그대로 읽는다. 실제로 지금 이 팩에 적용할 가격은 이 필드가
+  /// 아니라 [effectivePrice]다(할인 중이면 salePrice가 적용된다).
   final int price;
+
+  /// 할인가 — null이면 할인 없음.
+  final int? salePrice;
+
+  /// 할인 적용 기간 — 둘 다 null이면 salePrice가 있는 한 항상 할인 적용.
+  final DateTime? discountStartAt;
+  final DateTime? discountEndAt;
+
   final StoryPackFormat format;
 
   /// genres/{genreId}.slug와 같은 어휘(horror, romance, scifi, fantasy,
@@ -77,6 +87,9 @@ class StoryPack {
     required this.authorName,
     required this.coverImageUrl,
     required this.price,
+    this.salePrice,
+    this.discountStartAt,
+    this.discountEndAt,
     required this.format,
     required this.genres,
     this.previewNodeLimit = 3,
@@ -88,7 +101,27 @@ class StoryPack {
     this.publishedNodeCount = 0,
   });
 
-  bool get isFree => price <= 0;
+  /// [at] 시점에 할인가가 적용 중인지 — lib/admin/models/admin_story_pack.dart의
+  /// AdminStoryPack.isDiscountActiveAt/lib/features/wallet/models/point_package.dart의
+  /// PointPackage.isDiscountActiveAt과 같은 모양(전부 "코인 + 선택적 할인
+  /// 기간" 가격 모델을 공유한다).
+  bool isDiscountActiveAt(DateTime at) {
+    if (salePrice == null) return false;
+    final start = discountStartAt;
+    if (start != null && at.isBefore(start)) return false;
+    final end = discountEndAt;
+    if (end != null && at.isAfter(end)) return false;
+    return true;
+  }
+
+  bool get hasActiveDiscount => isDiscountActiveAt(DateTime.now());
+
+  /// 지금 실제로 적용되는 가격 — 할인 중이면 salePrice, 아니면 price.
+  /// 구매/미리보기 등 "얼마를 내야 하는지"를 판단하는 모든 곳은 반드시 이
+  /// 값을 써야 한다(원래 price를 직접 쓰면 할인이 무시된다).
+  int get effectivePrice => hasActiveDiscount ? salePrice! : price;
+
+  bool get isFree => effectivePrice <= 0;
 
   /// 카드/미리보기의 대표 장르 배지에 쓸 슬러그. 장르를 하나도 안 골랐으면
   /// GenreStyle의 "기타" fallback으로 떨어지도록 빈 문자열을 준다.

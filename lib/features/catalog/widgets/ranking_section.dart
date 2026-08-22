@@ -69,6 +69,9 @@ class RankingSection extends StatelessWidget {
       );
     }
 
+    final top3 = rows.take(3).toList();
+    final rest = rows.skip(3).toList();
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -78,22 +81,149 @@ class RankingSection extends StatelessWidget {
         ),
         const SizedBox(height: 14),
         if (rows.isEmpty)
-          // 조용히 통째로 사라지면 "이 섹션이 원래 없다"와 "데이터가 아직
-          // 없다"를 구분할 수 없다 — 스냅샷 함수가 아직 한 번도 안 돌았거나
-          // (예: 배포 직후) 결과가 진짜로 비어 있을 때 명시적으로 알려준다.
+        // 조용히 통째로 사라지면 "이 섹션이 원래 없다"와 "데이터가 아직
+        // 없다"를 구분할 수 없다 — 스냅샷 함수가 아직 한 번도 안 돌았거나
+        // (예: 배포 직후) 결과가 진짜로 비어 있을 때 명시적으로 알려준다.
           Text(
             '아직 집계된 데이터가 없어요',
             style: TextStyle(fontSize: 13, color: _muted),
           )
-        else
-          for (var i = 0; i < rows.length; i++)
-            _RankingRow(
-              data: rows[i],
-              genreLabel: _genreLabel(rows[i].pack),
-              formatLabel: _formatLabel(rows[i].pack),
-              showDivider: i != rows.length - 1,
-            ),
+        else ...[
+          // TOP 3 — 메달 컬러로 구분된 카드형 하이라이트. 4위 이하의 담백한
+          // 리스트와 시각적으로 확실히 나뉘도록 커버 이미지를 훨씬 크게
+          // 쓰고, 순위 자체를 숫자가 아니라 메달 배지 색으로 먼저 읽히게 한다.
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              for (var i = 0; i < top3.length; i++) ...[
+                if (i != 0) const SizedBox(width: 12),
+                SizedBox(
+                  width: 150, // 원하는 카드 폭으로 조정 가능
+                  child: _TopRankCard(
+                    data: top3[i],
+                    genreLabel: _genreLabel(top3[i].pack),
+                    formatLabel: _formatLabel(top3[i].pack),
+                  ),
+                ),
+              ],
+            ],
+          ),
+          if (rest.isNotEmpty) ...[
+            const SizedBox(height: 18),
+            // 카드 구역과 리스트 구역 사이의 얇은 구분선 — 컨테이너 배경이
+            // 이미 섹션 전체를 감싸고 있으니, 안에서는 색 대비 대신 이
+            // 정도의 hairline 하나면 충분하다.
+            const Divider(height: 1, thickness: 1, color: _rowDivider),
+            const SizedBox(height: 6),
+            for (var i = 0; i < rest.length; i++)
+              _RankingRow(
+                data: rest[i],
+                genreLabel: _genreLabel(rest[i].pack),
+                formatLabel: _formatLabel(rest[i].pack),
+                showDivider: i != rest.length - 1,
+              ),
+          ],
+        ],
       ],
+    );
+  }
+}
+
+/// TOP 3 전용 카드 — 금/은/동 톤 배지 + 큰 커버로, 목록(rest)과 다른
+/// "하이라이트" 톤을 준다. 순위 변동 표시는 여기서도 그대로 보여준다(내려간
+/// 1위도 있을 수 있으니).
+class _TopRankCard extends StatelessWidget {
+  final _RankingRowData data;
+  final String genreLabel;
+  final String formatLabel;
+
+  const _TopRankCard({
+    required this.data,
+    required this.genreLabel,
+    required this.formatLabel,
+  });
+
+  static const List<Color> _medalColors = [
+    Color(0xFFFFC94D), // 1위 · 골드
+    Color(0xFFD3D6DB), // 2위 · 실버
+    Color(0xFFD79A66), // 3위 · 브론즈
+  ];
+
+  @override
+  Widget build(BuildContext context) {
+    final pack = data.pack;
+    final medalColor = _medalColors[(data.rank - 1).clamp(0, 2)];
+    final coverUrl = pack.coverImageUrl;
+
+    return InkWell(
+      borderRadius: BorderRadius.circular(12),
+      onTap: () => Navigator.push(
+        context,
+        MaterialPageRoute(builder: (_) => StoryPackDetailPage(pack: pack)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          AspectRatio(
+            aspectRatio: 3 / 4,
+            child: Stack(
+              children: [
+                Positioned.fill(
+                  child: ClipRRect(
+                    borderRadius: BorderRadius.circular(12),
+                    child: coverUrl != null && coverUrl.isNotEmpty
+                        ? Image.network(
+                      coverUrl,
+                      fit: BoxFit.cover,
+                      errorBuilder: (_, _, _) => const _RankingCoverFallback(),
+                    )
+                        : const _RankingCoverFallback(),
+                  ),
+                ),
+                Positioned(
+                  top: 6,
+                  left: 6,
+                  child: Container(
+                    width: 24,
+                    height: 24,
+                    alignment: Alignment.center,
+                    decoration: BoxDecoration(
+                      color: medalColor,
+                      shape: BoxShape.circle,
+                      boxShadow: [
+                        BoxShadow(color: Colors.black.withOpacity(0.35), blurRadius: 4, offset: const Offset(0, 1)),
+                      ],
+                    ),
+                    child: Text(
+                      '${data.rank}',
+                      style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w800, color: Color(0xFF2A2A28)),
+                    ),
+                  ),
+                ),
+                Positioned(
+                  top: 6,
+                  right: 6,
+                  child: _RankChangeIndicator(rank: data.rank, previousRank: data.previousRank),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            pack.title,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: _ivory),
+          ),
+          const SizedBox(height: 2),
+          Text(
+            '$genreLabel · $formatLabel',
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(fontSize: 11, color: _muted),
+          ),
+        ],
+      ),
     );
   }
 }
@@ -156,10 +286,10 @@ class _RankingRow extends StatelessWidget {
                 height: 40 * 4 / 3,
                 child: coverUrl != null && coverUrl.isNotEmpty
                     ? Image.network(
-                        coverUrl,
-                        fit: BoxFit.cover,
-                        errorBuilder: (_, _, _) => const _RankingCoverFallback(),
-                      )
+                  coverUrl,
+                  fit: BoxFit.cover,
+                  errorBuilder: (_, _, _) => const _RankingCoverFallback(),
+                )
                     : const _RankingCoverFallback(),
               ),
             ),

@@ -230,6 +230,8 @@ class _PackRequestCard extends StatelessWidget {
                   children: [
                     Text(
                       pack.title,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
                       style: TextStyle(
                         fontWeight: FontWeight.w700,
                         fontSize: 15,
@@ -239,6 +241,8 @@ class _PackRequestCard extends StatelessWidget {
                     const SizedBox(height: 2),
                     Text(
                       pack.authorName.isEmpty ? '(작가 이름 없음)' : pack.authorName,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
                       style: TextStyle(fontSize: 12, color: AdminColors.muted),
                     ),
                     if (submittedAt != null) ...[
@@ -291,6 +295,17 @@ class _PackRequestCard extends StatelessWidget {
               ),
             ),
           ],
+          const SizedBox(height: 10),
+          Text(
+            pack.salePrice != null
+                ? '가격: ${pack.price}코인 → ${pack.salePrice}코인'
+                    '${_formatDiscountWindow(pack.discountStartAt, pack.discountEndAt)}'
+                : '가격: ${pack.price}코인',
+            style: TextStyle(
+              fontSize: 12,
+              color: pack.salePrice != null ? AdminColors.gold : AdminColors.muted,
+            ),
+          ),
         ],
       ),
     );
@@ -396,3 +411,10 @@ Future<String?> _promptRejectionReason(
 
 String _formatDate(DateTime dt) =>
     '${dt.year}.${dt.month.toString().padLeft(2, '0')}.${dt.day.toString().padLeft(2, '0')}';
+
+String _formatDiscountWindow(DateTime? start, DateTime? end) {
+  if (start == null && end == null) return '';
+  final startText = start == null ? '(없음)' : _formatDate(start);
+  final endText = end == null ? '(없음)' : _formatDate(end);
+  return ' ($startText ~ $endText)';
+}

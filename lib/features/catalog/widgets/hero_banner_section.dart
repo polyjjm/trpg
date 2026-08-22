@@ -58,6 +58,19 @@ class _HeroBannerSectionState extends State<HeroBannerSection> {
     if (widget.banners.length != oldWidget.banners.length && _page >= widget.banners.length) {
       _page = 0;
     }
+    // ⚠️ 버그 수정: initState 시점엔 Firestore 배너 스트림이 아직 데이터를
+    // 안 내려준 상태라 banners가 비어 있거나 1개뿐인 경우가 많다 —
+    // _scheduleAutoAdvance()가 `length <= 1`에 걸려 타이머를 아예 안 건다.
+    // 그 뒤 실제 배너 목록(2개 이상)이 도착해도 여기서 다시 스케줄링을
+    // 안 해주면 타이머가 영원히 안 걸린 채로 남는다 — 일시정지 버튼을
+    // 한 번 눌러야(그 핸들러가 _scheduleAutoAdvance를 호출하니까) 그제서야
+    // 넘어가기 시작하던 증상이 바로 이거였다. banners 목록 자체가 바뀔
+    // 때마다(길이든 내용이든) 다시 스케줄링해서, "이미 4초 타이머가 잘 돌고
+    // 있는데 매 리빌드마다 초기화되는" 문제 없이도 최초 데이터 도착 시점을
+    // 놓치지 않게 한다.
+    if (!identical(widget.banners, oldWidget.banners)) {
+      _scheduleAutoAdvance();
+    }
   }
 
   void _scheduleAutoAdvance() {
@@ -134,6 +147,11 @@ class _HeroBannerSectionState extends State<HeroBannerSection> {
                 itemBuilder: (context, index) => _BannerImage(
                   banner: banners[index],
                   linkedPack: _linkedPack(banners[index]),
+                  // 배너가 2개 이상이면 _CounterPill이 바로 이 위젯 위,
+                  // 같은 왼쪽 아래 모서리(left:10, bottom:10)에 그려진다 —
+                  // 텍스트 오버레이가 있으면 그 아래를 침범하지 않도록,
+                  // 이 값이 true일 때 텍스트 블록을 더 위로 띄운다.
+                  reserveSpaceForCounterPill: banners.length > 1,
                 ),
               ),
               if (banners.length > 1) ...[
@@ -263,11 +281,25 @@ class _CounterPill extends StatelessWidget {
   }
 }
 
+/// 텍스트 오버레이(스크림 그라디언트 + 아이브로우/타이틀/서브텍스트)를
+/// 켜는 기준값 — [HomeBanner.hasTextOverlay]와 정확히 같은 규칙을 여기서도
+/// 다시 쓴다(title이 없으면 오버레이 자체를 그리지 않는다).
+const Color _eyebrowColor = Color(0xFFFFB648);
+
 class _BannerImage extends StatelessWidget {
   final HomeBanner banner;
   final StoryPack? linkedPack;
 
-  const _BannerImage({required this.banner, required this.linkedPack});
+  /// true면 이 배너 바로 위(Stack 상위 레이어)에 _CounterPill이
+  /// bottom-left(left:10, bottom:10)에 그려진다 — 텍스트 블록도 같은
+  /// 왼쪽 아래 정렬이라, 겹치지 않게 텍스트 블록을 그만큼 더 띄운다.
+  final bool reserveSpaceForCounterPill;
+
+  const _BannerImage({
+    required this.banner,
+    required this.linkedPack,
+    required this.reserveSpaceForCounterPill,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -276,16 +308,129 @@ class _BannerImage extends StatelessWidget {
       onTap: pack == null
           ? null
           : () => Navigator.push(
-              context,
-              MaterialPageRoute(builder: (_) => StoryPackDetailPage(pack: pack)),
+        context,
+        MaterialPageRoute(builder: (_) => StoryPackDetailPage(pack: pack)),
+      ),
+      child: Stack(
+        fit: StackFit.expand,
+        children: [
+          banner.imageUrl.isNotEmpty
+              ? Image.network(
+            banner.imageUrl,
+            fit: BoxFit.cover,
+            // 헤더 배경 이미지와 동시에 화면에 떠도 GPU 텍스처 자원을
+            // 덜 쓰도록 디코딩 해상도를 실제 표시 크기에 맞춰 낮춘다 —
+            // 원본 해상도 그대로 올리면 두 이미지가 동시에 GPU에 올라갈
+            // 때 자원 부족으로 렌더링이 깨지는 기기가 있었다.
+            cacheWidth: 800,
+            errorBuilder: (_, _, _) => const _BannerImageFallback(),
+          )
+              : const _BannerImageFallback(),
+          // title이 없으면(예: 기존 이미지 전용 배너) 스크림도 텍스트도
+          // 아예 안 그린다 — 오늘 있는 이미지 전용 배너가 그대로 유지돼야
+          // 한다는 요구사항 그대로다.
+          if (banner.hasTextOverlay) ...[
+            const Positioned.fill(child: _BannerScrim()),
+            Positioned(
+              left: 20,
+              right: 20,
+              bottom: reserveSpaceForCounterPill ? 46 : 18,
+              child: _BannerTextBlock(banner: banner),
             ),
-      child: banner.imageUrl.isNotEmpty
-          ? Image.network(
-              banner.imageUrl,
-              fit: BoxFit.cover,
-              errorBuilder: (_, _, _) => const _BannerImageFallback(),
-            )
-          : const _BannerImageFallback(),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+/// 배너 하단에서 위로 갈수록 투명해지는 어두운 스크림 — 텍스트가 배너
+/// 이미지 위에서도 항상 읽히게 한다. 텍스트 블록이 없을 땐(hasTextOverlay
+/// == false) 이 위젯 자체가 트리에 안 들어가므로 기존 이미지 전용 배너는
+/// 완전히 그대로다.
+class _BannerScrim extends StatelessWidget {
+  const _BannerScrim();
+
+  @override
+  Widget build(BuildContext context) {
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.bottomCenter,
+          end: Alignment.topCenter,
+          colors: [Colors.black.withOpacity(0.78), Colors.transparent],
+          stops: const [0.0, 0.85],
+        ),
+      ),
+    );
+  }
+}
+
+/// 아이브로우(선택) + 타이틀 + 서브텍스트(선택), 왼쪽 아래 정렬. 오른쪽
+/// 여백을 넉넉히 남기도록 가로폭을 부모 폭의 약 70%로만 쓴다 — 배너가
+/// 넓어질수록 제목 한 줄이 끝까지 늘어져 읽기 불편해지는 걸 막는
+/// 일반적인 레이아웃 규칙이다(카운터 pill과의 충돌은 세로로 띄우는
+/// reserveSpaceForCounterPill이 이미 해결한다).
+class _BannerTextBlock extends StatelessWidget {
+  final HomeBanner banner;
+
+  const _BannerTextBlock({required this.banner});
+
+  @override
+  Widget build(BuildContext context) {
+    final eyebrow = banner.eyebrow;
+    final subtitle = banner.subtitle;
+
+    return Align(
+      alignment: Alignment.bottomLeft,
+      child: FractionallySizedBox(
+        widthFactor: 0.7,
+        alignment: Alignment.bottomLeft,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            if (eyebrow != null && eyebrow.isNotEmpty) ...[
+              Text(
+                eyebrow.toUpperCase(),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(
+                  fontSize: 11,
+                  fontWeight: FontWeight.w800,
+                  color: _eyebrowColor,
+                  letterSpacing: 0.8,
+                ),
+              ),
+              const SizedBox(height: 6),
+            ],
+            Text(
+              banner.title!,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(
+                fontSize: 26,
+                fontWeight: FontWeight.w800,
+                color: Colors.white,
+                height: 1.2,
+              ),
+            ),
+            if (subtitle != null && subtitle.isNotEmpty) ...[
+              const SizedBox(height: 6),
+              Text(
+                subtitle,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  fontSize: 13.5,
+                  color: Colors.white.withOpacity(0.78),
+                  height: 1.35,
+                ),
+              ),
+            ],
+          ],
+        ),
+      ),
     );
   }
 }

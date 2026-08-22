@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>결제 진행 중</title>
+  <style>
+    html, body {
+      margin: 0;
+      padding: 0;
+      background: #000;
+      color: #E2D4BF;
+      font-family: Arial, sans-serif;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      height: 100%;
+    }
+  </style>
+</head>
+<body>
+<p>결제창을 여는 중이에요...</p>
+
+<!-- Toss Payments SDK — 이 팝업 창 자신의 컨텍스트에서만 로드된다. 메인 앱
+     탭은 이 SDK를 전혀 모른다(더 이상 로드하지도 않는다) — 결제 UI 전부가
+     이 팝업 안에서만 일어난다. -->
+<script src="https://js.tosspayments.com/v1/payment"></script>
+<script>
+  function getParam(name) {
+    return new URLSearchParams(window.location.search).get(name);
+  }
+
+  var clientKey = getParam('clientKey');
+  var amount = Number(getParam('amount'));
+  var orderId = getParam('orderId');
+  var orderName = getParam('orderName');
+  var packageId = getParam('packageId');
+  var customerName = getParam('customerName') || undefined;
+  var customerEmail = getParam('customerEmail') || undefined;
+
+  // 결제 완료/실패 시 Toss가 이 팝업 창(아직 열려 있는 그 창) 자체를
+  // 여기(payment_popup_return.html)로 되돌린다 — 메인 탭은 전혀 건드리지
+  // 않는다. packageId는 우리가 직접 붙여 뒀다가 그대로 돌려받는다.
+  var returnUrl = window.location.origin + '/payment_popup_return.html'
+    + '?packageId=' + encodeURIComponent(packageId || '');
+
+  var tossPayments = TossPayments(clientKey);
+  tossPayments.requestPayment('카드', {
+    amount: amount,
+    orderId: orderId,
+    orderName: orderName,
+    successUrl: returnUrl,
+    failUrl: returnUrl,
+    customerName: customerName,
+    customerEmail: customerEmail,
+  });
+</script>
+</body>
+</html>

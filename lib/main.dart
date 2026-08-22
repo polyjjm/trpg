@@ -2,10 +2,8 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
-import 'package:flutter_svg/flutter_svg.dart';
-import 'widgets/loading.dart';
+import 'widgets/app_loading_screen.dart';
 import 'core/auth/auth_scope.dart';
-import 'core/constants/asset_paths.dart';
 import 'core/monetization/admob_monetization_service.dart';
 import 'core/platform/remove_app_loading.dart';
 import 'core/state/game_state_provider.dart';
@@ -50,6 +48,16 @@ class MyApp extends StatelessWidget {
 /// 로그인 상태면 클라우드 세이브를 GameState에 반영한 뒤 라이브러리(카탈로그)
 /// 화면으로 이동한다 — '새 게임/이어하기' 메뉴 역할은 이제 라이브러리의 상세
 /// 화면(StoryPackDetailPage)이 맡는다.
+///
+/// 목적지(SignInPage/CatalogShellPage)로 Navigator.pushReplacement를 쓰지
+/// 않는다 — 예전엔 그렇게 라우트를 통째로 갈아 끼웠는데, 그 라우트 전환
+/// 애니메이션 자체가 "로딩 화면이 사라지고 아직 데이터가 안 찬 홈 탭이
+/// 드러나는" 눈에 띄는 컷이었다(게다가 CatalogShellPage는 스토리팩 스트림의
+/// 첫 스냅샷이 오기 전까지 홈 탭에 보여줄 게 없어서 그 사이 "아직 연재 중인
+/// 스토리가 없어요" 같은 문구가 잠깐 스쳐 지나갔다). 대신 목적지를 이 위젯의
+/// 자식으로 Stack에 얹어 두고, [AppLoadingScreen]을 같은 인스턴스로 계속
+/// 마운트한 채 opacity만 내려서 걷어낸다 — CatalogShellPage는 홈 탭의 첫
+/// 스토리팩 데이터가 실제로 도착했을 때만 [onContentReady]를 불러 준다.
 class MainPage extends StatefulWidget {
   const MainPage({super.key});
 
@@ -58,6 +66,9 @@ class MainPage extends StatefulWidget {
 }
 
 class _MainPageState extends State<MainPage> {
+  Widget? _destination;
+  bool _showLoading = true;
+
   @override
   void initState() {
     super.initState();
@@ -74,10 +85,12 @@ class _MainPageState extends State<MainPage> {
     final authService = AuthScope.of(context);
 
     if (!authService.isSignedIn) {
-      await Navigator.pushReplacement(
-        context,
-        MaterialPageRoute(builder: (context) => const SignInPage()),
-      );
+      // 로그인 화면은 기다릴 스트림이 없으니 목적지가 정해지자마자 곧장
+      // 로딩 오버레이를 걷어낸다.
+      setState(() {
+        _destination = const SignInPage();
+        _showLoading = false;
+      });
       return;
     }
 
@@ -102,10 +115,18 @@ class _MainPageState extends State<MainPage> {
 
     if (!mounted) return;
 
-    await Navigator.pushReplacement(
-      context,
-      MaterialPageRoute(builder: (context) => CatalogShellPage(showAuthorModeLink: showAuthorModeLink)),
-    );
+    setState(() {
+      _destination = CatalogShellPage(
+        showAuthorModeLink: showAuthorModeLink,
+        // 홈 탭의 스토리팩 스트림이 첫 스냅샷(데이터든 에러든)을 내놓기
+        // 전까지는 _showLoading이 true로 남아, 로딩 오버레이가 실제 콘텐츠
+        // 위에 계속 덮여 있는다.
+        onContentReady: () {
+          if (!mounted) return;
+          setState(() => _showLoading = false);
+        },
+      );
+    });
   }
 
   @override
@@ -113,21 +134,22 @@ class _MainPageState extends State<MainPage> {
     return Scaffold(
       body: Stack(
         children: [
-          Positioned.fill(
-            child: DecoratedBox(
-              decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  begin: Alignment.topCenter,
-                  end: Alignment.bottomCenter,
-                  colors: [Color(0xFF1A1610), Colors.black],
-                ),
-              ),
+          ?_destination,
+          // web/index.html의 #app-loading(Flutter 엔진이 뜨기 전 HTML/CSS
+          // 스플래시)과 같은 카드 디자인을 그대로 이어받는 AppLoadingScreen을
+          // 프로세스 시작부터 실제 콘텐츠가 준비될 때까지 단 하나의 인스턴스로
+          // 계속 마운트해 둔다 — 부트스트랩 단계와 데이터 로딩 단계가 서로
+          // 다른 인스턴스로 새로 그려지면 진행 바 애니메이션이 처음부터 다시
+          // 시작되면서 그 자체가 눈에 띄는 깜빡임처럼 보인다.
+          IgnorePointer(
+            ignoring: !_showLoading,
+            child: AnimatedOpacity(
+              opacity: _showLoading ? 1 : 0,
+              duration: const Duration(milliseconds: 180),
+              curve: Curves.easeOut,
+              child: const AppLoadingScreen(),
             ),
           ),
-          Center(
-            child: SvgPicture.asset(UiPaths.logo, width: 88, height: 88),
-          ),
-          const Loading(message: '이야기를 불러오는 중...'),
         ],
       ),
     );

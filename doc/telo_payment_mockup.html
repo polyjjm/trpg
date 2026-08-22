@@ -1,0 +1,373 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Telo — 결제 목업</title>
+<style>
+:root{
+  --bg: #000000;
+  --surface: #141311;
+  --surface-2: #1C1B18;
+  --hairline: #2C2C2A;
+  --ivory: #E2D4BF;
+  --muted: #83817A;
+  --faint: #55534E;
+  --coral: #FF6B4A;
+  --amber: #FFB648;
+  --grad: linear-gradient(115deg, var(--coral) 0%, var(--amber) 100%);
+  --danger: #F09595;
+  --success: #97C459;
+}
+*{ box-sizing:border-box; margin:0; padding:0; }
+html,body{
+  background: var(--bg); color: var(--ivory);
+  font-family: -apple-system, 'Malgun Gothic', 'Pretendard', sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+.demo-switch{
+  display:flex; gap:8px; padding:14px 16px 0;
+  background:#000;
+}
+.demo-switch button{
+  flex:1; padding:10px; border-radius:10px; border:1px solid var(--hairline);
+  background: var(--surface); color: var(--muted); font-size:13px; font-weight:700;
+  cursor:pointer;
+}
+.demo-switch button.active{ color: var(--ivory); border-color: var(--coral); background: var(--surface-2); }
+
+.screen{ display:none; max-width:460px; margin:0 auto; padding: 18px 20px 40px; }
+.screen.active{ display:block; }
+
+.page-header{
+  display:flex; align-items:center; gap:12px; padding: 6px 0 20px;
+}
+.back-btn{
+  width:34px; height:34px; border-radius:50%; background: var(--surface);
+  display:flex; align-items:center; justify-content:center; color: var(--ivory);
+  border:none; cursor:pointer; flex-shrink:0;
+}
+.page-title{ font-size:17px; font-weight:800; }
+
+.balance-card{
+  background: var(--surface); border:1px solid var(--hairline); border-radius:16px;
+  padding: 16px 18px; display:flex; align-items:center; justify-content:space-between;
+  margin-bottom:22px;
+}
+.balance-label{ font-size:12px; color: var(--muted); margin-bottom:4px; }
+.balance-value{ font-size:22px; font-weight:800; }
+.balance-value .unit{ font-size:13px; color: var(--muted); font-weight:600; margin-left:4px; }
+.history-link{ font-size:12px; color: var(--muted); text-decoration:underline; cursor:pointer; }
+
+.section-label{ font-size:13px; font-weight:700; color: var(--muted); margin: 4px 0 10px; }
+
+.package-grid{ display:flex; flex-direction:column; gap:10px; margin-bottom: 24px; }
+.package-card{
+  position:relative;
+  display:flex; align-items:center; justify-content:space-between;
+  padding: 15px 16px; border-radius:14px;
+  background: var(--surface); border:1.5px solid var(--hairline);
+  cursor:pointer; transition: all .15s ease;
+}
+.package-card.selected{
+  border-color: var(--coral);
+  background: var(--surface-2);
+}
+.package-left{ display:flex; align-items:center; gap:12px; }
+.coin-icon{
+  width:38px; height:38px; border-radius:50%; flex-shrink:0;
+  background: var(--grad); display:flex; align-items:center; justify-content:center;
+  font-size:15px; font-weight:800; color:#1a1108;
+}
+.package-name{ font-size:14.5px; font-weight:700; }
+.package-bonus{
+  display:inline-block; margin-top:3px; font-size:10.5px; font-weight:700;
+  color: var(--amber); background: rgba(255,182,72,0.12);
+  padding: 2px 7px; border-radius:999px;
+}
+.package-right{ text-align:right; }
+.price-original{
+  font-size:11.5px; color: var(--faint); text-decoration:line-through;
+}
+.price-sale{ font-size:15px; font-weight:800; }
+.discount-badge{
+  position:absolute; top:-8px; right:12px;
+  background: var(--grad); color:#1a1108; font-size:10.5px; font-weight:800;
+  padding: 3px 8px; border-radius: 999px;
+}
+.radio-dot{
+  width:18px; height:18px; border-radius:50%; border:2px solid var(--hairline);
+  margin-right:2px; flex-shrink:0; position:relative;
+}
+.package-card.selected .radio-dot{ border-color: var(--coral); }
+.package-card.selected .radio-dot::after{
+  content:''; position:absolute; inset:3px; border-radius:50%; background: var(--grad);
+}
+
+.payment-methods{
+  display:flex; gap:8px; margin-bottom:20px;
+}
+.pm-chip{
+  flex:1; text-align:center; padding:10px 6px; border-radius:10px;
+  background: var(--surface); border:1px solid var(--hairline);
+  font-size:12px; font-weight:700; color: var(--muted); cursor:pointer;
+}
+.pm-chip.active{ color: var(--ivory); border-color: var(--coral); }
+
+.cta-btn{
+  width:100%; padding:15px; border:none; border-radius:14px;
+  background: var(--grad); color:#1a1108; font-size:15px; font-weight:800;
+  cursor:pointer;
+}
+.cta-btn:disabled{ background: var(--surface-2); color: var(--faint); cursor:not-allowed; }
+.fine-print{ font-size:11px; color: var(--faint); text-align:center; margin-top:10px; line-height:1.5; }
+
+.detail-mock{
+  position:relative; border-radius:16px; overflow:hidden; height:220px;
+  background: linear-gradient(160deg,#3a2a2f,#1a1418);
+  display:flex; align-items:flex-end; padding:16px;
+}
+.detail-mock::after{
+  content:''; position:absolute; inset:0;
+  background: linear-gradient(0deg, rgba(0,0,0,0.75), transparent 60%);
+}
+.detail-mock .txt{ position:relative; z-index:1; }
+.detail-mock .txt .t1{ font-size:17px; font-weight:800; margin-bottom:4px; }
+.detail-mock .txt .t2{ font-size:12px; color: rgba(255,255,255,0.7); }
+
+.modal-backdrop{
+  margin-top: 14px;
+  background: var(--surface); border:1px solid var(--hairline);
+  border-radius: 20px 20px 0 0; padding: 20px 20px 22px;
+}
+.modal-handle{
+  width:36px; height:4px; border-radius:99px; background: var(--hairline);
+  margin: 0 auto 16px;
+}
+.modal-pack-row{
+  display:flex; gap:12px; align-items:center; margin-bottom:16px;
+}
+.modal-cover{
+  width:52px; height: 69px; border-radius:8px; flex-shrink:0;
+  background: linear-gradient(160deg,#FF7A59,#FFB35C);
+}
+.modal-pack-title{ font-size:15px; font-weight:800; margin-bottom:3px; }
+.modal-pack-meta{ font-size:12px; color: var(--muted); }
+
+.balance-row{
+  display:flex; justify-content:space-between; align-items:center;
+  padding: 12px 14px; background: var(--surface-2); border-radius:12px; margin-bottom:14px;
+  font-size:13px;
+}
+.balance-row .label{ color: var(--muted); }
+.balance-row .value{ font-weight:700; }
+.balance-row.after .value{ color: var(--success); }
+.balance-row.insufficient .value{ color: var(--danger); }
+
+.bundle-suggest{
+  display:flex; align-items:center; gap:10px;
+  padding: 12px 14px; border-radius:12px; border:1px dashed var(--coral);
+  background: rgba(255,107,74,0.06); margin-bottom:16px; cursor:pointer;
+}
+.bundle-suggest .icon{ font-size:18px; }
+.bundle-suggest .t1{ font-size:12.5px; font-weight:700; }
+.bundle-suggest .t2{ font-size:11px; color: var(--muted); margin-top:2px; }
+
+.modal-price-line{
+  display:flex; justify-content:space-between; align-items:baseline;
+  margin-bottom:16px;
+}
+.modal-price-line .label{ font-size:13px; color: var(--muted); }
+.modal-price-line .value{ font-size:19px; font-weight:800; }
+
+.success-state{ text-align:center; padding: 10px 0 4px; }
+.success-icon{
+  width:56px; height:56px; border-radius:50%; margin:0 auto 14px;
+  background: var(--grad); display:flex; align-items:center; justify-content:center;
+  font-size:26px; color:#1a1108;
+}
+.success-title{ font-size:16px; font-weight:800; margin-bottom:6px; }
+.success-sub{ font-size:12.5px; color: var(--muted); }
+
+.toggle-row{ display:flex; gap:8px; margin: 16px 0 4px; }
+.toggle-row button{
+  flex:1; padding:8px; border-radius:8px; border:1px solid var(--hairline);
+  background:none; color: var(--muted); font-size:11.5px; font-weight:700; cursor:pointer;
+}
+.toggle-row button.active{ color: var(--ivory); border-color: var(--coral); }
+</style>
+</head>
+<body>
+
+<div class="demo-switch">
+  <button class="active" onclick="showScreen('charge', this)">충전 화면</button>
+  <button onclick="showScreen('purchase', this)">스토리 구매 모달</button>
+</div>
+
+<div class="screen active" id="screen-charge">
+  <div class="page-header">
+    <button class="back-btn">‹</button>
+    <div class="page-title">코인 충전</div>
+  </div>
+
+  <div class="balance-card">
+    <div>
+      <div class="balance-label">보유 코인</div>
+      <div class="balance-value">1,240<span class="unit">코인</span></div>
+    </div>
+    <div class="history-link">충전 내역</div>
+  </div>
+
+  <div class="section-label">충전 상품</div>
+  <div class="package-grid" id="packageGrid"></div>
+
+  <div class="section-label">결제 수단</div>
+  <div class="payment-methods">
+    <div class="pm-chip active">카드</div>
+    <div class="pm-chip">카카오페이</div>
+    <div class="pm-chip">네이버페이</div>
+  </div>
+
+  <button class="cta-btn" id="chargeBtn" disabled>상품을 선택해주세요</button>
+  <div class="fine-print">충전한 코인은 환불 정책에 따라 사용 후 환불이 제한될 수 있어요.</div>
+</div>
+
+<div class="screen" id="screen-purchase">
+  <div class="page-header">
+    <button class="back-btn">‹</button>
+    <div class="page-title">폭풍의 계절이 지나면</div>
+  </div>
+
+  <div class="detail-mock">
+    <div class="txt">
+      <div class="t1">폭풍의 계절이 지나면</div>
+      <div class="t2">로맨스 · 선형 · 전체 12화</div>
+    </div>
+  </div>
+
+  <div class="toggle-row">
+    <button class="active" onclick="setPurchaseState('enough', this)">잔액 충분</button>
+    <button onclick="setPurchaseState('short', this)">잔액 부족</button>
+    <button onclick="setPurchaseState('done', this)">구매 완료</button>
+  </div>
+
+  <div class="modal-backdrop">
+    <div class="modal-handle"></div>
+
+    <div id="purchase-body-enough">
+      <div class="modal-pack-row">
+        <div class="modal-cover"></div>
+        <div>
+          <div class="modal-pack-title">폭풍의 계절이 지나면</div>
+          <div class="modal-pack-meta">전체 구매 · 화별 결제 없음</div>
+        </div>
+      </div>
+
+      <div class="bundle-suggest">
+        <div class="icon">📦</div>
+        <div>
+          <div class="t1">이 팩이 포함된 번들이 더 저렴해요</div>
+          <div class="t2">로맨스 3종 세트 250코인 (개별 구매 대비 20% ↓)</div>
+        </div>
+      </div>
+
+      <div class="modal-price-line">
+        <div class="label">구매 가격</div>
+        <div class="value">120 코인</div>
+      </div>
+      <div class="balance-row after">
+        <div class="label">구매 후 잔액</div>
+        <div class="value">1,120 코인</div>
+      </div>
+
+      <button class="cta-btn">120코인으로 구매하기</button>
+    </div>
+
+    <div id="purchase-body-short" style="display:none">
+      <div class="modal-pack-row">
+        <div class="modal-cover"></div>
+        <div>
+          <div class="modal-pack-title">폭풍의 계절이 지나면</div>
+          <div class="modal-pack-meta">전체 구매 · 화별 결제 없음</div>
+        </div>
+      </div>
+
+      <div class="modal-price-line">
+        <div class="label">구매 가격</div>
+        <div class="value">120 코인</div>
+      </div>
+      <div class="balance-row insufficient">
+        <div class="label">보유 코인 (40코인 부족)</div>
+        <div class="value">80 코인</div>
+      </div>
+
+      <button class="cta-btn">코인 충전하러 가기</button>
+    </div>
+
+    <div id="purchase-body-done" style="display:none">
+      <div class="success-state">
+        <div class="success-icon">✓</div>
+        <div class="success-title">구매 완료</div>
+        <div class="success-sub">서재에서 바로 이어읽을 수 있어요</div>
+      </div>
+      <div style="height:16px"></div>
+      <button class="cta-btn">지금 읽으러 가기</button>
+    </div>
+  </div>
+</div>
+
+<script>
+function showScreen(id, btn){
+  document.querySelectorAll('.screen').forEach(s=>s.classList.remove('active'));
+  document.getElementById('screen-'+id).classList.add('active');
+  document.querySelectorAll('.demo-switch button').forEach(b=>b.classList.remove('active'));
+  btn.classList.add('active');
+}
+function setPurchaseState(state, btn){
+  ['enough','short','done'].forEach(s=>{
+    document.getElementById('purchase-body-'+s).style.display = (s===state) ? 'block' : 'none';
+  });
+  document.querySelectorAll('.toggle-row button').forEach(b=>b.classList.remove('active'));
+  btn.classList.add('active');
+}
+
+const packages = [
+  { name:'100 코인', bonus:null, original:null, sale:1100 },
+  { name:'300 코인', bonus:'+20 보너스', original:3300, sale:2900 },
+  { name:'550 코인', bonus:'+70 보너스', original:6000, sale:4900, discount:'18% 할인' },
+  { name:'1,200 코인', bonus:'+200 보너스', original:12000, sale:9900, discount:'17% 할인' },
+];
+const grid = document.getElementById('packageGrid');
+let selectedIdx = null;
+packages.forEach((p, i)=>{
+  const el = document.createElement('div');
+  el.className = 'package-card';
+  el.innerHTML = `
+    ${p.discount ? `<div class="discount-badge">${p.discount}</div>` : ''}
+    <div class="package-left">
+      <div class="radio-dot"></div>
+      <div class="coin-icon">₩</div>
+      <div>
+        <div class="package-name">${p.name}</div>
+        ${p.bonus ? `<div class="package-bonus">${p.bonus}</div>` : ''}
+      </div>
+    </div>
+    <div class="package-right">
+      ${p.original ? `<div class="price-original">₩${p.original.toLocaleString()}</div>` : ''}
+      <div class="price-sale">₩${p.sale.toLocaleString()}</div>
+    </div>
+  `;
+  el.onclick = () => {
+    selectedIdx = i;
+    document.querySelectorAll('.package-card').forEach(c=>c.classList.remove('selected'));
+    el.classList.add('selected');
+    const btn = document.getElementById('chargeBtn');
+    btn.disabled = false;
+    btn.textContent = `₩${p.sale.toLocaleString()} 결제하기`;
+  };
+  grid.appendChild(el);
+});
+</script>
+</body>
+</html>

@@ -36,6 +36,19 @@ class AdminStoryPack {
   final String description;
   final String? coverImageId;
 
+  /// 코인 단위 정가. title/genres/description/coverImageId와 완전히 같은
+  /// 메타데이터 승인 게이트를 탄다 — 작가가 여기서 자유롭게 고쳐도(draft),
+  /// 독자에게 실제로 적용되는 가격은 admin이 승인해서 liveMetadata에 복사한
+  /// 스냅샷뿐이다(effectivePrice 참고).
+  final int price;
+
+  /// 할인가 — null이면 할인 없음. price와 같은 메타데이터 승인 게이트.
+  final int? salePrice;
+
+  /// 할인 적용 기간 — 둘 다 null이면 salePrice가 있는 한 항상 할인 적용.
+  final DateTime? discountStartAt;
+  final DateTime? discountEndAt;
+
   /// 노드가 배경 이미지를 명시적으로 고르지 않았을 때 팩 전체의 최종
   /// 폴백으로 쓰이는 images/{imageId} 참조(lib/core/story/
   /// background_image_inheritance.dart). liveMetadata 승인 흐름과는
@@ -69,6 +82,10 @@ class AdminStoryPack {
     required this.genres,
     required this.description,
     required this.coverImageId,
+    this.price = 0,
+    this.salePrice,
+    this.discountStartAt,
+    this.discountEndAt,
     this.defaultBackgroundImage,
     required this.serializationStatus,
     this.serializationSubmittedAt,
@@ -93,6 +110,10 @@ class AdminStoryPack {
       genres: (json['genres'] as List<dynamic>?)?.cast<String>() ?? const [],
       description: json['description'] as String? ?? '',
       coverImageId: json['coverImageId'] as String?,
+      price: (json['price'] as num?)?.toInt() ?? 0,
+      salePrice: (json['salePrice'] as num?)?.toInt(),
+      discountStartAt: (json['discountStartAt'] as Timestamp?)?.toDate(),
+      discountEndAt: (json['discountEndAt'] as Timestamp?)?.toDate(),
       defaultBackgroundImage: json['defaultBackgroundImage'] as String?,
       serializationStatus: PackSerializationStatusJson.fromWire(
         json['serializationStatus'] as String?,
@@ -124,9 +145,32 @@ class AdminStoryPack {
     'genres': genres,
     'description': description,
     'coverImageId': coverImageId,
+    'price': price,
+    'salePrice': salePrice,
+    'discountStartAt': null,
+    'discountEndAt': null,
     'defaultBackgroundImage': defaultBackgroundImage,
     'serializationStatus': serializationStatus.wireValue,
   };
+
+  /// [at] 시점에 할인가가 적용 중인지 — lib/features/wallet/models/point_package.dart의
+  /// PointPackage.isDiscountActiveAt과 같은 모양(둘 다 "코인 + 선택적 할인
+  /// 기간" 가격 모델을 공유한다).
+  bool isDiscountActiveAt(DateTime at) {
+    if (salePrice == null) return false;
+    final start = discountStartAt;
+    if (start != null && at.isBefore(start)) return false;
+    final end = discountEndAt;
+    if (end != null && at.isAfter(end)) return false;
+    return true;
+  }
+
+  bool get hasActiveDiscount => isDiscountActiveAt(DateTime.now());
+
+  /// admin 화면에 보여줄 "지금 적용 중인 가격" — 실제로 독자에게 적용되는
+  /// 값은 이 draft가 아니라 liveMetadata 스냅샷 쪽이라는 점에 주의(승인
+  /// 전까지는 이 값이 아직 반영되지 않은 미리보기일 뿐이다).
+  int get effectivePrice => hasActiveDiscount ? salePrice! : price;
 
   /// 연재 시작 승인을 (다시) 요청할 수 있는 상태인지.
   bool get canRequestSerialization =>

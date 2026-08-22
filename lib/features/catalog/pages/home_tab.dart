@@ -1,24 +1,28 @@
 import 'dart:async';
 
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
-import 'package:flutter_svg/flutter_svg.dart';
 import 'package:google_mobile_ads/google_mobile_ads.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../../core/ads/ad_ids.dart';
-import '../../../core/constants/asset_paths.dart';
+import '../../../core/auth/auth_scope.dart';
 import '../../../core/constants/external_links.dart';
 import '../../../core/platform/open_external_link.dart';
 import '../../../core/state/game_state_scope.dart';
+import '../../wallet/data/wallet_repository.dart';
 import '../../wallet/pages/charge_page.dart';
 import '../data/genre_repository.dart';
 import '../data/home_banner_repository.dart';
+import '../data/pack_bundle_repository.dart';
 import '../data/ranking_repository.dart';
 import '../data/story_pack_repository.dart';
 import '../models/genre.dart';
 import '../models/home_banner.dart';
+import '../models/pack_bundle.dart';
 import '../models/ranking_snapshot.dart';
 import '../models/story_pack.dart';
+import '../widgets/bundle_card.dart';
 import '../widgets/hero_banner_section.dart';
 import '../widgets/library_header.dart';
 import '../widgets/ranking_section.dart';
@@ -27,6 +31,8 @@ import '../widgets/story_cover_card.dart';
 import 'story_pack_detail_page.dart';
 
 const Color _ivory = Color(0xFFE2D4BF);
+const Color _coral = Color(0xFFFF6B4A);
+const Color _amber = Color(0xFFFFB35C);
 
 /// 최근 검색어를 저장하는 SharedPreferences 키 — 계정이 아니라 기기에
 /// 묶인 단순한 로컬 목록이다(요구사항 그대로: "simple local list").
@@ -43,7 +49,11 @@ class HomeTab extends StatefulWidget {
   /// 대부분)은 이 링크 자체가 존재하지 않는 것처럼 화면에서 완전히 빠진다.
   final bool showAuthorModeLink;
 
-  const HomeTab({super.key, this.showAuthorModeLink = false});
+  /// 스토리팩 스트림이 첫 스냅샷(데이터든 에러든)을 내놓는 순간 한 번만
+  /// 호출된다 — MainPage의 부트스트랩 로딩 오버레이를 걷어내는 신호로 쓴다.
+  final VoidCallback? onContentReady;
+
+  const HomeTab({super.key, this.showAuthorModeLink = false, this.onContentReady});
 
   @override
   State<HomeTab> createState() => _HomeTabState();
@@ -61,6 +71,9 @@ class _HomeTabState extends State<HomeTab> {
   bool _searchOverlayOpen = false;
   List<String> _recentSearches = [];
 
+  /// widget.onContentReady를 딱 한 번만 부르기 위한 가드.
+  bool _reportedContentReady = false;
+
   final StoryPackRepository _packRepository = StoryPackRepository();
   late final Stream<List<StoryPack>> _packsStream = _packRepository.watchVisiblePacks();
 
@@ -69,6 +82,11 @@ class _HomeTabState extends State<HomeTab> {
 
   final HomeBannerRepository _bannerRepository = HomeBannerRepository();
   late final Stream<List<HomeBanner>> _bannersStream = _bannerRepository.watchActiveBanners();
+
+  final PackBundleRepository _bundleRepository = PackBundleRepository();
+  late final Stream<List<PackBundle>> _bundlesStream = _bundleRepository.watchActiveBundles();
+
+  final WalletRepository _walletRepository = WalletRepository();
 
   final RankingRepository _rankingRepository = RankingRepository();
   late final Future<RankingSnapshotPair> _rankingFuture = _rankingRepository.fetchLatest();
@@ -81,10 +99,6 @@ class _HomeTabState extends State<HomeTab> {
     super.initState();
     _loadBannerAd();
     _loadRecentSearches();
-    // 헤더 삽화(SvgPicture.asset)가 첫 프레임에 아직 로딩 중이라 빈 프레임이
-    // 잠깐 보이는 걸 막기 위해 미리 디코딩해 svg.cache에 채워 둔다 —
-    // LibraryHeader가 실제로 build될 때는 이미 캐시에 있으니 동기적으로 그려진다.
-    unawaited(SvgAssetLoader(UiPaths.bookshelfBackground).loadBytes(null));
   }
 
   Future<void> _loadRecentSearches() async {
@@ -123,6 +137,38 @@ class _HomeTabState extends State<HomeTab> {
     _searchFocusNode.unfocus();
   }
 
+  /// 로고 탭 / 검색 결과 뒤로가기 / 기기 뒤로가기, 셋 다 여기로 모인다 —
+  /// 검색 오버레이를 닫고 _query를 비워 _buildBrowseSections로 돌아간다.
+  void _goHome() {
+    if (!_searchOverlayOpen && _query.isEmpty) return;
+    setState(() {
+      _searchOverlayOpen = false;
+      _query = '';
+    });
+    _searchController.clear();
+    _searchFocusNode.unfocus();
+  }
+
+  /// MainPage의 부트스트랩 로딩 오버레이는 이 콜백이 불릴 때까지 계속
+  /// 떠 있는다 — _packsStream이 첫 스냅샷(데이터든 에러든)을 내놓는 순간
+  /// 딱 한 번만 부른다. addPostFrameCallback으로 미루는 이유는 이 메서드가
+  /// StreamBuilder의 builder(=이 위젯의 build 도중) 안에서 호출되는데,
+  /// widget.onContentReady가 상위(MainPage)의 setState를 곧바로 실행하면
+  /// "build 도중 setState" 오류가 나기 때문이다.
+  void _maybeReportContentReady(AsyncSnapshot<List<StoryPack>> snapshot) {
+    if (_reportedContentReady) return;
+    if (snapshot.connectionState == ConnectionState.waiting) return;
+    _reportedContentReady = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) => widget.onContentReady?.call());
+  }
+
+  void _openChargePage() {
+    Navigator.push(
+      context,
+      MaterialPageRoute(builder: (_) => const ChargePage()),
+    );
+  }
+
   /// 검색어를 확정한다 — 텍스트 필드에서 엔터를 치거나, 최근 검색어 목록의
   /// 항목을 탭했을 때 둘 다 이 경로를 탄다("탭하면 그 검색어로 다시
   /// 검색한다"). 오버레이를 닫고 브라우즈 화면을 검색 결과로 바꾼 뒤, 빈
@@ -159,6 +205,14 @@ class _HomeTabState extends State<HomeTab> {
   }
 
   void _loadBannerAd() {
+    // google_mobile_ads는 Flutter Web을 지원하지 않는다 — 웹에서 BannerAd.load()를
+    // 부르면 이 메서드 채널에 대한 네이티브 구현 자체가 없어서(광고 요청 실패가
+    // 아니라 플랫폼 미지원) MissingPluginException이 던져진다. 배너는 광고
+    // 기능일 뿐 스토리팩 로딩과는 완전히 무관하니, 이 예외가 화면 어디에도
+    // 영향을 주지 않게 하는 가장 확실한 방법은 애초에 웹에서 요청 자체를 안
+    // 보내는 것이다 — 모바일에서만 배너를 요청한다.
+    if (kIsWeb) return;
+
     final bannerAd = BannerAd(
       adUnitId: AdIds.banner,
       size: AdSize.banner,
@@ -182,7 +236,16 @@ class _HomeTabState extends State<HomeTab> {
     );
 
     _bannerAd = bannerAd;
-    bannerAd.load();
+    // onAdFailedToLoad는 네이티브 SDK가 실제로 응답한 뒤(네트워크 실패,
+    // 노출할 광고 없음 등)에만 불린다 — load() 자체가 던지는 예외(예: 플러그인
+    // 미구현, 채널 오류)는 그 콜백에 닿지 않고 Future 실패로만 나타나므로,
+    // await 없이 fire-and-forget으로 던져 두더라도 반드시 catchError로 받아
+    // 삼켜야 uncaught exception으로 새 나가 다른 화면(스토리팩 목록 등)에
+    // 영향을 주는 일이 없다.
+    bannerAd.load().catchError((Object error, StackTrace stackTrace) {
+      debugPrint('배너 광고 로드 실패(예외): $error');
+      _bannerAd = null;
+    });
   }
 
   @override
@@ -199,100 +262,197 @@ class _HomeTabState extends State<HomeTab> {
     // body 콘텐츠만 반환한다 — 탭마다 Scaffold를 중첩하지 않는다.
     //
     // 콘텐츠 최대 폭 캡은 없다 — 브라우저 실제 폭 그대로 꽉 채운다(목업
-    // doc/home_*_mockup.html 기준, full-bleed). 헤더(LibraryHeader)만
-    // 자체 여백/둥근 모서리를 그대로 유지한다 — 그건 캡과 무관하게 헤더
-    // 자체의 스타일 선택이다.
-    // ⚠️ LibraryHeader(책장 일러스트 헤더)를 완전히 제거했다 — 실사용
-    // 기기 한 대에서 그 컴포넌트가 있던 자리 전체가 어떤 내용을 넣든
-    // (진짜 일러스트든, 단색 테스트 박스든) 검게 나오는 문제가 있었고,
-    // 구조/에셋 양쪽을 다 소거법으로 확인했지만 원인을 못 찾았다. 헤더
-    // 자체를 없애고 검색 아이콘만 아주 작게 남긴다 — 이어읽기 카드도
-    // 같이 없앤다(다시 넣으려면 이 주석 위치에 복원).
-    return Scaffold(
-      backgroundColor: Colors.black,
-      body: Stack(
+    // doc/home_*_mockup.html 기준, full-bleed).
+    // ⚠️ 책장 일러스트 배경(assets/images/bookshelf_bg.png)은 완전히
+    // 제거했다 — 실사용 기기에서 그 이미지 자리 전체가 검게 나오는 문제가
+    // 있었고, 원인을 못 찾아 아예 헤더를 로고 + 충전 버튼 + 검색 아이콘만
+    // 있는 플랫 배경으로 단순화했다(다시 넣으려면 이 주석 위치에 복원).
+    // 검색 오버레이가 열려 있거나 검색 결과가 떠 있는 동안은 기기/브라우저
+    // 뒤로가기를 가로채 _goHome()으로 보낸다 — 그렇지 않으면 뒤로가기가 이
+    // 탭을 벗어나거나(라우트가 하나뿐이라 사실상 아무 반응도 안 함) 검색
+    // 결과가 화면에 남은 채로 사용자가 나가는 길을 못 찾게 된다.
+    final searchActive = _searchOverlayOpen || _query.isNotEmpty;
+
+    return PopScope(
+      canPop: !searchActive,
+      onPopInvokedWithResult: (didPop, result) {
+        if (didPop) return;
+        _goHome();
+      },
+      child: Scaffold(
+        backgroundColor: Colors.black,
+        body: Stack(
+          children: [
+            SafeArea(
+              top: false,
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(22, 16, 22, 0),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Padding(
+                      padding: const EdgeInsets.only(top: 12, bottom: 12),
+                      child: Row(
+                        children: [
+                          _buildLogo(),
+                          const Spacer(),
+                          _buildChargeButton(),
+                          const SizedBox(width: 8),
+                          _buildIconCircleButton(
+                            icon: Icons.search_rounded,
+                            onTap: _openSearchOverlay,
+                          ),
+                        ],
+                      ),
+                    ),
+                    _buildBannerAd(),
+                    Expanded(
+                      child: StreamBuilder<List<StoryPack>>(
+                        stream: _packsStream,
+                        builder: (context, snapshot) {
+                          _maybeReportContentReady(snapshot);
+                          if (snapshot.hasError) {
+                            // 화면에는 "불러오지 못했어요"만 보이고 진짜 원인(권한 거부,
+                            // 색인 누락, 필드 타입 불일치 등)은 사라져 버리지 않게, 실제
+                            // Firestore 예외를 콘솔에 그대로 남긴다.
+                            debugPrint(
+                              '스토리팩 스트림 에러: ${snapshot.error}\n${snapshot.stackTrace}',
+                            );
+                            return Center(
+                              child: Text(
+                                '스토리팩 목록을 불러오지 못했어요',
+                                style: TextStyle(fontSize: 14, color: _ivory.withOpacity(0.55)),
+                              ),
+                            );
+                          }
+
+                          final packs = snapshot.data ?? const <StoryPack>[];
+                          final trimmedQuery = _query.trim();
+                          final query = trimmedQuery.toLowerCase();
+                          final filteredPacks = query.isEmpty
+                              ? packs
+                              : packs
+                              .where((pack) =>
+                          pack.title.toLowerCase().contains(query) ||
+                              pack.authorName.toLowerCase().contains(query))
+                              .toList();
+
+                          if (query.isEmpty) {
+                            return _buildBrowseSections(packs);
+                          }
+                          return _buildSearchResults(trimmedQuery, filteredPacks);
+                        },
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            // 헤더 바로 아래(이 Stack이 곧 헤더 아래 영역)에서 아래로
+            // 슬라이드해 펼쳐지는 검색 오버레이 — 닫혀 있을 때도
+            // 트리에는 남아 있지만 화면 위로 밀려나 있고
+            // IgnorePointer로 탭도 안 먹는다.
+            Positioned.fill(child: _buildSearchOverlay()),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// TELO 워드마크 — 코랄→앰버 그라데이션 텍스트 + 갈라지는 길(forking
+  /// path) 로고 마크. 별도 에셋 없이 CustomPainter로 그려서 SVG 파일을
+  /// 프로젝트에 추가하지 않아도 바로 동작한다. 탭하면 _goHome()으로 검색을
+  /// 접고 브라우즈 화면으로 돌아간다 — 하단 탭바의 "홈"과 같은 화면(이 탭
+  /// 자체)이라 별도 탭 전환은 필요 없다.
+  Widget _buildLogo() {
+    return InkWell(
+      borderRadius: BorderRadius.circular(8),
+      onTap: _goHome,
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
         children: [
-          SafeArea(
-            top: false,
-            child: Padding(
-              padding: const EdgeInsets.fromLTRB(22, 16, 22, 0),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Padding(
-                    padding: const EdgeInsets.only(top: 12, bottom: 12),
-                    child: Row(
-                      children: [
-                        const Text(
-                          'Telo',
-                          style: TextStyle(
-                            fontSize: 22,
-                            fontWeight: FontWeight.w800,
-                            letterSpacing: 1.2,
-                            color: _ivory,
-                          ),
-                        ),
-                        const Spacer(),
-                        InkWell(
-                          borderRadius: BorderRadius.circular(20),
-                          onTap: _openSearchOverlay,
-                          child: Container(
-                            width: 36,
-                            height: 36,
-                            alignment: Alignment.center,
-                            decoration: BoxDecoration(
-                              color: Colors.white.withOpacity(0.06),
-                              shape: BoxShape.circle,
-                            ),
-                            child: Icon(Icons.search_rounded, color: _ivory.withOpacity(0.85), size: 20),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                  _buildBannerAd(),
-                  Expanded(
-                    child: StreamBuilder<List<StoryPack>>(
-                      stream: _packsStream,
-                      builder: (context, snapshot) {
-                        if (snapshot.hasError) {
-                          return Center(
-                            child: Text(
-                              '스토리팩 목록을 불러오지 못했어요',
-                              style: TextStyle(fontSize: 14, color: _ivory.withOpacity(0.55)),
-                            ),
-                          );
-                        }
-
-                        final packs = snapshot.data ?? const <StoryPack>[];
-                        final query = _query.trim().toLowerCase();
-                        final filteredPacks = query.isEmpty
-                            ? packs
-                            : packs
-                            .where((pack) =>
-                        pack.title.toLowerCase().contains(query) ||
-                            pack.authorName.toLowerCase().contains(query))
-                            .toList();
-
-                        if (query.isEmpty) {
-                          return _buildBrowseSections(packs);
-                        }
-                        return filteredPacks.isEmpty
-                            ? _buildEmptyResult()
-                            : _buildSearchResults(filteredPacks);
-                      },
-                    ),
-                  ),
-                ],
+          SizedBox(
+            width: 24,
+            height: 24,
+            child: CustomPaint(painter: _ForkingPathLogoPainter()),
+          ),
+          const SizedBox(width: 8),
+          ShaderMask(
+            shaderCallback: (bounds) => const LinearGradient(
+              colors: [_coral, _amber],
+            ).createShader(bounds),
+            child: const Text(
+              'TELO',
+              style: TextStyle(
+                fontSize: 22,
+                fontWeight: FontWeight.w800,
+                letterSpacing: 1.2,
+                color: Colors.white, // ShaderMask가 이 색 위에 그라데이션을 입힌다
               ),
             ),
           ),
-          // 헤더 바로 아래(이 Stack이 곧 헤더 아래 영역)에서 아래로
-          // 슬라이드해 펼쳐지는 검색 오버레이 — 닫혀 있을 때도
-          // 트리에는 남아 있지만 화면 위로 밀려나 있고
-          // IgnorePointer로 탭도 안 먹는다.
-          Positioned.fill(child: _buildSearchOverlay()),
         ],
+      ),
+    );
+  }
+
+  Widget _buildChargeButton() {
+    final uid = AuthScope.of(context).userId;
+
+    return InkWell(
+      borderRadius: BorderRadius.circular(20),
+      onTap: _openChargePage,
+      child: Container(
+        height: 36,
+        padding: const EdgeInsets.symmetric(horizontal: 12),
+        decoration: BoxDecoration(
+          color: Colors.white.withOpacity(0.06),
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(color: Colors.white.withOpacity(0.10)),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.monetization_on_outlined, color: _amber, size: 16),
+            const SizedBox(width: 5),
+            // 게스트(uid 없음)는 지갑 자체가 없으니 그냥 "충전" 라벨로 둔다 —
+            // 로그인 사용자만 users/{uid}/wallet/current 잔액을 실시간으로
+            // 보여준다(ChargePage와 같은 WalletRepository 스트림).
+            if (uid == null)
+              Text(
+                '충전',
+                style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: _ivory.withOpacity(0.9)),
+              )
+            else
+              StreamBuilder<int>(
+                stream: _walletRepository.watchBalance(uid),
+                builder: (context, snapshot) {
+                  final balance = snapshot.data;
+                  return Text(
+                    balance == null ? '충전' : '$balance',
+                    style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: _ivory.withOpacity(0.9)),
+                  );
+                },
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildIconCircleButton({required IconData icon, required VoidCallback onTap}) {
+    return InkWell(
+      borderRadius: BorderRadius.circular(20),
+      onTap: onTap,
+      child: Container(
+        width: 36,
+        height: 36,
+        alignment: Alignment.center,
+        decoration: BoxDecoration(
+          color: Colors.white.withOpacity(0.06),
+          shape: BoxShape.circle,
+        ),
+        child: Icon(icon, color: _ivory.withOpacity(0.85), size: 20),
       ),
     );
   }
@@ -465,40 +625,74 @@ class _HomeTabState extends State<HomeTab> {
             return FutureBuilder<RankingSnapshotPair>(
               future: _rankingFuture,
               builder: (context, rankingSnapshot) {
+                // ⚠️ 진단용 — 이 FutureBuilder는 원래 rankingSnapshot.hasError를
+                // 전혀 확인하지 않고 곧바로 .data ?? RankingSnapshotPair.empty로
+                // 넘어갔다(배너/번들 섹션과 달리 에러를 콘솔에 남기지도 않았다).
+                // "랭킹 섹션이 안 보인다"는 신고가 실제로는 (a) 위 위젯이 아예
+                // 안 그려지는 배선 문제인지, (b) 조용히 삼켜진 에러 때문인지,
+                // (c) rankingSnapshots 문서가 오늘 날짜로 아직 없어서 정상적인
+                // 빈 상태("아직 집계된 데이터가 없어요")로 그려진 건지 구분하기
+                // 위한 로그다.
+                debugPrint(
+                  '[랭킹] FutureBuilder — connectionState=${rankingSnapshot.connectionState}, '
+                  'hasError=${rankingSnapshot.hasError}, hasData=${rankingSnapshot.hasData}',
+                );
+                if (rankingSnapshot.hasError) {
+                  debugPrint('[랭킹] _rankingFuture 에러: ${rankingSnapshot.error}\n${rankingSnapshot.stackTrace}');
+                }
                 final ranking = rankingSnapshot.data ?? RankingSnapshotPair.empty;
+                debugPrint(
+                  '[랭킹] 렌더링에 쓸 snapshot — today ${ranking.todayPackIds.length}개, '
+                  'yesterday ${ranking.yesterdayPackIds.length}개'
+                  '${rankingSnapshot.hasData ? '' : ' (실데이터 아님 — RankingSnapshotPair.empty 폴백)'}',
+                );
 
                 return LayoutBuilder(
                   builder: (context, constraints) {
                     final isWide = constraints.maxWidth >= storyGridWideBreakpoint;
 
-                    // width: double.infinity로 명시해서, Column의
-                    // crossAxisAlignment.start 아래에서도 장르 행/랭킹과
-                    // 같은 폭으로 정확히 늘어나게 한다.
-                    final bannerWidget = SizedBox(
-                      width: double.infinity,
-                      child: bannerSnapshot.hasError
-                          ? const _HeroBannerErrorNotice()
-                          : HeroBannerSection(
-                        banners: banners,
-                        allPacks: packs,
-                        aspectRatio: isWide ? 21 / 6 : 16 / 6,
-                        showArrowsOnHoverOnly: isWide,
+                    // 배너는 목업대로 화면 폭의 60%(좁은 화면에서는 88%)로
+                    // 줄이고 가운데 정렬한다 — width: double.infinity로 꽉
+                    // 채우던 걸 FractionallySizedBox로 감쌌다.
+                    final bannerWidget = Center(
+                      child: FractionallySizedBox(
+                        widthFactor: isWide ? 0.6 : 0.88,
+                        child: bannerSnapshot.hasError
+                            ? const _HeroBannerErrorNotice()
+                            : HeroBannerSection(
+                          banners: banners,
+                          allPacks: packs,
+                          aspectRatio: isWide ? 21 / 6 : 16 / 6,
+                          showArrowsOnHoverOnly: isWide,
+                        ),
                       ),
                     );
-                    final rankingWidget = RankingSection(
-                      snapshot: ranking,
-                      allPacks: packs,
-                      genres: genres,
+                    final rankingWidget = Container(
+                      padding: const EdgeInsets.all(18),
+                      decoration: BoxDecoration(
+                        color: Colors.white.withOpacity(0.03),
+                        borderRadius: BorderRadius.circular(18),
+                        border: Border.all(color: Colors.white.withOpacity(0.08)),
+                      ),
+                      child: RankingSection(
+                        snapshot: ranking,
+                        allPacks: packs,
+                        genres: genres,
+                      ),
                     );
                     final genreRows = _buildGenreRows(packs, genres, isWide: isWide);
 
                     return ListView(
                       padding: const EdgeInsets.only(bottom: 20),
                       children: [
+                        // ⚠️ 진단용 — 배너 다시 켜서, 헤더(base64 빨간
+                        // 사각형)랑 배너(Image.network)가 동시에 있을 때도
+                        // 헤더가 계속 보이는지 재확인.
                         bannerWidget,
                         const SizedBox(height: 24),
                         rankingWidget,
                         const SizedBox(height: 24),
+                        _buildBundleSection(packs),
                         ...genreRows,
                       ],
                     );
@@ -507,6 +701,44 @@ class _HomeTabState extends State<HomeTab> {
               },
             );
           },
+        );
+      },
+    );
+  }
+
+  /// "번들 상품" — active 번들이 하나라도 있을 때만 나타나는 가로 스크롤
+  /// 섹션. 랭킹 섹션 바로 아래, 장르 행들 위에 얹는다. 스트림 에러는
+  /// 히어로 배너와 같은 이유로 조용히 삼키지 않고 콘솔에 남긴다.
+  Widget _buildBundleSection(List<StoryPack> packs) {
+    return StreamBuilder<List<PackBundle>>(
+      stream: _bundlesStream,
+      builder: (context, snapshot) {
+        if (snapshot.hasError) {
+          debugPrint('번들 목록 불러오기 실패: ${snapshot.error}');
+          return const SizedBox.shrink();
+        }
+        final bundles = snapshot.data ?? const <PackBundle>[];
+        if (bundles.isEmpty) return const SizedBox.shrink();
+
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            _buildSectionTitle('번들 상품'),
+            const SizedBox(height: 10),
+            SizedBox(
+              height: 210,
+              child: ListView.separated(
+                scrollDirection: Axis.horizontal,
+                itemCount: bundles.length,
+                separatorBuilder: (_, _) => const SizedBox(width: 12),
+                itemBuilder: (context, index) =>
+                    BundleCard(bundle: bundles[index], allPacks: packs),
+              ),
+            ),
+            const SizedBox(height: 10),
+            const ShelfLedgeDivider(),
+            const SizedBox(height: 22),
+          ],
         );
       },
     );
@@ -562,15 +794,23 @@ class _HomeTabState extends State<HomeTab> {
   }
 
   Widget _buildHorizontalPackRow(List<StoryPack> packs) {
+    // 카드 폭(118)에서 공용 비율(storyCoverAspectRatio)로 이미지 높이를
+    // 역산한다 — 예전엔 여기 높이만 210으로 따로 하드코딩돼 있어서 그리드/
+    // 검색 결과랑 비율이 달라 보였다. 텍스트(제목 한 줄 + 가격 줄) 높이는
+    // StoryCoverCard 내부 고정값 기준으로 대략 44 정도 더해준다.
+    const cardWidth = 118.0;
+    const textAreaHeight = 44.0;
+    final cardHeight = cardWidth / storyCoverAspectRatio + textAreaHeight;
+
     return SizedBox(
-      height: 250,
+      height: cardHeight,
       child: ListView.separated(
         scrollDirection: Axis.horizontal,
         itemCount: packs.length,
-        separatorBuilder: (_, _) => const SizedBox(width: 14),
+        separatorBuilder: (_, _) => const SizedBox(width: 12),
         itemBuilder: (context, index) => SizedBox(
-          width: 148,
-          child: StoryCoverCard(pack: packs[index], showGenreTag: false),
+          width: cardWidth,
+          child: StoryCoverCard(pack: packs[index]),
         ),
       ),
     );
@@ -580,30 +820,72 @@ class _HomeTabState extends State<HomeTab> {
   /// 화면에 더 많이 보여준다. 가로 스크롤 행과 같은 StoryCoverCard를 그대로
   /// 쓰고, 그리드 배치도 내 서재(my_library_tab.dart)와 storyCoverGridDelegate
   /// 하나를 공유한다 — 두 화면이 각자 숫자를 들고 있다가 어긋났던 문제의
-  /// 재발을 막는다. showGenreTag만 끄고 showPriceRow는 기본값(true) 그대로
-  /// 둔다 — 내 서재도 이제 같은 기본값을 쓰므로 두 화면의 카드가 텍스트
-  /// 줄 수까지 완전히 같다.
+  /// 재발을 막는다. 검색 결과와 똑같이 장르 태그 뱃지도 보여준다(showGenreTag
+  /// 기본값 true) — 예전엔 여기만 꺼놨는데, 그러면 검색 결과 카드보다
+  /// 밋밋해 보여서 통일했다.
   Widget _buildGenreGrid(List<StoryPack> packs) {
     return GridView.builder(
       shrinkWrap: true,
       physics: const NeverScrollableScrollPhysics(),
       itemCount: packs.length,
-      gridDelegate: storyCoverGridDelegate(crossAxisCount: 6),
-      itemBuilder: (context, index) => StoryCoverCard(pack: packs[index], showGenreTag: false),
+      gridDelegate: storyCoverGridDelegate(),
+      itemBuilder: (context, index) => StoryCoverCard(pack: packs[index]),
     );
   }
 
-  Widget _buildSearchResults(List<StoryPack> packs) {
+  /// 검색 결과 그리드 — 홈 장르 그리드·내 서재와 완전히 같은 카드 크기를
+  /// 쓰도록 storyCoverGridDelegate()를 그대로 재사용한다. 예전엔 여기만
+  /// childAspectRatio가 0.62로 달라서, 카드 폭(maxCrossAxisExtent)을
+  /// 맞춰도 세로 비율이 달라 보이는 문제가 있었다.
+  Widget _buildPackGrid(List<StoryPack> packs) {
     return GridView.builder(
       padding: const EdgeInsets.only(bottom: 20),
       itemCount: packs.length,
-      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-        crossAxisCount: 2,
-        mainAxisSpacing: 18,
-        crossAxisSpacing: 16,
-        childAspectRatio: 0.62,
-      ),
+      gridDelegate: storyCoverGridDelegate(),
       itemBuilder: (context, index) => StoryCoverCard(pack: packs[index]),
+    );
+  }
+
+  /// 검색 결과 화면 — 뒤로 화살표 + "'검색어' 검색 결과" 헤더를 그리드/빈
+  /// 결과 위에 얹는다. 로고 탭·기기 뒤로가기와 달리 이건 화면에 항상 보이는
+  /// 명시적인 버튼이라, 검색 오버레이를 아예 안 거치고 곧장 여기로 들어온
+  /// 사용자도 브라우즈 화면으로 돌아가는 길을 놓치지 않는다.
+  Widget _buildSearchResults(String query, List<StoryPack> filteredPacks) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            InkWell(
+              borderRadius: BorderRadius.circular(20),
+              onTap: _goHome,
+              child: Container(
+                width: 36,
+                height: 36,
+                alignment: Alignment.center,
+                decoration: BoxDecoration(
+                  color: Colors.white.withOpacity(0.06),
+                  shape: BoxShape.circle,
+                ),
+                child: Icon(Icons.arrow_back_rounded, color: _ivory.withOpacity(0.85), size: 20),
+              ),
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Text(
+                "'$query' 검색 결과",
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700, color: _ivory),
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 12),
+        Expanded(
+          child: filteredPacks.isEmpty ? _buildEmptyResult() : _buildPackGrid(filteredPacks),
+        ),
+      ],
     );
   }
 
@@ -615,6 +897,49 @@ class _HomeTabState extends State<HomeTab> {
       ),
     );
   }
+}
+
+/// TELO 로고 마크 — 갈라지는 길(forking path) 아이콘을 코랄→앰버 그라데이션
+/// 스트로크로 그린다. 브랜치형 인터랙티브 픽션이라는 제품 정체성을 그대로
+/// 반영한 형태라, 별도 SVG 에셋 없이 CustomPainter로 구현했다.
+class _ForkingPathLogoPainter extends CustomPainter {
+  @override
+  void paint(Canvas canvas, Size size) {
+    final rect = Offset.zero & size;
+    final paint = Paint()
+      ..shader = const LinearGradient(
+        begin: Alignment.topLeft,
+        end: Alignment.bottomRight,
+        colors: [_coral, _amber],
+      ).createShader(rect)
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = size.width * 0.11
+      ..strokeCap = StrokeCap.round
+      ..strokeJoin = StrokeJoin.round;
+
+    final w = size.width;
+    final h = size.height;
+    final path = Path()
+      ..moveTo(w * 0.19, h * 0.19)
+      ..lineTo(w * 0.19, h * 0.47)
+      ..cubicTo(w * 0.19, h * 0.62, w * 0.34, h * 0.62, w * 0.34, h * 0.62)
+      ..cubicTo(w * 0.5, h * 0.62, w * 0.5, h * 0.47, w * 0.66, h * 0.47)
+      ..cubicTo(w * 0.81, h * 0.47, w * 0.81, h * 0.62, w * 0.81, h * 0.62)
+      ..moveTo(w * 0.34, h * 0.62)
+      ..lineTo(w * 0.34, h * 0.84)
+      ..moveTo(w * 0.66, h * 0.47)
+      ..lineTo(w * 0.66, h * 0.28);
+    canvas.drawPath(path, paint);
+
+    final dotPaint = Paint()
+      ..shader = const LinearGradient(colors: [_coral, _amber]).createShader(rect);
+    canvas.drawCircle(Offset(w * 0.19, h * 0.14), size.width * 0.08, dotPaint);
+    canvas.drawCircle(Offset(w * 0.66, h * 0.22), size.width * 0.08, dotPaint);
+    canvas.drawCircle(Offset(w * 0.34, h * 0.9), size.width * 0.08, dotPaint);
+  }
+
+  @override
+  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
 }
 
 class _RecentSearchRow extends StatelessWidget {

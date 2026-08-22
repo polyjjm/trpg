@@ -77,7 +77,11 @@ class _LinearReaderState extends State<LinearReader> {
         _currentNodeId = resumeNodeId;
         _loading = false;
       });
-    } catch (_) {
+    } catch (e, stackTrace) {
+      // catch (_)로 예외 자체를 버리면 화면엔 "불러오지 못했어요"만 남고 콘솔에도
+      // 아무것도 안 찍혀서(권한 거부/색인 누락/필드 타입 불일치 등) 원인을 전혀
+      // 알 수 없었다 — 실제 예외를 콘솔에 남긴다.
+      debugPrint('LinearReader._load() 실패: $e\n$stackTrace');
       if (!mounted) return;
       setState(() {
         _errorMessage = '스토리를 불러오지 못했어요.';

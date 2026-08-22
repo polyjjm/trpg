@@ -21,7 +21,21 @@ class ReaderPrefsRepository {
     });
   }
 
+  /// ⚠️ merge:true로 쓴다 — [ReaderPrefs.toFirestore]는 일부러
+  /// lastNoticeReadAt을 안 담는다(모델 주석 참고). merge 없이 그냥
+  /// set()하면 이 문서를 통째로 덮어써서, 폰트/애니메이션 같은 설정을
+  /// 바꿀 때마다 markNoticesRead()가 써 둔 lastNoticeReadAt이 조용히
+  /// 지워지는 실제 버그가 생긴다.
   Future<void> save(String uid, ReaderPrefs prefs) async {
-    await _docFor(uid).set(prefs.toFirestore());
+    await _docFor(uid).set(prefs.toFirestore(), SetOptions(merge: true));
+  }
+
+  /// 공지사항 탭을 열 때 CatalogShellPage가 부른다 — lastNoticeReadAt만
+  /// 서버 타임스탬프로 갱신한다(다른 필드는 안 건드린다).
+  Future<void> markNoticesRead(String uid) async {
+    await _docFor(uid).set(
+      {'lastNoticeReadAt': FieldValue.serverTimestamp()},
+      SetOptions(merge: true),
+    );
   }
 }

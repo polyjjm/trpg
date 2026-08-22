@@ -153,7 +153,7 @@ class _MyLibraryTabState extends State<MyLibraryTab> {
                         return GridView.builder(
                           padding: const EdgeInsets.only(bottom: 20),
                           itemCount: visible.length,
-                          gridDelegate: storyCoverGridDelegate(crossAxisCount: crossAxisCount),
+                          gridDelegate: storyCoverGridDelegate(),
                           // showPriceRow는 일부러 안 끈다(기본값 true) —
                           // 홈 탭 장르 그리드가 showGenreTag만 끄고
                           // showPriceRow는 그대로 두는 것과 똑같이

@@ -87,30 +87,17 @@ class GameState extends ChangeNotifier {
   /// true가 되면 RevivalPage는 광고 대신 유료 재화 부활만 제시한다.
   bool hasUsedAdRevival = false;
 
-  /// 유료 재화(캐시) 잔액. 실제 IAP 연동 전까지는 [MonetizationService.purchaseCashPackage]
-  /// 성공 시 [addCash]로, 이야기 팩 구매 시 [spendCash]로만 변경된다.
-  int cashBalance = 0;
-
   final Set<String> _ownedPackIds = {};
   Set<String> get ownedPackIds => Set.unmodifiable(_ownedPackIds);
 
-  /// 캐시를 더한다. 캐시 패키지 구매 성공 시 호출한다.
-  void addCash(int amount) {
-    if (amount <= 0) return;
-    cashBalance += amount;
-    notifyListeners();
-  }
-
-  /// 캐시를 사용한다. 잔액이 부족하면 아무 것도 바꾸지 않고 false를 반환한다.
-  bool spendCash(int amount) {
-    if (amount <= 0 || cashBalance < amount) return false;
-    cashBalance -= amount;
-    notifyListeners();
-    return true;
-  }
-
   bool ownsPack(String packId) => _ownedPackIds.contains(packId);
 
+  /// 서버(purchasePack Cloud Function)가 실제로 코인을 차감하고
+  /// users/{uid}/save/current.ownedPackIds에 packId를 반영한 "뒤에" 호출한다
+  /// (lib/reader/shared/paywall.dart 참고) — 여기서 로컬 상태를 먼저 바꾸지
+  /// 않는다. 이후 아무 GameState 변경으로든 CloudSyncController가 전체
+  /// 문서를 다시 덮어쓸 때, 이 로컬 Set이 서버가 방금 승인한 packId를 이미
+  /// 포함하고 있어야 그 값을 실수로 되돌리지 않는다.
   void markPackOwned(String packId) {
     if (_ownedPackIds.add(packId)) {
       notifyListeners();
@@ -215,7 +202,12 @@ class GameState extends ChangeNotifier {
   /// v6: currentNodeId/visitedNodeCount가 이 blob에서 빠지고
   /// users/{uid}/readingProgress/{packId}(ReadingProgressRepository)로
   /// 옮겨갔다 — 이 문서에 남아 있던 옛 값은 이제 그냥 무시된다.
-  static const int currentSchemaVersion = 6;
+  /// v7: cashBalance(그리고 addCash/spendCash)가 완전히 사라졌다 —
+  /// 코인 충전(Toss)/이야기 팩 구매 둘 다 이제 users/{uid}/wallet/current의
+  /// balance(서버, confirmCoinCharge/purchasePack Cloud Function만 변경)로
+  /// 통합됐다. 옛 세이브에 cashBalance가 남아 있어도 loadFromJson이 그
+  /// 키를 아예 안 읽으므로 조용히 무시된다 — 에러가 나지 않는다.
+  static const int currentSchemaVersion = 7;
 
   Map<String, dynamic> toJson() => {
     'schemaVersion': currentSchemaVersion,
@@ -226,7 +218,6 @@ class GameState extends ChangeNotifier {
     'exp': exp,
     'hearts': hearts,
     'hasUsedAdRevival': hasUsedAdRevival,
-    'cashBalance': cashBalance,
     'ownedPackIds': _ownedPackIds.toList(),
   };
 
@@ -253,7 +244,8 @@ class GameState extends ChangeNotifier {
     exp = json['exp'] as int? ?? exp;
     hearts = json['hearts'] as int? ?? hearts;
     hasUsedAdRevival = json['hasUsedAdRevival'] as bool? ?? hasUsedAdRevival;
-    cashBalance = json['cashBalance'] as int? ?? cashBalance;
+    // 옛 세이브(v6 이하)에 남아 있을 수 있는 cashBalance는 의도적으로 안
+    // 읽는다 — 그 키가 json에 있어도 그냥 무시된다(에러 없음).
 
     _ownedPackIds.clear();
     final ownedPackIdsJson = json['ownedPackIds'] as List<dynamic>?;

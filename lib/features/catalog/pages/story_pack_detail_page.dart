@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart' show setEquals;
 import 'package:flutter/material.dart';
 
 import '../../../core/auth/auth_scope.dart';
@@ -6,8 +7,13 @@ import '../../../core/state/reading_progress.dart';
 import '../../../core/state/reading_progress_repository.dart';
 import '../../../reader/interactive/interactive_reader.dart';
 import '../../../reader/linear/linear_reader.dart';
+import '../../../reader/shared/paywall.dart';
+import '../data/pack_bundle_repository.dart';
+import '../data/story_pack_repository.dart';
 import '../models/genre_style.dart';
+import '../models/pack_bundle.dart';
 import '../models/story_pack.dart';
+import '../widgets/bundle_card.dart';
 import '../widgets/pack_comments_section.dart';
 import '../widgets/pack_reviews_section.dart';
 
@@ -34,6 +40,10 @@ class StoryPackDetailPage extends StatefulWidget {
 class _StoryPackDetailPageState extends State<StoryPackDetailPage> {
   final ReadingProgressRepository _progressRepository =
       ReadingProgressRepository();
+  final PackBundleRepository _bundleRepository = PackBundleRepository();
+  final StoryPackRepository _packRepository = StoryPackRepository();
+  late final Stream<List<PackBundle>> _bundlesStream =
+      _bundleRepository.watchBundlesContainingPack(widget.pack.id);
 
   bool _resolvedProgress = false;
   ReadingProgress? _progress;
@@ -122,6 +132,20 @@ class _StoryPackDetailPageState extends State<StoryPackDetailPage> {
                   onTap: () => _handleAction(context, owned),
                 ),
                 const SizedBox(height: 32),
+                StreamBuilder<List<PackBundle>>(
+                  stream: _bundlesStream,
+                  builder: (context, snapshot) {
+                    final bundles = snapshot.data ?? const <PackBundle>[];
+                    if (bundles.isEmpty) return const SizedBox.shrink();
+                    return Padding(
+                      padding: const EdgeInsets.only(bottom: 32),
+                      child: _BundlesForPackSection(
+                        bundles: bundles,
+                        packRepository: _packRepository,
+                      ),
+                    );
+                  },
+                ),
                 Container(height: 1, color: Colors.white.withOpacity(0.08)),
                 const SizedBox(height: 24),
                 PackReviewsSection(pack: pack, eligible: canReview),
@@ -137,19 +161,24 @@ class _StoryPackDetailPageState extends State<StoryPackDetailPage> {
     );
   }
 
-  void _handleAction(BuildContext context, bool owned) {
-    if (owned) {
-      final pack = widget.pack;
-      final reader = pack.format == StoryPackFormat.linear
-          ? LinearReader(pack: pack)
-          : InteractiveReader(pack: pack);
-      Navigator.push(context, MaterialPageRoute(builder: (_) => reader));
-      return;
+  /// [owned]가 false면 먼저 requestPackPurchase(paywall.dart)로 구매를
+  /// 진행한다 — 리더 안에서 미리보기 한도에 걸렸을 때 뜨는 것과 완전히 같은
+  /// 흐름(가격 확인 다이얼로그 → purchasePack Cloud Function → 성공 시
+  /// gameState.markPackOwned)이다. 취소했거나 코인이 부족해 구매가 안 끝났으면
+  /// (purchased == false) 리더로 넘어가지 않는다.
+  Future<void> _handleAction(BuildContext context, bool owned) async {
+    final pack = widget.pack;
+
+    if (!owned) {
+      final gameState = GameStateScope.of(context);
+      final purchased = await requestPackPurchase(context, gameState, pack);
+      if (!purchased || !context.mounted) return;
     }
-    // 결제 기능은 아직 없다 — 스텁.
-    ScaffoldMessenger.of(
-      context,
-    ).showSnackBar(const SnackBar(content: Text('결제 기능은 아직 준비 중이에요.')));
+
+    final reader = pack.format == StoryPackFormat.linear
+        ? LinearReader(pack: pack)
+        : InteractiveReader(pack: pack);
+    Navigator.push(context, MaterialPageRoute(builder: (_) => reader));
   }
 }
 
@@ -286,7 +315,8 @@ class _GenreTypeBadge extends StatelessWidget {
 
 /// 진행률/엔딩 발견/평점/가격을 나란히 보여주는 요약 행.
 ///
-/// - 가격은 실데이터(pack.price/isFree)를 그대로 쓴다.
+/// - 가격은 pack.effectivePrice/isFree를 쓴다 — 할인 중이면 salePrice가
+///   자동으로 반영된다(정가 pack.price를 직접 보여주지 않는다).
 /// - 진행률([hasProgress])은 이제 진짜 팩별 신호다 — GameState.progressFor(pack.id)
 ///   (메모리, 게스트/이번 세션) 또는 users/{uid}/readingProgress/{packId}
 ///   (로그인, ReadingProgressRepository)에 저장된 위치가 있는지를 부모
@@ -326,7 +356,7 @@ class _MetadataRow extends StatelessWidget {
       ),
     );
     items.add(
-      _MetadataItem(label: '가격', value: pack.isFree ? '무료' : '₩${pack.price}'),
+      _MetadataItem(label: '가격', value: pack.isFree ? '무료' : '${pack.effectivePrice}코인'),
     );
 
     return Row(
@@ -417,6 +447,75 @@ class _PrimaryActionButton extends StatelessWidget {
           ),
         ),
       ),
+    );
+  }
+}
+
+/// "이 팩이 포함된 번들" — 이 팩을 담은 활성 번들이 하나라도 있을 때만
+/// 나타난다. BundleCard(홈 탭 "번들 상품" 섹션과 같은 위젯)가 카드 안에
+/// 포함된 팩들의 표지/제목을 보여주려면 그 팩들의 StoryPack을 알아야
+/// 하는데, 이 화면은 원래 [widget.pack] 하나만 갖고 있다 — 그래서
+/// bundles가 도착하면 그 안의 packIds 전체를 한 번에 조회한다
+/// (StoryPackRepository.fetchPacksByIds). bundles의 id 구성이 실제로
+/// 바뀔 때만 다시 조회한다(매 리빌드마다 새로 조회하지 않는다).
+class _BundlesForPackSection extends StatefulWidget {
+  final List<PackBundle> bundles;
+  final StoryPackRepository packRepository;
+
+  const _BundlesForPackSection({required this.bundles, required this.packRepository});
+
+  @override
+  State<_BundlesForPackSection> createState() => _BundlesForPackSectionState();
+}
+
+class _BundlesForPackSectionState extends State<_BundlesForPackSection> {
+  late Future<List<StoryPack>> _packsFuture = _fetchPacks();
+  late Set<String> _fetchedIds = _idsOf(widget.bundles);
+
+  static Set<String> _idsOf(List<PackBundle> bundles) =>
+      bundles.expand((b) => b.packIds).toSet();
+
+  Future<List<StoryPack>> _fetchPacks() {
+    return widget.packRepository.fetchPacksByIds(_idsOf(widget.bundles).toList());
+  }
+
+  @override
+  void didUpdateWidget(covariant _BundlesForPackSection oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    final newIds = _idsOf(widget.bundles);
+    if (!setEquals(newIds, _fetchedIds)) {
+      _fetchedIds = newIds;
+      _packsFuture = _fetchPacks();
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return FutureBuilder<List<StoryPack>>(
+      future: _packsFuture,
+      builder: (context, snapshot) {
+        final packs = snapshot.data ?? const <StoryPack>[];
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              '이 팩이 포함된 번들',
+              style: TextStyle(fontSize: 15, fontWeight: FontWeight.w800, color: _ivory),
+            ),
+            const SizedBox(height: 12),
+            SizedBox(
+              height: 210,
+              child: ListView.separated(
+                scrollDirection: Axis.horizontal,
+                itemCount: widget.bundles.length,
+                separatorBuilder: (_, _) => const SizedBox(width: 12),
+                itemBuilder: (context, index) =>
+                    BundleCard(bundle: widget.bundles[index], allPacks: packs),
+              ),
+            ),
+          ],
+        );
+      },
     );
   }
 }

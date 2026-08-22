@@ -51,6 +51,9 @@ class HomeBannerRepository {
     required bool active,
     required DateTime? startAt,
     required DateTime? endAt,
+    String? eyebrow,
+    String? title,
+    String? subtitle,
   }) async {
     final doc = _banners.doc();
     final ref = _storage.ref('admin/home_banners/${doc.id}.jpg');
@@ -64,6 +67,9 @@ class HomeBannerRepository {
       'active': active,
       'startAt': startAt != null ? Timestamp.fromDate(startAt) : null,
       'endAt': endAt != null ? Timestamp.fromDate(endAt) : null,
+      'eyebrow': eyebrow,
+      'title': title,
+      'subtitle': subtitle,
     });
   }
 
@@ -78,6 +84,9 @@ class HomeBannerRepository {
     required bool active,
     required DateTime? startAt,
     required DateTime? endAt,
+    String? eyebrow,
+    String? title,
+    String? subtitle,
   }) async {
     final updates = <String, dynamic>{
       'linkedPackId': linkedPackId,
@@ -85,6 +94,9 @@ class HomeBannerRepository {
       'active': active,
       'startAt': startAt != null ? Timestamp.fromDate(startAt) : null,
       'endAt': endAt != null ? Timestamp.fromDate(endAt) : null,
+      'eyebrow': eyebrow,
+      'title': title,
+      'subtitle': subtitle,
     };
 
     if (imageBytes != null) {

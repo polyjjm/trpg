@@ -64,9 +64,13 @@ class _PackSettingsPageState extends State<PackSettingsPage> {
 
   final TextEditingController _titleController = TextEditingController();
   final TextEditingController _descriptionController = TextEditingController();
+  final TextEditingController _priceController = TextEditingController();
+  final TextEditingController _salePriceController = TextEditingController();
   final Set<String> _selectedGenreSlugs = {};
   String? _coverImageId;
   String? _defaultBackgroundImageId;
+  DateTime? _discountStartAt;
+  DateTime? _discountEndAt;
 
   bool _initialized = false;
   bool _dirty = false;
@@ -77,11 +81,43 @@ class _PackSettingsPageState extends State<PackSettingsPage> {
     _initialized = true;
     _titleController.text = pack.title;
     _descriptionController.text = pack.description;
+    _priceController.text = '${pack.price}';
+    _salePriceController.text = pack.salePrice != null ? '${pack.salePrice}' : '';
     _selectedGenreSlugs.addAll(pack.genres);
     _coverImageId = pack.coverImageId;
     _defaultBackgroundImageId = pack.defaultBackgroundImage;
+    _discountStartAt = pack.discountStartAt;
+    _discountEndAt = pack.discountEndAt;
     _titleController.addListener(_markDirty);
     _descriptionController.addListener(_markDirty);
+    _priceController.addListener(_markDirty);
+    _salePriceController.addListener(_markDirty);
+  }
+
+  int get _priceValue => int.tryParse(_priceController.text.trim()) ?? 0;
+
+  int? get _salePriceValue {
+    final text = _salePriceController.text.trim();
+    return text.isEmpty ? null : int.tryParse(text);
+  }
+
+  Future<void> _pickDiscountDate({required bool isStart}) async {
+    final initial = (isStart ? _discountStartAt : _discountEndAt) ?? DateTime.now();
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: initial,
+      firstDate: DateTime(2020),
+      lastDate: DateTime(2100),
+    );
+    if (picked == null) return;
+    setState(() {
+      if (isStart) {
+        _discountStartAt = picked;
+      } else {
+        _discountEndAt = picked;
+      }
+      _dirty = true;
+    });
   }
 
   void _markDirty() {
@@ -101,6 +137,8 @@ class _PackSettingsPageState extends State<PackSettingsPage> {
   void dispose() {
     _titleController.dispose();
     _descriptionController.dispose();
+    _priceController.dispose();
+    _salePriceController.dispose();
     super.dispose();
   }
 
@@ -113,6 +151,10 @@ class _PackSettingsPageState extends State<PackSettingsPage> {
         genres: _selectedGenreSlugs.toList(),
         description: _descriptionController.text.trim(),
         coverImageId: _coverImageId,
+        price: _priceValue,
+        salePrice: _salePriceValue,
+        discountStartAt: _discountStartAt,
+        discountEndAt: _discountEndAt,
         defaultBackgroundImage: _defaultBackgroundImageId,
       );
     } catch (e) {
@@ -140,6 +182,10 @@ class _PackSettingsPageState extends State<PackSettingsPage> {
         genres: _selectedGenreSlugs.toList(),
         description: _descriptionController.text.trim(),
         coverImageId: _coverImageId,
+        price: _priceValue,
+        salePrice: _salePriceValue,
+        discountStartAt: _discountStartAt,
+        discountEndAt: _discountEndAt,
         defaultBackgroundImage: _defaultBackgroundImageId,
       );
       await widget.repository.requestSerialization(widget.packId);
@@ -159,6 +205,10 @@ class _PackSettingsPageState extends State<PackSettingsPage> {
         genres: _selectedGenreSlugs.toList(),
         description: _descriptionController.text.trim(),
         coverImageId: _coverImageId,
+        price: _priceValue,
+        salePrice: _salePriceValue,
+        discountStartAt: _discountStartAt,
+        discountEndAt: _discountEndAt,
       );
     } catch (e) {
       _handleError(e);
@@ -309,6 +359,68 @@ class _PackSettingsPageState extends State<PackSettingsPage> {
                 ),
                 decoration: adminInputDecoration(),
               ),
+            ),
+            const SizedBox(height: 16),
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Expanded(
+                  child: LabeledField(
+                    label: '가격 (코인)',
+                    child: TextFormField(
+                      controller: _priceController,
+                      keyboardType: TextInputType.number,
+                      style: TextStyle(color: AdminColors.inputText, fontSize: 13),
+                      decoration: adminInputDecoration(hintText: '0 = 무료'),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: LabeledField(
+                    label: '할인가 (코인, 선택)',
+                    child: TextFormField(
+                      controller: _salePriceController,
+                      keyboardType: TextInputType.number,
+                      style: TextStyle(color: AdminColors.inputText, fontSize: 13),
+                      decoration: adminInputDecoration(hintText: '(할인 없음)'),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 16),
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Expanded(
+                  child: LabeledField(
+                    label: '할인 시작일 (선택, 비워두면 즉시 적용)',
+                    child: _DateField(
+                      date: _discountStartAt,
+                      onTap: () => _pickDiscountDate(isStart: true),
+                      onClear: () => setState(() {
+                        _discountStartAt = null;
+                        _dirty = true;
+                      }),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: LabeledField(
+                    label: '할인 종료일 (선택, 비워두면 계속 적용)',
+                    child: _DateField(
+                      date: _discountEndAt,
+                      onTap: () => _pickDiscountDate(isStart: false),
+                      onClear: () => setState(() {
+                        _discountEndAt = null;
+                        _dirty = true;
+                      }),
+                    ),
+                  ),
+                ),
+              ],
             ),
             const SizedBox(height: 16),
             LabeledField(
@@ -554,6 +666,51 @@ class _GenreChip extends StatelessWidget {
             fontSize: 12,
             color: selected ? AdminColors.statusPendingText : AdminColors.muted,
           ),
+        ),
+      ),
+    );
+  }
+}
+
+/// home_banner_management_section.dart/point_package_management_section.dart의
+/// _DateField와 같은 모양 — 이 화면만의 사본이다(관리자 위젯을 각 파일이
+/// 따로 들고 있는 이 코드베이스의 기존 관례를 그대로 따른다).
+class _DateField extends StatelessWidget {
+  final DateTime? date;
+  final VoidCallback onTap;
+  final VoidCallback onClear;
+
+  const _DateField({required this.date, required this.onTap, required this.onClear});
+
+  @override
+  Widget build(BuildContext context) {
+    final date = this.date;
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(8),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 9),
+        decoration: BoxDecoration(
+          color: AdminColors.inputFill,
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(color: AdminColors.inputBorder),
+        ),
+        child: Row(
+          children: [
+            Expanded(
+              child: Text(
+                date == null
+                    ? '(선택 안 함)'
+                    : '${date.year}.${date.month.toString().padLeft(2, '0')}.${date.day.toString().padLeft(2, '0')}',
+                style: TextStyle(fontSize: 13, color: date == null ? AdminColors.muted : AdminColors.inputText),
+              ),
+            ),
+            if (date != null)
+              InkWell(
+                onTap: onClear,
+                child: Icon(Icons.close_rounded, size: 16, color: AdminColors.muted),
+              ),
+          ],
         ),
       ),
     );

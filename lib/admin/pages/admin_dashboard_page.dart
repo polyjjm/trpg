@@ -23,8 +23,16 @@ import 'approvals_tab.dart';
 import 'author_applications_tab.dart';
 import 'author_management_section.dart';
 import 'genre_management_section.dart';
+import 'global_notice_management_section.dart';
+import '../data/global_notice_repository.dart';
 import 'home_banner_management_section.dart';
+import 'billing_dashboard_section.dart';
+import '../data/billing_repository.dart';
 import 'pack_approvals_tab.dart';
+import 'pack_bundle_management_section.dart';
+import '../data/pack_bundle_repository.dart';
+import 'point_package_management_section.dart';
+import '../data/point_package_repository.dart';
 
 enum _AdminSection {
   overview,
@@ -36,6 +44,10 @@ enum _AdminSection {
   authorManagement,
   genreManagement,
   homeBanners,
+  globalNotices,
+  pointPackages,
+  packBundles,
+  billing,
 }
 
 /// 플랫폼 운영 전용 페이지 — author 도구(AuthorToolPage)와 별개다. 콘텐츠
@@ -175,6 +187,12 @@ class _AdminDashboardShellState extends State<_AdminDashboardShell> {
   final UserProfileRepository _userProfileRepository = UserProfileRepository();
   final GenreRepository _genreRepository = GenreRepository();
   final HomeBannerRepository _homeBannerRepository = HomeBannerRepository();
+  final AdminPointPackageRepository _pointPackageRepository =
+      AdminPointPackageRepository();
+  final AdminPackBundleRepository _packBundleRepository =
+      AdminPackBundleRepository();
+  final AdminBillingRepository _billingRepository = AdminBillingRepository();
+  final AdminGlobalNoticeRepository _globalNoticeRepository = AdminGlobalNoticeRepository();
 
   _AdminSection _activeSection = _AdminSection.overview;
 
@@ -306,6 +324,25 @@ class _AdminDashboardShellState extends State<_AdminDashboardShell> {
         return HomeBannerManagementSection(
           repository: _homeBannerRepository,
           packsStream: _packTitlesStream,
+        );
+      case _AdminSection.globalNotices:
+        return GlobalNoticeManagementSection(
+          repository: _globalNoticeRepository,
+          authorUid: widget.authService.userId ?? '',
+        );
+      case _AdminSection.pointPackages:
+        return PointPackageManagementSection(repository: _pointPackageRepository);
+      case _AdminSection.packBundles:
+        return PackBundleManagementSection(
+          repository: _packBundleRepository,
+          packsStream: _packTitlesStream,
+        );
+      case _AdminSection.billing:
+        return BillingDashboardSection(
+          billingRepository: _billingRepository,
+          pointPackageRepository: _pointPackageRepository,
+          storyRepository: _storyRepository,
+          bundleRepository: _packBundleRepository,
         );
     }
   }
@@ -479,13 +516,23 @@ class _Sidebar extends StatelessWidget {
           ),
           const SizedBox(height: 14),
           const _SidebarSectionHeader('돈 관리'),
-          const _SidebarPlaceholderItem(
-            icon: Icons.receipt_long_rounded,
-            label: '결제 내역',
+          _SidebarItem(
+            icon: Icons.paid_rounded,
+            label: '포인트 상품 관리',
+            selected: active == _AdminSection.pointPackages,
+            onTap: () => onSelected(_AdminSection.pointPackages),
           ),
-          const _SidebarPlaceholderItem(
-            icon: Icons.bar_chart_rounded,
-            label: '매출 대시보드',
+          _SidebarItem(
+            icon: Icons.card_giftcard_rounded,
+            label: '번들 상품 관리',
+            selected: active == _AdminSection.packBundles,
+            onTap: () => onSelected(_AdminSection.packBundles),
+          ),
+          _SidebarItem(
+            icon: Icons.receipt_long_rounded,
+            label: '결제·정산 관리',
+            selected: active == _AdminSection.billing,
+            onTap: () => onSelected(_AdminSection.billing),
           ),
           const SizedBox(height: 14),
           const _SidebarSectionHeader('설정'),
@@ -500,6 +547,12 @@ class _Sidebar extends StatelessWidget {
             label: '홈 배너 관리',
             selected: active == _AdminSection.homeBanners,
             onTap: () => onSelected(_AdminSection.homeBanners),
+          ),
+          _SidebarItem(
+            icon: Icons.campaign_rounded,
+            label: '공지사항 관리',
+            selected: active == _AdminSection.globalNotices,
+            onTap: () => onSelected(_AdminSection.globalNotices),
           ),
         ],
       ),
@@ -593,48 +646,6 @@ class _SidebarItem extends StatelessWidget {
             ],
           ],
         ),
-      ),
-    );
-  }
-}
-
-/// "돈 관리" 아래 결제 내역/매출 대시보드 — 백엔드가 아예 없어 클릭할 수
-/// 없다. 로드맵에는 보이되, 흐릿하고 "준비중" 표시가 붙은 채로 조용히 있는다.
-class _SidebarPlaceholderItem extends StatelessWidget {
-  final IconData icon;
-  final String label;
-
-  const _SidebarPlaceholderItem({required this.icon, required this.label});
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
-      child: Row(
-        children: [
-          Icon(icon, size: 18, color: AdminColors.muted.withOpacity(0.5)),
-          const SizedBox(width: 10),
-          Expanded(
-            child: Text(
-              label,
-              style: TextStyle(
-                fontSize: 13,
-                color: AdminColors.muted.withOpacity(0.5),
-              ),
-            ),
-          ),
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-            decoration: BoxDecoration(
-              border: Border.all(color: AdminColors.border),
-              borderRadius: BorderRadius.circular(999),
-            ),
-            child: Text(
-              '준비중',
-              style: TextStyle(fontSize: 9, color: AdminColors.muted),
-            ),
-          ),
-        ],
       ),
     );
   }

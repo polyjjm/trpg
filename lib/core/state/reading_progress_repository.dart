@@ -1,4 +1,5 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:flutter/foundation.dart' show debugPrint;
 
 import 'reading_progress.dart';
 
@@ -33,7 +34,9 @@ class ReadingProgressRepository {
   /// 저장된 진행 상황이 없으면 null을 반환한다(이 팩을 아직 한 번도 안 읽은
   /// 경우 — 신규 유저이거나, 로그인 전에는 게스트로만 읽었던 경우).
   Future<ReadingProgress?> load(String uid, String packId) async {
+    debugPrint('ReadingProgressRepository.load($uid, $packId) 시작');
     final snapshot = await _docFor(uid, packId).get();
+    debugPrint('ReadingProgressRepository.load($uid, $packId) 성공');
     final data = snapshot.data();
     if (data == null) return null;
 

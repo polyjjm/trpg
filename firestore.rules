@@ -33,18 +33,36 @@ service cloud.firestore {
     // 아래 둘은 완전히 다른 질문, "이 독자가 이 팩을 리뷰/댓글 달 자격이
     // 있는가"를 묻는다. 구매 여부는 GameState.ownedPackIds가 users/{uid}/
     // save/current에 저장하는 배열을 그대로 본다(리더 쪽 GameState.toJson()
-    // 참고) — 아직 결제 기능이 없어 storyPacks 문서에 price 필드가 실제로
-    // 안 쓰이는 팩은 get(...).get('price', 0)이 기본값 0으로 떨어져 전부
-    // 무료 취급된다(리더 앱의 현재 하드코딩된 price:0과 같은 상태 — 나중에
-    // 결제가 붙어 price가 채워지면 자동으로 맞물린다).
+    // 참고).
     function readerOwnsPack(packId) {
       return isSignedIn()
         && exists(/databases/$(database)/documents/users/$(myUid())/save/current)
         && packId in get(/databases/$(database)/documents/users/$(myUid())/save/current).data.get('ownedPackIds', []);
     }
 
+    // price/salePrice/discountStartAt/discountEndAt는 title/genres/description/
+    // coverImageId와 같은 메타데이터 승인 게이트를 탄다 — 작가가 draft로 자유롭게
+    // 고쳐도(saveDraftPackSettings/requestMetadataEdit) 독자에게 실제로 보이는/
+    // 적용되는 값은 오직 admin이 승인해서 liveMetadata에 복사한 스냅샷뿐이다.
+    // 그래서 이 함수는 top-level 필드가 아니라 반드시 liveMetadata를 읽는다 —
+    // top-level을 읽으면 작가가 승인 없이 즉시 가격을 바꿀 수 있게 되어 버린다
+    // (title/genres를 top-level에서 바로 읽지 않는 것과 같은 이유).
+    // 연재 시작 승인을 아직 못 받아 liveMetadata 자체가 없는 팩은 0(무료)으로
+    // 본다.
+    function effectivePrice(packId) {
+      let live = get(/databases/$(database)/documents/storyPacks/$(packId)).data.get('liveMetadata', null);
+      let price = live == null ? 0 : live.get('price', 0);
+      let salePrice = live == null ? null : live.get('salePrice', null);
+      let discountStartAt = live == null ? null : live.get('discountStartAt', null);
+      let discountEndAt = live == null ? null : live.get('discountEndAt', null);
+      let discountActive = salePrice != null
+        && (discountStartAt == null || request.time >= discountStartAt)
+        && (discountEndAt == null || request.time <= discountEndAt);
+      return discountActive ? salePrice : price;
+    }
+
     function isPackFree(packId) {
-      return get(/databases/$(database)/documents/storyPacks/$(packId)).data.get('price', 0) <= 0;
+      return effectivePrice(packId) <= 0;
     }
 
     function canReviewPack(packId) {
@@ -77,6 +95,39 @@ service cloud.firestore {
     // readerPrefs와 같은 "본인만 읽고 쓴다" 패턴.
     match /users/{userId}/readingProgress/{packId} {
       allow read, write: if isSignedIn() && myUid() == userId;
+    }
+
+    // 코인 지갑 — save/readerPrefs/readingProgress와 달리 "본인만 읽고 쓴다"가
+    // 아니라 "본인만 읽는다"다. balance는 오직 confirmCoinCharge Cloud
+    // Function(Admin SDK로 실행되어 이 규칙 자체를 우회한다)만 바꾼다 — 결제
+    // 승인을 서버에서 검증한 뒤에만 코인을 지급하기 위해서다. write 규칙이
+    // 아예 없으므로 기본값(거부)이 곧 "쓰기는 Cloud Function 전용"이다
+    // (rankingSnapshots와 같은 패턴).
+    match /users/{userId}/wallet/{walletDocId} {
+      allow read: if isSignedIn() && myUid() == userId;
+
+      // 거래 내역도 같은 이유로 읽기 전용 — confirmCoinCharge가 충전(charge)
+      // 건을, purchasePack/purchaseBundle이 사용(purchase) 건을,
+      // refundCoinCharge가 환불(refund) 건을 쓴다. 이 중첩 match는 userId를
+      // 아는 직접 접근(문서 참조, 특정 유저로 좁힌 구독)에만 적용된다 —
+      // admin 결제내역/코인사용내역 화면처럼 유저를 가로질러 훑는
+      // collectionGroup('transactions') 쿼리는 아래 별도의 {path=**} 규칙이
+      // 커버한다({path=**}/nodes와 같은 이유).
+      match /transactions/{txId} {
+        allow read: if isSignedIn() && myUid() == userId;
+      }
+    }
+
+    // users/*/wallet/*/transactions 컬렉션 그룹 조회 전용 — admin 결제내역/
+    // 코인사용내역/정산 화면이 uid를 몰라도 모든 유저의 거래를 가로질러
+    // 훑을 수 있어야 한다(collectionGroup('transactions')). 위 중첩 match는
+    // userId를 아는 직접 접근에만 적용되고 collectionGroup 쿼리에는 적용되지
+    // 않는다 — {path=**}/nodes 규칙과 정확히 같은 이유(Firestore는
+    // collection group 쿼리를 오직 {path=**} 형태의 재귀 와일드카드 규칙으로만
+    // 허용한다). admin만 허용한다 — 일반 유저는 여전히 자기 uid로 좁힌
+    // 직접 구독(위 중첩 match)만 쓸 수 있다.
+    match /{path=**}/transactions/{txId} {
+      allow read: if isAdmin();
     }
 
     // users/{uid} — 신원/권한 문서. role/authorApplicationStatus는 본인이 함부로
@@ -142,6 +193,45 @@ service cloud.firestore {
       allow write: if isAdmin();
     }
 
+    // pointPackages/{packageId} — admin이 관리하는 충전 화면 코인 상품.
+    // genres/homeBanners와 같은 패턴(admin만 쓰고, 로그인한 누구나 읽을 수
+    // 있다) — 리더 쪽 PointPackageRepository.watchWebPackages()가 active/
+    // platform 필터링을 클라이언트에서 하므로, 규칙은 "로그인했는지"만 본다.
+    // 실제 결제 승인 시점의 가격 검증은 이 규칙과 무관하게 confirmCoinCharge
+    // Cloud Function이 Admin SDK로 이 컬렉션을 직접 다시 읽어서 한다.
+    match /pointPackages/{packageId} {
+      allow read: if isSignedIn();
+      allow write: if isAdmin();
+    }
+
+    // packBundles/{bundleId} — admin이 관리하는, 스토리팩 여러 개를 묶어
+    // 코인으로 할인 판매하는 번들. genres/homeBanners/pointPackages와 같은
+    // 패턴(admin만 쓰고, 로그인한 누구나 읽을 수 있다) — 리더 쪽
+    // PackBundleRepository가 active 필터링을 클라이언트에서 하므로, 규칙은
+    // "로그인했는지"만 본다. 실제 구매 시점의 가격 검증/잔액 차감/
+    // ownedPackIds 부여는 이 규칙과 무관하게 purchaseBundle Cloud Function이
+    // Admin SDK로 이 컬렉션을 직접 다시 읽어서 한다 — 코인 잔액(wallet)과
+    // ownedPackIds에 대한 클라이언트 쓰기 권한은 여기서도 추가하지 않는다
+    // (이미 위에서 wallet은 읽기 전용, ownedPackIds는 save/current 문서
+    // 전체 read/write 허용 안의 알려진 한계로만 남아 있다 — 둘 다 이
+    // 기능 때문에 새로 넓히지 않는다).
+    match /packBundles/{bundleId} {
+      allow read: if isSignedIn();
+      allow write: if isAdmin();
+    }
+
+    // notices/{noticeId} — admin이 관리하는 앱 전체 공지사항. genres/
+    // homeBanners/pointPackages/packBundles와 같은 패턴(admin만 쓰고,
+    // 로그인한 누구나 읽을 수 있다) — 리더 쪽 NoticeRepository가 active
+    // 필터링을 클라이언트에서 하므로, 규칙은 "로그인했는지"만 본다.
+    // writerNotices(작가가 자기 팩에 올리는 공지, packId 필드로 걸러 보는
+    // 완전히 다른 컬렉션 — 아래 별도 match)와 혼동하지 않는다 — 이건 팩과
+    // 무관한 플랫폼 전체 공지고 admin만 쓴다.
+    match /notices/{noticeId} {
+      allow read: if isSignedIn();
+      allow write: if isAdmin();
+    }
+
     // rankingSnapshots/{date} — "YYYY-MM-DD"(KST) 문서 id, {packIds: [...]}.
     // functions/src/index.ts의 computeDailyRankingSnapshot(매일 KST 00:10
     // 예약 실행)만 쓴다 — Admin SDK로 실행되므로 이 규칙을 우회한다. 클라
@@ -149,6 +239,15 @@ service cloud.firestore {
     // 아예 없으므로 기본값(거부)이 곧 "쓰기는 Cloud Function 전용"이다.
     match /rankingSnapshots/{date} {
       allow read: if isSignedIn();
+    }
+
+    // revenueSnapshots/{date}("YYYY-MM-DD" KST) — admin "정산내역" 탭 전용
+    // 일별 매출/코인 지급·사용/환불 집계. functions/src/index.ts의
+    // computeDailyRevenueSnapshot(매일 KST 00:20 예약 실행)만 쓴다 — Admin
+    // SDK로 실행되므로 이 규칙을 우회한다. rankingSnapshots와 달리 매출은
+    // 민감한 운영 데이터라 admin만 읽는다(일반 로그인 유저는 못 읽는다).
+    match /revenueSnapshots/{date} {
+      allow read: if isAdmin();
     }
 
     match /storyPacks/{packId} {
@@ -169,12 +268,38 @@ service cloud.firestore {
       // 정확한 전이(null -> 'edit'만 허용)까지는 강제하지 않는다 — 작가가 자기
       // 팩의 pending 플래그를 스스로 지우는 것 자체는 검토를 우회하는 게
       // 아니라서(라이브 상태엔 영향 없음) 규칙을 단순하게 유지하는 쪽을 택했다.
-      allow update: if isSignedIn() && resource.data.authorId == myUid()
-        && request.resource.data.authorId == resource.data.authorId
-        && request.resource.data.type == resource.data.type
+      //
+      // title/genres/description/coverImageId는 이 규칙에서 값 자체를 검사하지
+      // 않는다 — draft 필드라 작가가 언제든 자유롭게 고칠 수 있어야 하고, 그걸
+      // 막는 건 liveMetadata(위에서 잠가 둔) 쪽이다. price/salePrice/
+      // discountStartAt/discountEndAt도 정확히 같은 대우다 — 여기서 따로 막지
+      // 않는다(자유롭게 draft로 고칠 수 있다), 대신 effectivePrice()가 오직
+      // liveMetadata만 읽으므로 admin 승인 전까지는 독자에게도, 무료 판정에도
+      // 전혀 영향을 주지 않는다.
+      //
+      // authorId/type/serializationStatus는 여기서도 점(.) 표기 대신
+      // get(key, null)을 쓴다 — AdminStoryPack 클래스 doc에 적혀 있듯 예전에
+      // 만들어진 팩(예: 좀비 이야기 팩)은 authorId/type/genres가 아예 없는
+      // 채로 남아있을 수 있고, 그런 문서에 점 표기로 접근하면(authorApplications
+      // 규칙에 이미 있는 것과 같은 문제) "속성을 찾을 수 없음" 에러로 요청
+      // 전체가 permission-denied로 거부된다 — 실제로 겪은 버그다(가격 필드가
+      // 아직 없는 신규/구형 팩만 메타데이터 승인이 막혔던 원인).
+      // pendingMetadataAction을 'edit'로 만드는 요청(requestMetadataEdit)은
+      // 이 문서가 이미 serializationStatus == 'approved'일 때만 허용한다 —
+      // AdminStoryPack.canRequestMetadataEdit이 같은 조건을 요구하지만 그건
+      // UI(버튼 노출)에서만 강제되던 값이라, 그 조건을 안 타는 직접 쓰기(예:
+      // 콘솔에서 손으로 만든 테스트 문서)로 draft 상태 팩에 pendingMetadataAction:
+      // 'edit'가 남을 수 있었다 — 연재 시작 승인을 한 번도 못 받아 liveMetadata
+      // 자체가 없는 팩이 "메타데이터 수정 승인" 대기열에 잘못 들어가는 상태
+      // 자체를 여기서 막는다.
+      allow update: if isSignedIn() && resource.data.get('authorId', null) == myUid()
+        && request.resource.data.get('authorId', null) == resource.data.get('authorId', null)
+        && request.resource.data.get('type', null) == resource.data.get('type', null)
         && request.resource.data.get('authorName', null) == resource.data.get('authorName', null)
-        && (request.resource.data.serializationStatus == resource.data.serializationStatus
-            || request.resource.data.serializationStatus == 'pending')
+        && (request.resource.data.get('serializationStatus', null) == resource.data.get('serializationStatus', null)
+            || request.resource.data.get('serializationStatus', null) == 'pending')
+        && (request.resource.data.get('pendingMetadataAction', null) != 'edit'
+            || resource.data.get('serializationStatus', null) == 'approved')
         && request.resource.data.get('liveMetadata', null) == resource.data.get('liveMetadata', null)
         && request.resource.data.get('serializationReviewedBy', null) == resource.data.get('serializationReviewedBy', null)
         && request.resource.data.get('serializationReviewedAt', null) == resource.data.get('serializationReviewedAt', null)
@@ -184,14 +309,20 @@ service cloud.firestore {
       // admin의 연재 시작/메타데이터 승인·반려(approveSerialization/
       // rejectSerialization/approveMetadataEdit/rejectMetadataEdit) — 이 네
       // 액션 전부 상태/검토/liveMetadata 필드만 바꾸고, 작가가 쓴
-      // title/genres/description/coverImageId 자체는 건드리지 않는다(반려 시
-      // 작가가 재신청 때 그대로 다시 손볼 수 있어야 한다).
+      // title/genres/description/coverImageId/price/salePrice/discountStartAt/
+      // discountEndAt 자체는 건드리지 않는다(반려 시 작가가 재신청 때 그대로
+      // 다시 손볼 수 있어야 한다). 전부 get(key, null)로 접근한다 — 위와 같은
+      // 이유(예전 팩은 이 필드들이 아예 없을 수 있다).
       allow update: if isAdmin()
-        && request.resource.data.title == resource.data.title
-        && request.resource.data.genres == resource.data.genres
-        && request.resource.data.description == resource.data.description
+        && request.resource.data.get('title', null) == resource.data.get('title', null)
+        && request.resource.data.get('genres', null) == resource.data.get('genres', null)
+        && request.resource.data.get('description', null) == resource.data.get('description', null)
         && request.resource.data.get('coverImageId', null) == resource.data.get('coverImageId', null)
-        && request.resource.data.authorId == resource.data.authorId;
+        && request.resource.data.get('price', null) == resource.data.get('price', null)
+        && request.resource.data.get('salePrice', null) == resource.data.get('salePrice', null)
+        && request.resource.data.get('discountStartAt', null) == resource.data.get('discountStartAt', null)
+        && request.resource.data.get('discountEndAt', null) == resource.data.get('discountEndAt', null)
+        && request.resource.data.get('authorId', null) == resource.data.get('authorId', null);
 
       // 리더가 리더 화면을 열 때(InteractiveReader/LinearReader, 리딩 세션당
       // 한 번) viewCount를 딱 +1만 하는 업데이트 — 다른 필드는 절대 같이
@@ -220,12 +351,25 @@ service cloud.firestore {
 
         // admin의 승인/반려(approveNode/rejectNode) — status/liveSnapshot/
         // pendingAction만 바뀌고 콘텐츠 필드는 그대로 둔다.
+        //
+        // ⚠️ 예전엔 이 규칙이 title/day/body/bgImageId라는 blocks 스키마
+        // 마이그레이션 이전 필드명을 점(.) 표기로 비교했다 — 그 필드들은
+        // 마이그레이션 후 어떤 노드 문서에도 아예 존재하지 않아서(현재
+        // 필드는 AdminStoryNode.contentSnapshot() 참고: order/blocks/
+        // backgroundImage/backgroundAppliesForward/choices/nextNodeId/effects),
+        // 점 표기 접근 자체가 매번 "속성을 찾을 수 없음" 에러로 터져서
+        // approveNode/rejectNode가 전부 permission-denied로 실패했다 —
+        // storyPacks 문서 레벨(title/genres/description/price 등)에서 이미
+        // 두 번 겪은 것과 완전히 같은 문제 패턴이다. 지금은 실제 현재
+        // 필드명을 get(key, null)로 안전하게 비교한다.
         allow update: if isAdmin()
-          && request.resource.data.title == resource.data.title
-          && request.resource.data.day == resource.data.day
-          && request.resource.data.body == resource.data.body
-          && request.resource.data.bgImageId == resource.data.bgImageId
-          && request.resource.data.choices == resource.data.choices;
+          && request.resource.data.get('order', null) == resource.data.get('order', null)
+          && request.resource.data.get('blocks', null) == resource.data.get('blocks', null)
+          && request.resource.data.get('backgroundImage', null) == resource.data.get('backgroundImage', null)
+          && request.resource.data.get('backgroundAppliesForward', null) == resource.data.get('backgroundAppliesForward', null)
+          && request.resource.data.get('choices', null) == resource.data.get('choices', null)
+          && request.resource.data.get('nextNodeId', null) == resource.data.get('nextNodeId', null)
+          && request.resource.data.get('effects', null) == resource.data.get('effects', null);
 
         // 삭제: 작가는 한 번도 발행된 적 없는(liveSnapshot == null) 자기 노드만
         // 즉시 지울 수 있다(deleteNodeDoc). 이미 발행된 노드의 삭제는 admin이
@@ -319,6 +463,16 @@ service cloud.firestore {
     // 업로더를 추적하는 필드가 아직 없어 모든 author/admin이 공유하는
     // 라이브러리다 — uploaderId가 생기면 그때 좁힐 수 있다.
     match /images/{imageId} {
+      allow read: if isSignedIn();
+      allow create, delete: if isAuthorOrAdmin();
+    }
+
+    // sfxLibrary/{sfxId} — images와 같은 패턴의 색인 문서(실제 파일은 Storage
+    // admin/story_sfx/{sfxId}.mp3에 있다). 이 규칙이 아예 없어서 모든 읽기가
+    // 기본값(거부)으로 막혀 있었다 — 리더가 노드를 열 때 StoryReaderRepository.
+    // fetchPublishedNodes()가 sfxLibrary를 조인 조회하면서 로그인 여부와 무관하게
+    // 매번 permission-denied가 났다(실제로 겪은 버그).
+    match /sfxLibrary/{sfxId} {
       allow read: if isSignedIn();
       allow create, delete: if isAuthorOrAdmin();
     }

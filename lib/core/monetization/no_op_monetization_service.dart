@@ -1,4 +1,3 @@
-import 'cash_package.dart';
 import 'monetization_service.dart';
 
 /// 실제 IAP/광고 SDK가 붙기 전까지 쓰는 기본 구현. 항상 실패를 반환한다.
@@ -15,11 +14,5 @@ class NoOpMonetizationService implements MonetizationService {
   Future<bool> purchaseRevivalItem() async {
     // TODO: 실제 인앱 결제(IAP) SDK 연동 지점.
     return false;
-  }
-
-  @override
-  Future<CashPurchaseResult> purchaseCashPackage(CashPackage package) async {
-    // TODO: 실제 인앱 결제(IAP) SDK 연동 지점.
-    return CashPurchaseResult.failure;
   }
 }

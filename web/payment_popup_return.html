@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>결제 처리 중</title>
+  <style>
+    html, body {
+      margin: 0;
+      padding: 0;
+      background: #000;
+      color: #E2D4BF;
+      font-family: Arial, sans-serif;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      height: 100%;
+    }
+  </style>
+</head>
+<body>
+<p>결제 처리 중이에요. 창이 자동으로 닫혀요...</p>
+<script>
+  var params = new URLSearchParams(window.location.search);
+  var paymentKey = params.get('paymentKey');
+  var orderId = params.get('orderId');
+  var amount = params.get('amount');
+  var code = params.get('code');
+  var message = params.get('message');
+  var packageId = params.get('packageId');
+
+  var success = !!(paymentKey && orderId && amount);
+
+  // 문자열(JSON)로 보낸다 — Dart 쪽(package:web/dart:html)이 임의의 JS 객체를
+  // 그대로 마셜링하는 방식에 기대지 않고, 문자열만 확실하게 받아 jsonDecode로
+  // 푼다(더 예측 가능하고 컴파일러/렌더러 구현에 안 흔들린다).
+  var payload = JSON.stringify({
+    type: 'TOSS_PAYMENT_RESULT',
+    success: success,
+    orderId: orderId,
+    amount: amount,
+    paymentKey: paymentKey,
+    packageId: packageId,
+    code: code,
+    message: message,
+  });
+
+  if (window.opener) {
+    // targetOrigin을 '*'가 아니라 우리 자신의 오리진으로 명시한다 — opener가
+    // 우리와 같은 오리진일 때만 실제로 이 메시지를 받게 된다(방어적 이중
+    // 확인 — opener 쪽도 event.origin을 다시 검증한다).
+    window.opener.postMessage(payload, window.location.origin);
+  }
+  window.close();
+</script>
+</body>
+</html>

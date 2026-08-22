@@ -1,4 +1,5 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:flutter/foundation.dart' show debugPrint;
 
 import '../../../core/story/background_image_inheritance.dart';
 import '../models/story_node.dart';
@@ -44,9 +45,16 @@ class StoryReaderRepository {
     String packId, {
     String? packDefaultBackgroundImageId,
   }) async {
+    // fetchPublishedNodes 안에서 순서대로 nodes/images/sfxLibrary, 세 번
+    // 별도로 읽는다 — 어느 쪽에서 permission-denied가 나는지 구분하려고
+    // 각 단계 앞뒤에 로그를 남긴다.
+    debugPrint('fetchPublishedNodes($packId): nodes 쿼리 시작');
     final snapshot = await _nodes(
       packId,
     ).where('status', isEqualTo: 'published').get();
+    debugPrint(
+      'fetchPublishedNodes($packId): nodes 쿼리 성공 (${snapshot.docs.length}건)',
+    );
 
     final nodes = <StoryNode>[];
     for (final doc in snapshot.docs) {
@@ -62,14 +70,18 @@ class StoryReaderRepository {
       ...nodes.map((n) => n.backgroundImage).whereType<String>(),
       ?packDefaultBackgroundImageId,
     };
+    debugPrint('fetchPublishedNodes($packId): images 쿼리 시작 ($imageIds)');
     final imageUrls = await _fetchImageUrls(imageIds);
+    debugPrint('fetchPublishedNodes($packId): images 쿼리 성공');
 
     final sfxIds = nodes
         .where((n) => n.effects.sfx.enabled)
         .map((n) => n.effects.sfx.sfxId)
         .whereType<String>()
         .toSet();
+    debugPrint('fetchPublishedNodes($packId): sfx 쿼리 시작 ($sfxIds)');
     final sfxUrls = await _fetchSfxUrls(sfxIds);
+    debugPrint('fetchPublishedNodes($packId): sfx 쿼리 성공');
 
     return [
       for (final node in nodes)
@@ -113,9 +125,20 @@ class StoryReaderRepository {
   /// 의 원천 데이터. firestore.rules가 이 필드 하나만, +1로만 바뀌는 update를
   /// 허용한다 — 다른 필드를 같이 바꾸거나 다른 값을 넣으려 하면 거부된다.
   Future<void> incrementViewCount(String packId) async {
-    await _firestore.collection('storyPacks').doc(packId).update({
-      'viewCount': FieldValue.increment(1),
-    });
+    // viewCount 하나만, FieldValue.increment로만 건드린다 — firestore.rules의
+    // affectedKeys().hasOnly(['viewCount']) + "정확히 이전 값+1"이라는 조건과
+    // 정확히 맞아떨어져야 한다. 호출부(InteractiveReader/LinearReader)에서
+    // unawaited로 fire-and-forget하기 때문에, 실패해도 원래는 콘솔에 아무
+    // 흔적도 안 남는다 — 그 payload와 실패 여부를 여기서 직접 남긴다.
+    final payload = {'viewCount': FieldValue.increment(1)};
+    debugPrint('incrementViewCount($packId) payload: $payload');
+    try {
+      await _firestore.collection('storyPacks').doc(packId).update(payload);
+      debugPrint('incrementViewCount($packId) 성공');
+    } catch (e, stackTrace) {
+      debugPrint('incrementViewCount($packId) 실패: $e\n$stackTrace');
+      rethrow;
+    }
   }
 
   Future<Map<String, String>> _fetchSfxUrls(Set<String> sfxIds) async {

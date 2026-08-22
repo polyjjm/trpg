@@ -50,6 +50,9 @@ class _HomeBannerManagementSectionState extends State<HomeBannerManagementSectio
       active: result.active,
       startAt: result.startAt,
       endAt: result.endAt,
+      eyebrow: result.eyebrow,
+      title: result.title,
+      subtitle: result.subtitle,
     );
   }
 
@@ -68,6 +71,9 @@ class _HomeBannerManagementSectionState extends State<HomeBannerManagementSectio
       active: result.active,
       startAt: result.startAt,
       endAt: result.endAt,
+      eyebrow: result.eyebrow,
+      title: result.title,
+      subtitle: result.subtitle,
     );
   }
 
@@ -311,6 +317,9 @@ class _BannerFormResult {
   final bool active;
   final DateTime? startAt;
   final DateTime? endAt;
+  final String? eyebrow;
+  final String? title;
+  final String? subtitle;
 
   const _BannerFormResult({
     required this.imageBytes,
@@ -318,6 +327,9 @@ class _BannerFormResult {
     required this.active,
     required this.startAt,
     required this.endAt,
+    required this.eyebrow,
+    required this.title,
+    required this.subtitle,
   });
 }
 
@@ -337,12 +349,26 @@ class _BannerFormDialogState extends State<_BannerFormDialog> {
   late bool _active = widget.existing?.active ?? true;
   late DateTime? _startAt = widget.existing?.startAt;
   late DateTime? _endAt = widget.existing?.endAt;
+  late final TextEditingController _eyebrowController =
+      TextEditingController(text: widget.existing?.eyebrow ?? '');
+  late final TextEditingController _titleController =
+      TextEditingController(text: widget.existing?.title ?? '');
+  late final TextEditingController _subtitleController =
+      TextEditingController(text: widget.existing?.subtitle ?? '');
 
   bool get _isEditing => widget.existing != null;
 
   /// 새로 만들 땐 이미지를 반드시 골라야 하고, 편집 땐 이미 이미지가 있으니
   /// 안 바꿔도(새로 안 골라도) 제출할 수 있다.
   bool get _canSubmit => _pickedImageBytes != null || _isEditing;
+
+  @override
+  void dispose() {
+    _eyebrowController.dispose();
+    _titleController.dispose();
+    _subtitleController.dispose();
+    super.dispose();
+  }
 
   Future<void> _pickImage() async {
     final result = await FilePicker.platform.pickFiles(type: FileType.image, withData: true);
@@ -370,6 +396,12 @@ class _BannerFormDialogState extends State<_BannerFormDialog> {
   }
 
   void _submit() {
+    // 빈 문자열은 "값 없음"으로 저장한다(null) — 필드를 지우고 저장하면
+    // 다시 선택 안 한 상태로 돌아가야 하니, 빈 문자열을 그대로 저장하면
+    // 안 된다(hasTextOverlay가 title.isNotEmpty도 같이 보긴 하지만, 저장
+    // 시점에 정리해 두는 쪽이 다른 화면에서 이 필드를 읽을 때도 일관적이다).
+    String? normalize(String text) => text.trim().isEmpty ? null : text.trim();
+
     Navigator.pop(
       context,
       _BannerFormResult(
@@ -378,6 +410,9 @@ class _BannerFormDialogState extends State<_BannerFormDialog> {
         active: _active,
         startAt: _startAt,
         endAt: _endAt,
+        eyebrow: normalize(_eyebrowController.text),
+        title: normalize(_titleController.text),
+        subtitle: normalize(_subtitleController.text),
       ),
     );
   }
@@ -411,6 +446,38 @@ class _BannerFormDialogState extends State<_BannerFormDialog> {
                     clipBehavior: Clip.antiAlias,
                     child: _buildImagePreview(existingImageUrl),
                   ),
+                ),
+              ),
+              const SizedBox(height: 16),
+              LabeledField(
+                label: '아이브로우 (선택)',
+                child: TextField(
+                  controller: _eyebrowController,
+                  style: TextStyle(color: AdminColors.ivory, fontSize: 13),
+                  decoration: adminInputDecoration(hintText: '예: 이달의 신작'),
+                ),
+              ),
+              const SizedBox(height: 16),
+              LabeledField(
+                label: '타이틀 (선택)',
+                child: TextField(
+                  controller: _titleController,
+                  style: TextStyle(color: AdminColors.ivory, fontSize: 13),
+                  decoration: adminInputDecoration(hintText: '예: 낡은 저택의 비밀'),
+                ),
+              ),
+              const SizedBox(height: 4),
+              Text(
+                '타이틀을 비워두면 이미지 전용 배너로 유지돼요(텍스트/스크림 없음).',
+                style: TextStyle(fontSize: 11, color: AdminColors.muted),
+              ),
+              const SizedBox(height: 16),
+              LabeledField(
+                label: '서브 텍스트 (선택)',
+                child: TextField(
+                  controller: _subtitleController,
+                  style: TextStyle(color: AdminColors.ivory, fontSize: 13),
+                  decoration: adminInputDecoration(hintText: '예: 인터랙티브 · 공포'),
                 ),
               ),
               const SizedBox(height: 16),
