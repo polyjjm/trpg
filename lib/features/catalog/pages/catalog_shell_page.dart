@@ -3,6 +3,8 @@ import 'package:flutter/material.dart';
 import '../../../core/auth/auth_scope.dart';
 import '../../../reader/shared/data/reader_prefs_repository.dart';
 import '../data/notice_repository.dart';
+import '../widgets/catalog_desktop_nav_bar.dart';
+import '../widgets/home_desktop_layout.dart';
 import 'home_tab.dart';
 import 'my_library_tab.dart';
 import 'notice_list_tab.dart';
@@ -11,24 +13,29 @@ import 'settings_tab.dart';
 const Color _ivory = Color(0xFFE2D4BF);
 const Color _gold = Color(0xFFF0E68C);
 
-/// 로그인 직후 항상 이 화면으로 들어온다 — 하단 탭(홈/내 서재/공지사항/설정)을 가진
-/// 라이브러리 셸. 각 탭은 IndexedStack으로 유지해 탭을 오갈 때 스크롤 위치와
-/// 상태(검색어, 배너 로드 등)가 보존된다.
+/// 로그인 직후 항상 이 화면으로 들어온다 — 탭(홈/내 서재/공지사항/설정)을
+/// 가진 라이브러리 셸. 각 탭은 IndexedStack으로 유지해 탭을 오갈 때 스크롤
+/// 위치와 상태(검색어, 배너 로드 등)가 보존된다.
 ///
-/// 하단 탭바는 Material의 기본 NavigationBar 대신 직접 만든 것을 쓴다 —
-/// 이 앱은 커스텀 골드/아이보리 팔레트를 쓰고 Material3 colorScheme을 별도로
-/// 설정하지 않아서, 기본 NavigationBar를 그대로 쓰면 엉뚱한 기본 보라색
-/// 계열로 나온다. 게임 화면들의 FooterNavBar와 같은 시각 언어(검정 배경,
-/// 아이보리/골드 아이콘)를 그대로 따른다.
+/// 내비게이션 위치는 폭으로 갈린다:
+/// - 좁은 폭: 기존 하단 탭바([_CatalogBottomNav]). Material의 기본
+///   NavigationBar 대신 직접 만든 것을 쓴다 — 이 앱은 커스텀 골드/아이보리
+///   팔레트를 쓰고 Material3 colorScheme을 별도로 설정하지 않아서, 기본
+///   NavigationBar를 그대로 쓰면 엉뚱한 기본 보라색 계열로 나온다.
+/// - 데스크톱 폭([homeDesktopBreakpoint] 이상): 화면 맨 위의
+///   [CatalogDesktopNavBar]. 검색창과 코인/충전 버튼도 여기로 올라간다.
+///
+/// 데스크톱 검색창은 이 셸이 소유한다([_searchController],
+/// [_desktopQuery]) — 입력창은 상단 바에, 결과는 홈 탭 안에 있어서 둘을
+/// 잇는 값이 두 위젯 위쪽에 있어야 한다. 홈 탭은 [_desktopQuery]를 구독만
+/// 하고, 확정된 검색어를 자기 검색 경로에 그대로 흘려 넣는다.
 class CatalogShellPage extends StatefulWidget {
   /// 웹에서 author/admin 계정으로 열었을 때만 true — 홈 탭에만 전달된다.
   final bool showAuthorModeLink;
 
   /// 홈 탭의 스토리팩 스트림이 첫 스냅샷(데이터든 에러든)을 내놓는 순간 한
   /// 번만 불린다 — MainPage가 이 콜백을 받아서야 부트스트랩 로딩 오버레이를
-  /// 걷어낸다. 그 전까지 [HomeTab]에 아직 아무 데이터도 없다는 이유로
-  /// "아직 연재 중인 스토리가 없어요" 같은 빈 상태 문구가 로딩 화면 대신
-  /// 잠깐 스쳐 지나가는 걸 막는다.
+  /// 걷어낸다.
   final VoidCallback? onContentReady;
 
   const CatalogShellPage({super.key, this.showAuthorModeLink = false, this.onContentReady});
@@ -43,6 +50,11 @@ class _CatalogShellPageState extends State<CatalogShellPage> {
   final NoticeRepository _noticeRepository = NoticeRepository();
   final ReaderPrefsRepository _readerPrefsRepository = ReaderPrefsRepository();
   late final Stream<DateTime?> _latestNoticeAtStream = _noticeRepository.watchLatestNoticeAt();
+
+  // 데스크톱 상단 바 검색 — 입력 상태와 확정된 검색어를 셸이 들고 있는다.
+  final TextEditingController _searchController = TextEditingController();
+  final FocusNode _searchFocusNode = FocusNode();
+  final ValueNotifier<String> _desktopQuery = ValueNotifier<String>('');
 
   // AuthScope.of(context)는 initState에서 부르면 안 되는 타이밍이라(아직
   // InheritedWidget 의존성 등록 전) — StoryPackDetailPage의 _resolvedProgress와
@@ -62,8 +74,15 @@ class _CatalogShellPageState extends State<CatalogShellPage> {
       _lastNoticeReadAtStream = _readerPrefsRepository.watch(uid).map((prefs) => prefs.lastNoticeReadAt);
     }
     // 게스트(uid == null)는 서버에 읽음 상태를 남길 계정이 없다 — 공지가
-    // 하나라도 있으면 항상 안 읽음으로 취급한다(기본값 Stream.value(null)
-    // 그대로 둔다).
+    // 하나라도 있으면 항상 안 읽음으로 취급한다.
+  }
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    _searchFocusNode.dispose();
+    _desktopQuery.dispose();
+    super.dispose();
   }
 
   /// 공지사항 탭(인덱스 2)으로 전환하는 순간 lastNoticeReadAt을 갱신한다.
@@ -78,38 +97,98 @@ class _CatalogShellPageState extends State<CatalogShellPage> {
     }
   }
 
+  /// 상단 바 로고 탭 — 홈 탭으로 돌아가고 검색을 접는다.
+  void _handleLogoTap() {
+    _searchController.clear();
+    _desktopQuery.value = '';
+    if (_index != 0) _handleNavChanged(0);
+  }
+
   @override
   Widget build(BuildContext context) {
+    final isDesktop = MediaQuery.sizeOf(context).width >= homeDesktopBreakpoint;
+
+    final tabs = IndexedStack(
+      index: _index,
+      children: [
+        HomeTab(
+          showAuthorModeLink: widget.showAuthorModeLink,
+          onContentReady: widget.onContentReady,
+          externalQuery: isDesktop ? _desktopQuery : null,
+        ),
+        const MyLibraryTab(),
+        NoticeListTab(),
+        const SettingsTab(),
+      ],
+    );
+
     return Scaffold(
       backgroundColor: Colors.black,
-      body: IndexedStack(
-        index: _index,
-        children: [
-          HomeTab(showAuthorModeLink: widget.showAuthorModeLink, onContentReady: widget.onContentReady),
-          const MyLibraryTab(),
-          NoticeListTab(),
-          const SettingsTab(),
-        ],
-      ),
-      bottomNavigationBar: StreamBuilder<DateTime?>(
-        stream: _latestNoticeAtStream,
-        builder: (context, latestSnapshot) {
-          return StreamBuilder<DateTime?>(
-            stream: _lastNoticeReadAtStream,
-            builder: (context, readSnapshot) {
-              final latest = latestSnapshot.data;
-              final lastRead = readSnapshot.data;
-              final hasUnreadNotice = latest != null && (lastRead == null || latest.isAfter(lastRead));
-
-              return _CatalogBottomNav(
+      body: isDesktop
+          ? _UnreadNoticeBuilder(
+              latestNoticeAtStream: _latestNoticeAtStream,
+              lastNoticeReadAtStream: _lastNoticeReadAtStream,
+              builder: (context, hasUnreadNotice) => Column(
+                children: [
+                  CatalogDesktopNavBar(
+                    index: _index,
+                    onChanged: _handleNavChanged,
+                    hasUnreadNotice: hasUnreadNotice,
+                    searchController: _searchController,
+                    searchFocusNode: _searchFocusNode,
+                    onSearchSubmitted: (query) => _desktopQuery.value = query,
+                    onLogoTap: _handleLogoTap,
+                  ),
+                  Expanded(child: tabs),
+                ],
+              ),
+            )
+          : tabs,
+      bottomNavigationBar: isDesktop
+          ? null
+          : _UnreadNoticeBuilder(
+              latestNoticeAtStream: _latestNoticeAtStream,
+              lastNoticeReadAtStream: _lastNoticeReadAtStream,
+              builder: (context, hasUnreadNotice) => _CatalogBottomNav(
                 index: _index,
                 onChanged: _handleNavChanged,
                 hasUnreadNotice: hasUnreadNotice,
-              );
-            },
-          );
-        },
-      ),
+              ),
+            ),
+    );
+  }
+}
+
+/// "안 읽은 공지가 있는지"를 계산해 넘겨주는 래퍼 — 최신 공지 시각과 마지막
+/// 읽음 시각, 두 스트림을 겹쳐 봐야 알 수 있다. 하단 탭바와 데스크톱 상단
+/// 내비바가 같은 판단을 써야 하므로 위젯으로 뽑았다(예전엔
+/// bottomNavigationBar 안에 이중 StreamBuilder로 인라인되어 있었다).
+class _UnreadNoticeBuilder extends StatelessWidget {
+  final Stream<DateTime?> latestNoticeAtStream;
+  final Stream<DateTime?> lastNoticeReadAtStream;
+  final Widget Function(BuildContext context, bool hasUnreadNotice) builder;
+
+  const _UnreadNoticeBuilder({
+    required this.latestNoticeAtStream,
+    required this.lastNoticeReadAtStream,
+    required this.builder,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return StreamBuilder<DateTime?>(
+      stream: latestNoticeAtStream,
+      builder: (context, latestSnapshot) {
+        return StreamBuilder<DateTime?>(
+          stream: lastNoticeReadAtStream,
+          builder: (context, readSnapshot) {
+            final latest = latestSnapshot.data;
+            final lastRead = readSnapshot.data;
+            final hasUnreadNotice = latest != null && (lastRead == null || latest.isAfter(lastRead));
+            return builder(context, hasUnreadNotice);
+          },
+        );
+      },
     );
   }
 }

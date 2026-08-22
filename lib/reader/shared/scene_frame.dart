@@ -18,16 +18,33 @@ const Color _ivory = Color(0xFFE2D4BF);
 const Color _gold = Color(0xFFF0E68C);
 const Color _beatAccent = Color(0xFFFFB648);
 
+/// 데스크톱 리더 레이아웃으로 갈리는 폭 — 카탈로그 쪽 homeDesktopBreakpoint와
+/// 같은 값이지만, lib/reader/**가 lib/features/catalog/**를 import하지 않도록
+/// 여기 따로 둔다(genres/Genre 사본과 같은 패턴).
+const double _desktopBreakpoint = 1100;
+
+/// 데스크톱 설정 사이드바 폭.
+const double _settingsPanelWidth = 320;
+
+/// 데스크톱 본문 읽기 폭 — 1440px 화면에서 한 줄이 화면 끝까지 늘어나면
+/// 눈이 줄을 놓친다.
+const double _desktopReadingWidth = 780;
+
 /// 노드 한 편(= 화면 한 장)을 렌더링하는 공유 프레임. 인터랙티브/선형 리더가
 /// 둘 다 이 위로 자기만의 하단 액션 영역(선택지 버튼들 / "다음" 버튼)만 얹는다
-/// — 배경 배너, 문단/비트/이미지 블록 타이핑, 설정 시트는 두 리더가 완전히
-/// 같은 동작을 공유해야 하므로 여기서 한 번만 구현한다.
+/// — 배경, 문단/비트/이미지 블록 타이핑, 설정은 두 리더가 완전히 같은 동작을
+/// 공유해야 하므로 여기서 한 번만 구현한다.
+///
+/// 레이아웃은 폭으로 갈린다:
+/// - 좁은 폭: 상단 배경 배너(화면 높이 36%) + 본문 + 하단 접이식 설정 시트.
+/// - 데스크톱([_desktopBreakpoint] 이상): 배경이 화면 전체를 채우고, 본문과
+///   액션 영역은 하단 스크림 위에 얹힌다. 설정은 하단 시트가 아니라 우상단
+///   아이콘 → 오른쪽 사이드바다 — 넓은 화면에서 시트를 그대로 쓰면 컨트롤이
+///   화면 폭 전체로 늘어나 읽는 동안 계속 눈에 걸린다.
 ///
 /// 노드가 바뀔 때마다 호출부가 새 [key](예: ValueKey(node.id))로 새
 /// SceneFrame 인스턴스를 만드는 것을 전제로 한다 — 그래야 배경 페이드인/타이핑
-/// 진행 상태가 자연스럽게 "새 노드 진입"으로 리셋된다. 같은 인스턴스를 두고
-/// props만 갱신하는 방식은 지원하지 않는다(didUpdateWidget에서 진행 상태를
-/// 다시 계산하지 않는다).
+/// 진행 상태가 자연스럽게 "새 노드 진입"으로 리셋된다.
 ///
 /// Scaffold 자체는 포함하지 않는다 — 호출부(리더 페이지)가 자기 Scaffold의
 /// body로 이 위젯을 얹어, 뒤로가기 버튼 등 페이지 단위 크롬은 호출부가 맡는다.
@@ -35,30 +52,24 @@ class SceneFrame extends StatefulWidget {
   /// 이 노드의 본문 블록(paragraph/beat/image) — 순서대로 타이핑/표시된다.
   final List<NodeBlock> blocks;
 
-  /// 배경 인계 규칙(lib/core/story/background_image_inheritance.dart)까지
-  /// 적용해 이미 resolve된 이미지 URL. null이면 배너는 fallback 그라디언트만
-  /// 보여준다.
+  /// 배경 인계 규칙까지 적용해 이미 resolve된 이미지 URL. null이면 fallback
+  /// 그라디언트만 보여준다.
   final String? backgroundImageUrl;
 
-  /// storyPack.ttsEnabled — 이 팩이 TTS 재생을 허용하는지. false면 설정
-  /// 시트에 TTS 컨트롤 자체가 보이지 않는다(readerPrefs.ttsEnabled과는 별개
-  /// 축 — 팩 단위 허용 여부 vs 사용자 개인 설정).
+  /// storyPack.ttsEnabled — 이 팩이 TTS 재생을 허용하는지. false면 설정에
+  /// TTS 컨트롤 자체가 보이지 않는다.
   final bool ttsAllowed;
 
-  /// 모든 블록이 다 드러난 뒤(또는 "전체 보기"로 건너뛴 뒤) 보여줄 타입별
-  /// 액션 영역 — 인터랙티브는 선택지 버튼들, 선형은 "다음"/"완료" 버튼.
+  /// 모든 블록이 다 드러난 뒤 보여줄 타입별 액션 영역 — 인터랙티브는 선택지
+  /// 버튼들, 선형은 "다음"/"완료" 버튼.
   final WidgetBuilder actionAreaBuilder;
 
-  /// 이 노드의 연출 효과(암전/화면 흔들림/효과음/진동) — 본문 타이핑이 끝나는
-  /// 시점(= actionAreaBuilder가 페이드인하는 시점)에 넷 다 동시에(순서를
-  /// 기다리지 않고 각자) 트리거된다. 기본값(모두 꺼짐)이라 effects를 안
-  /// 넘기는 호출부는 그냥 아무 일도 일어나지 않는다.
+  /// 이 노드의 연출 효과(암전/흔들림/효과음/플래시/진동) — 본문 타이핑이
+  /// 끝나는 시점에 전부 동시에 트리거된다.
   final NodeEffects effects;
 
-  /// effects.sfx.sfxId를 sfxLibrary/{sfxId}로 조인해 이미 resolve된 다운로드
-  /// URL(StoryReaderRepository.fetchPublishedNodes 참고). effects.sfx.enabled가
-  /// true인데 이 값이 null/빈 문자열이면(라이브러리 문서가 지워졌거나 URL
-  /// 조인이 안 됐거나) 조용히 재생을 건너뛴다 — 절대 예외를 던지지 않는다.
+  /// effects.sfx.sfxId를 sfxLibrary/{sfxId}로 조인해 이미 resolve된 URL.
+  /// enabled인데 null/빈 문자열이면 조용히 재생을 건너뛴다.
   final String? sfxUrl;
 
   const SceneFrame({
@@ -91,13 +102,16 @@ class _SceneFrameState extends State<SceneFrame>
   int _blockIndex = 0;
   int? _autoAdvancedIndex;
   bool _bgVisible = false;
+
+  /// 좁은 폭의 하단 시트가 펼쳐졌는지.
   bool _sheetExpanded = false;
 
-  /// 이 노드 인스턴스(= 이 State)에서 연출 효과를 이미 재생했는지 — 타이핑
-  /// 완료(_typingDone) 시점에 한 번만 트리거하고, 그 뒤 rebuild/setState가
-  /// 몇 번을 더 일어나도 다시 재생하지 않는다. SceneFrame은 노드가 바뀔
-  /// 때마다 새 key로 새 인스턴스가 만들어지는 게 전제라(클래스 상단 doc
-  /// 참고), 이 플래그도 노드 전환마다 자연스럽게 새로 초기화된다.
+  /// 데스크톱 설정 사이드바가 열렸는지 — 기본은 닫힘이다(몰입 방해를 막는 게
+  /// 이 레이아웃의 목적).
+  bool _settingsOpen = false;
+
+  /// 이 노드 인스턴스에서 연출 효과를 이미 재생했는지 — 타이핑 완료 시점에
+  /// 한 번만 트리거한다.
   bool _effectsPlayed = false;
 
   double _blackoutOpacity = 0;
@@ -126,10 +140,6 @@ class _SceneFrameState extends State<SceneFrame>
       setState(() => _bgVisible = true);
       // 블록이 아예 없는 노드는 _advance()/_skipAll() 어느 쪽도 호출될 일이
       // 없어서 _typingDone이 시작부터 true다 — 여기서도 한 번 확인해 둔다.
-      // initState 안에서 곧바로 부르지 않는 이유: _triggerBlackout이
-      // setState를 부르는데, 첫 프레임이 빌드되기 전(initState 시점)에
-      // setState를 거는 건 프레임워크가 막는 타이밍이라 postFrameCallback으로
-      // 미룬다 — _bgVisible과 같은 이유.
       _maybePlayEffects();
     });
   }
@@ -176,10 +186,8 @@ class _SceneFrameState extends State<SceneFrame>
     _maybePlayEffects();
   }
 
-  /// 본문이 다 드러난(_typingDone) 순간(= actionAreaBuilder가 페이드인하는
-  /// 바로 그 타이밍) 켜져 있는 연출 효과를 전부 "동시에" 트리거한다 — 서로
-  /// await하지 않고 각자 fire-and-forget으로 시작해서, 하나의 재생/애니메이션이
-  /// 끝날 때까지 다음 걸 기다리는 일이 없다. [_effectsPlayed]가 유일한 가드다.
+  /// 본문이 다 드러난 순간 켜져 있는 연출 효과를 전부 "동시에" 트리거한다 —
+  /// 서로 await하지 않는다. [_effectsPlayed]가 유일한 가드다.
   void _maybePlayEffects() {
     if (_effectsPlayed || !_typingDone) return;
     _effectsPlayed = true;
@@ -219,13 +227,11 @@ class _SceneFrameState extends State<SceneFrame>
   }
 
   /// blackout은 반씩 나눠 대칭으로 fade in/out하지만, 플래시는 "번쩍임"으로
-  /// 읽혀야 해서 비대칭이다 — 아주 짧게(고정 40ms) 확 들어왔다가, 나머지
-  /// durationPreset 구간에 걸쳐 천천히 빠진다.
+  /// 읽혀야 해서 비대칭이다 — 아주 짧게(고정 40ms) 들어왔다가 나머지 구간에
+  /// 걸쳐 천천히 빠진다.
   void _triggerFlash(Color color, Duration total) {
     const fadeIn = Duration(milliseconds: 40);
-    final fadeOut = total > fadeIn
-        ? total - fadeIn
-        : const Duration(milliseconds: 10);
+    final fadeOut = total > fadeIn ? total - fadeIn : const Duration(milliseconds: 10);
     setState(() {
       _flashColor = color;
       _flashFadeDuration = fadeIn;
@@ -247,17 +253,8 @@ class _SceneFrameState extends State<SceneFrame>
       ..forward();
   }
 
-  /// sfxId가 없거나(노드가 효과음을 안 골랐거나), sfxLibrary 조인이 실패했거나
-  /// (문서가 지워짐 등) URL 자체가 로드에 실패해도 디버그 로그만 남기고
-  /// 조용히 넘어간다 — AudioService.playSfx는 BGM 플레이어와 별개인 매번 새
-  /// AudioPlayer 인스턴스를 쓰고, 자기 내부에서 이미 예외를 삼킨다.
-  ///
-  /// 후속 작업: AudioService의 BGM 음소거(_bgmMuted/setBgmMuted)는 지금 BGM
-  /// 플레이어 볼륨에만 적용되고 playSfx()는 그 값을 전혀 보지 않는다 — 여기서도
-  /// 마찬가지로 BGM 음소거 여부와 무관하게 항상 재생한다. "설정 시트의 BGM
-  /// 끄기가 노드 효과음까지 묶어서 끌지, 별개로 둘지"는 별도의 SFX 음소거
-  /// 플래그(readerPrefs 등)를 먼저 설계해야 하는 제품 결정이라 이번 패스에서는
-  /// 건드리지 않는다.
+  /// sfxId가 없거나 조인이 실패했거나 URL 로드가 실패해도 디버그 로그만 남기고
+  /// 조용히 넘어간다.
   Future<void> _triggerSfx(String? url) async {
     if (url == null || url.isEmpty) {
       debugPrint('노드 효과음 재생 안 함: sfxUrl이 없어요(sfxId 미선택 또는 라이브러리 조인 실패).');
@@ -279,7 +276,7 @@ class _SceneFrameState extends State<SceneFrame>
 
   /// 이미지 블록/애니메이션이 꺼진 텍스트 블록처럼 "타이핑 없이 즉시 지나가는"
   /// 블록을 한 프레임 뒤 자동으로 다음 블록으로 넘긴다. index별로 한 번만
-  /// 예약한다 — build()가 여러 번 불려도 중복 예약되지 않도록.
+  /// 예약한다.
   void _scheduleAutoAdvance(int index, {Duration delay = Duration.zero}) {
     if (_autoAdvancedIndex == index) return;
     _autoAdvancedIndex = index;
@@ -290,11 +287,7 @@ class _SceneFrameState extends State<SceneFrame>
 
   String get _combinedTtsText {
     return widget.blocks
-        .map(
-          (b) => b.type == NodeBlockType.image
-              ? (b.caption ?? '')
-              : (b.ttsText ?? ''),
-        )
+        .map((b) => b.type == NodeBlockType.image ? (b.caption ?? '') : (b.ttsText ?? ''))
         .where((s) => s.trim().isNotEmpty)
         .join('. ');
   }
@@ -317,85 +310,50 @@ class _SceneFrameState extends State<SceneFrame>
 
   @override
   Widget build(BuildContext context) {
+    final isDesktop = MediaQuery.sizeOf(context).width >= _desktopBreakpoint;
+
     return ColoredBox(
       color: Colors.black,
       child: Stack(
         children: [
+          // 흔들림은 두 레이아웃이 공유한다 — 감쇠하는 사인파로 원위치에
+          // 자연스럽게 멎는다.
           AnimatedBuilder(
             animation: _shakeController,
             builder: (context, child) {
               final t = _shakeController.value;
-              // 감쇠하는 사인파 — (1 - t)가 진폭을 서서히 0으로 줄여서
-              // 지속시간 끝에 원위치로 자연스럽게 멎는다.
               final dx = _shakeAmplitude * math.sin(t * 6 * math.pi) * (1 - t);
               return Transform.translate(offset: Offset(dx, 0), child: child);
             },
-            child: Column(
-              children: [
-                _BackgroundBanner(
-                  url: widget.backgroundImageUrl,
-                  visible: _bgVisible,
-                ),
-                Expanded(
-                  child: Padding(
-                    padding: const EdgeInsets.fromLTRB(22, 16, 22, 44),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        SizedBox(
-                          height: 28,
-                          child: !_typingDone
-                              ? Align(
-                                  alignment: Alignment.centerRight,
-                                  child: TextButton(
-                                    onPressed: _skipAll,
-                                    style: TextButton.styleFrom(
-                                      foregroundColor: _ivory.withOpacity(0.75),
-                                    ),
-                                    child: const Text(
-                                      '전체 보기',
-                                      style: TextStyle(
-                                        fontSize: 12.5,
-                                        fontWeight: FontWeight.w700,
-                                      ),
-                                    ),
-                                  ),
-                                )
-                              : null,
-                        ),
-                        Expanded(
-                          child: SingleChildScrollView(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                for (
-                                  var i = 0;
-                                  i < widget.blocks.length && i <= _blockIndex;
-                                  i++
-                                )
-                                  _buildBlock(widget.blocks[i], index: i),
-                              ],
-                            ),
-                          ),
-                        ),
-                        const SizedBox(height: 16),
-                        AnimatedOpacity(
-                          opacity: _typingDone ? 1 : 0,
-                          duration: const Duration(milliseconds: 320),
-                          curve: Curves.easeOut,
-                          child: IgnorePointer(
-                            ignoring: !_typingDone,
-                            child: widget.actionAreaBuilder(context),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-              ],
-            ),
+            child: isDesktop ? _buildDesktopScene() : _buildMobileScene(),
           ),
-          Positioned(left: 0, right: 0, bottom: 0, child: _buildBottomSheet()),
+          if (!isDesktop)
+            Positioned(left: 0, right: 0, bottom: 0, child: _buildBottomSheet())
+          else ...[
+            if (!_settingsOpen)
+              Positioned(
+                right: 20,
+                top: 16,
+                child: SafeArea(child: _SettingsTriggerButton(onTap: _openSettings)),
+              ),
+            if (_settingsOpen)
+              Positioned(
+                right: 0,
+                top: 0,
+                bottom: 0,
+                child: _ReaderSettingsPanel(
+                  prefs: _prefs,
+                  ttsAllowed: widget.ttsAllowed,
+                  ttsPlaying: _ttsPlaying,
+                  onClose: _closeSettings,
+                  onToggleTts: _toggleTtsPlayback,
+                  onToggleBgm: _toggleBgm,
+                  onFontSelected: (fontId) => _updatePrefs(_prefs.copyWith(fontId: fontId)),
+                  onAnimationToggled: (enabled) =>
+                      _updatePrefs(_prefs.copyWith(animationEnabled: enabled)),
+                ),
+              ),
+          ],
           Positioned.fill(
             child: IgnorePointer(
               child: AnimatedOpacity(
@@ -406,9 +364,8 @@ class _SceneFrameState extends State<SceneFrame>
               ),
             ),
           ),
-          // 블랙아웃과 같은 "화면 전체 오버레이" 메커니즘을 그대로 재사용한
-          // 두 번째, 독립된 레이어 — 색/지속시간이 다른 상태(_flash*)를 따로
-          // 들고 있어서 블랙아웃과 동시에 켜져도 서로 값을 덮어쓰지 않는다.
+          // 블랙아웃과 같은 오버레이 메커니즘을 재사용한 독립 레이어 — 색/
+          // 지속시간 상태를 따로 들고 있어서 동시에 켜져도 서로 안 덮어쓴다.
           Positioned.fill(
             child: IgnorePointer(
               child: AnimatedOpacity(
@@ -424,13 +381,148 @@ class _SceneFrameState extends State<SceneFrame>
     );
   }
 
+  void _openSettings() => setState(() => _settingsOpen = true);
+  void _closeSettings() => setState(() => _settingsOpen = false);
+
+  /// 좁은 폭 — 상단 배경 배너 + 본문 + 액션 영역(기존 그대로).
+  Widget _buildMobileScene() {
+    return Column(
+      children: [
+        _BackgroundBanner(url: widget.backgroundImageUrl, visible: _bgVisible),
+        Expanded(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(22, 16, 22, 44),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                SizedBox(height: 28, child: _buildSkipButton()),
+                Expanded(
+                  child: SingleChildScrollView(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: _buildVisibleBlocks(),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 16),
+                _buildActionArea(),
+              ],
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  /// 데스크톱 — 배경이 화면 전체를 채우고, 본문/액션은 하단 스크림 위에 얹힌다.
+  ///
+  /// 설정 사이드바가 열리면 본문과 액션 영역을 패널 폭만큼 안으로 밀어 넣는다
+  /// — 안 그러면 오른쪽 선택지가 패널 아래로 들어가 눌리지 않는다.
+  Widget _buildDesktopScene() {
+    final url = widget.backgroundImageUrl;
+    final rightInset = _settingsOpen ? _settingsPanelWidth + 60 : 60.0;
+
+    return Stack(
+      fit: StackFit.expand,
+      children: [
+        AnimatedOpacity(
+          opacity: _bgVisible ? 1 : 0,
+          duration: const Duration(milliseconds: 500),
+          curve: Curves.easeOut,
+          child: url != null && url.isNotEmpty
+              ? Image.network(
+                  url,
+                  fit: BoxFit.cover,
+                  errorBuilder: (_, _, _) => const _BannerFallback(),
+                )
+              : const _BannerFallback(),
+        ),
+        // 본문이 사진 위에서도 읽히도록 아래로 갈수록 짙어지는 스크림.
+        const DecoratedBox(
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              begin: Alignment.bottomCenter,
+              end: Alignment.topCenter,
+              colors: [Color(0xF0000000), Color(0x8C000000), Colors.transparent],
+              stops: [0.0, 0.34, 0.62],
+            ),
+          ),
+        ),
+        Positioned(
+          left: 60,
+          right: 0,
+          bottom: 40,
+          child: Padding(
+            padding: EdgeInsets.only(right: rightInset),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                SizedBox(
+                  width: _desktopReadingWidth,
+                  child: Align(alignment: Alignment.centerRight, child: _buildSkipButton()),
+                ),
+                ConstrainedBox(
+                  constraints: const BoxConstraints(
+                    maxWidth: _desktopReadingWidth,
+                    maxHeight: 320,
+                  ),
+                  child: SingleChildScrollView(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: _buildVisibleBlocks(),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 10),
+                _buildActionArea(),
+              ],
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget? _buildSkipButton() {
+    if (_typingDone) return null;
+    return TextButton(
+      onPressed: _skipAll,
+      style: TextButton.styleFrom(foregroundColor: _ivory.withOpacity(0.75)),
+      child: const Text(
+        '전체 보기',
+        style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w700),
+      ),
+    );
+  }
+
+  Widget _buildActionArea() {
+    return AnimatedOpacity(
+      opacity: _typingDone ? 1 : 0,
+      duration: const Duration(milliseconds: 320),
+      curve: Curves.easeOut,
+      child: IgnorePointer(
+        ignoring: !_typingDone,
+        child: widget.actionAreaBuilder(context),
+      ),
+    );
+  }
+
+  List<Widget> _buildVisibleBlocks() {
+    return [
+      for (var i = 0; i < widget.blocks.length && i <= _blockIndex; i++)
+        _buildBlock(widget.blocks[i], index: i),
+    ];
+  }
+
   Widget _buildBlock(NodeBlock block, {required int index}) {
     final completed = index < _blockIndex;
 
     switch (block.type) {
       case NodeBlockType.image:
-        if (!completed)
+        if (!completed) {
           _scheduleAutoAdvance(index, delay: const Duration(milliseconds: 550));
+        }
         return _ImageBlockView(block: block);
       case NodeBlockType.paragraph:
       case NodeBlockType.beat:
@@ -482,8 +574,7 @@ class _SceneFrameState extends State<SceneFrame>
   }
 
   /// null을 반환하면 테마 기본값(NotoSansKR)을 그대로 쓴다. 'serif'/'mono'는
-  /// 아직 이 프로젝트가 번들하지 않은 폰트라 플랫폼 기본 대체 글꼴로
-  /// 떨어진다 — 실제 서체 애셋이 추가되기 전까지의 자리 표시자다.
+  /// 아직 번들하지 않은 폰트라 플랫폼 기본 대체 글꼴로 떨어진다.
   String? _fontFamilyFor(String fontId) {
     switch (fontId) {
       case 'serif':
@@ -507,6 +598,145 @@ class _SceneFrameState extends State<SceneFrame>
       onFontSelected: (fontId) => _updatePrefs(_prefs.copyWith(fontId: fontId)),
       onAnimationToggled: (enabled) =>
           _updatePrefs(_prefs.copyWith(animationEnabled: enabled)),
+    );
+  }
+}
+
+/// 데스크톱 우상단의 설정 진입 버튼 — 읽는 동안 화면에 남는 유일한 크롬이다.
+/// 사이드바가 열려 있는 동안에는 아예 렌더하지 않는다(패널이 이 자리를 덮어
+/// 버튼이 닫기 X 아래에 깔린다).
+class _SettingsTriggerButton extends StatelessWidget {
+  final VoidCallback onTap;
+
+  const _SettingsTriggerButton({required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      customBorder: const CircleBorder(),
+      onTap: onTap,
+      child: Container(
+        width: 40,
+        height: 40,
+        decoration: BoxDecoration(
+          shape: BoxShape.circle,
+          color: Colors.black.withOpacity(0.42),
+        ),
+        child: Icon(Icons.tune_rounded, color: _ivory.withOpacity(0.85), size: 21),
+      ),
+    );
+  }
+}
+
+/// 데스크톱 설정 사이드바 — 하단 시트와 같은 컨트롤(TTS / BGM / 글꼴 /
+/// 글자 애니메이션)을 같은 위젯([_SheetIconToggle], [_FontChip])으로 그린다.
+/// 두 레이아웃이 각자 컨트롤을 들고 있다가 어긋나는 걸 막는다.
+class _ReaderSettingsPanel extends StatelessWidget {
+  final ReaderPrefs prefs;
+  final bool ttsAllowed;
+  final bool ttsPlaying;
+  final VoidCallback onClose;
+  final VoidCallback onToggleTts;
+  final VoidCallback onToggleBgm;
+  final ValueChanged<String> onFontSelected;
+  final ValueChanged<bool> onAnimationToggled;
+
+  const _ReaderSettingsPanel({
+    required this.prefs,
+    required this.ttsAllowed,
+    required this.ttsPlaying,
+    required this.onClose,
+    required this.onToggleTts,
+    required this.onToggleBgm,
+    required this.onFontSelected,
+    required this.onAnimationToggled,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: _settingsPanelWidth,
+      decoration: BoxDecoration(
+        color: const Color(0xF5080807),
+        border: Border(left: BorderSide(color: Colors.white.withOpacity(0.10))),
+      ),
+      child: SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(24, 22, 24, 24),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  const Text(
+                    '설정',
+                    style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700, color: _ivory),
+                  ),
+                  const Spacer(),
+                  InkWell(
+                    customBorder: const CircleBorder(),
+                    onTap: onClose,
+                    child: Padding(
+                      padding: const EdgeInsets.all(4),
+                      child: Icon(Icons.close_rounded, size: 20, color: _ivory.withOpacity(0.55)),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 22),
+              Row(
+                children: [
+                  if (ttsAllowed) ...[
+                    _SheetIconToggle(
+                      icon: ttsPlaying ? Icons.pause_circle_rounded : Icons.play_circle_rounded,
+                      label: 'TTS',
+                      active: ttsPlaying,
+                      onTap: onToggleTts,
+                    ),
+                    const SizedBox(width: 14),
+                  ],
+                  _SheetIconToggle(
+                    icon: prefs.bgmEnabled ? Icons.music_note_rounded : Icons.music_off_rounded,
+                    label: 'BGM',
+                    active: prefs.bgmEnabled,
+                    onTap: onToggleBgm,
+                  ),
+                ],
+              ),
+              const SizedBox(height: 20),
+              Divider(height: 1, thickness: 1, color: Colors.white.withOpacity(0.08)),
+              const SizedBox(height: 20),
+              Row(
+                children: [
+                  for (final option in _fontOptions) ...[
+                    _FontChip(
+                      label: option.label,
+                      selected: prefs.fontId == option.id,
+                      onTap: () => onFontSelected(option.id),
+                    ),
+                    const SizedBox(width: 8),
+                  ],
+                ],
+              ),
+              const SizedBox(height: 16),
+              Row(
+                children: [
+                  const Text(
+                    '글자 애니메이션',
+                    style: TextStyle(color: _ivory, fontSize: 12.5),
+                  ),
+                  const Spacer(),
+                  Switch(
+                    value: prefs.animationEnabled,
+                    activeThumbColor: _gold,
+                    onChanged: onAnimationToggled,
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ),
     );
   }
 }
@@ -757,11 +987,7 @@ class _SheetIconToggle extends StatelessWidget {
         padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
         child: Row(
           children: [
-            Icon(
-              icon,
-              color: active ? _gold : _ivory.withOpacity(0.5),
-              size: 26,
-            ),
+            Icon(icon, color: active ? _gold : _ivory.withOpacity(0.5), size: 26),
             const SizedBox(width: 6),
             Text(
               label,
@@ -783,11 +1009,7 @@ class _FontChip extends StatelessWidget {
   final bool selected;
   final VoidCallback onTap;
 
-  const _FontChip({
-    required this.label,
-    required this.selected,
-    required this.onTap,
-  });
+  const _FontChip({required this.label, required this.selected, required this.onTap});
 
   @override
   Widget build(BuildContext context) {
@@ -797,14 +1019,10 @@ class _FontChip extends StatelessWidget {
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
         decoration: BoxDecoration(
-          color: selected
-              ? _gold.withOpacity(0.18)
-              : Colors.white.withOpacity(0.05),
+          color: selected ? _gold.withOpacity(0.18) : Colors.white.withOpacity(0.05),
           borderRadius: BorderRadius.circular(999),
           border: Border.all(
-            color: selected
-                ? _gold.withOpacity(0.6)
-                : Colors.white.withOpacity(0.12),
+            color: selected ? _gold.withOpacity(0.6) : Colors.white.withOpacity(0.12),
           ),
         ),
         child: Text(
