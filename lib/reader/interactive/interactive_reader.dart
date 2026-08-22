@@ -232,19 +232,25 @@ class _ChoiceList extends StatelessWidget {
     final isWide = MediaQuery.sizeOf(context).width >= _choiceRowBreakpoint;
 
     if (isWide) {
-      return Row(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          for (var i = 0; i < choices.length; i++) ...[
-            if (i > 0) const SizedBox(width: 12),
-            Expanded(
-              child: _ChoiceButton(
-                label: choices[i].label,
-                onTap: () => onSelected(choices[i]),
+      // ⚠️ CrossAxisAlignment.stretch는 IntrinsicHeight 안에서만 쓴다 — 이
+      // Row는 높이가 unbounded인 자리(Column mainAxisSize.min → Positioned)에
+      // 놓이는데, 그대로 stretch를 주면 "incoming height constraints are
+      // unbounded" 예외가 나고 본문 전체가 좌상단으로 무너진다.
+      return IntrinsicHeight(
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            for (var i = 0; i < choices.length; i++) ...[
+              if (i > 0) const SizedBox(width: 12),
+              Expanded(
+                child: _ChoiceButton(
+                  label: choices[i].label,
+                  onTap: () => onSelected(choices[i]),
+                ),
               ),
-            ),
+            ],
           ],
-        ],
+        ),
       );
     }
 
@@ -281,10 +287,17 @@ class _ChoiceButtonState extends State<_ChoiceButton> {
 
   @override
   Widget build(BuildContext context) {
+    // ⚠️ InkWell이 아니라 GestureDetector(HitTestBehavior.opaque)를 쓴다 —
+    // 이 버튼은 배경 이미지/스크림 위에 얹히는 반투명 컨테이너라 InkWell이
+    // Material 조상을 못 찾는 자리에 놓이면 탭이 조용히 먹지 않는 경우가
+    // 있었다. opaque는 "칠해진 픽셀이 없어도 이 영역 전체가 탭 대상"을
+    // 뜻하므로 반투명 채움에서도 항상 눌린다.
     return MouseRegion(
+      cursor: SystemMouseCursors.click,
       onEnter: (_) => setState(() => _hovered = true),
       onExit: (_) => setState(() => _hovered = false),
-      child: InkWell(
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
         onTap: widget.onTap,
         child: AnimatedContainer(
           duration: const Duration(milliseconds: 140),

@@ -30,6 +30,17 @@ const double _settingsPanelWidth = 320;
 /// 눈이 줄을 놓친다.
 const double _desktopReadingWidth = 780;
 
+/// 배경 이미지가 없는 노드의 "책 읽기 모드" 지면 폭(한 쪽 / 두 쪽).
+const double _bookPageWidth = 720;
+const double _bookSpreadWidth = 1000;
+
+/// 책 모드 본문 줄간감 — 사진 위에 얹힐 때(1.75)보다 넣는 리듬으로 읽힌다.
+const double _bookLineHeight = 2.05;
+
+/// 지면 배경/경계선 — 오른족이 안된 종이 톤.
+const Color _bookPaperTop = Color(0xFF15120F);
+const Color _bookPaperBottom = Color(0xFF100E0C);
+
 /// 노드 한 편(= 화면 한 장)을 렌더링하는 공유 프레임. 인터랙티브/선형 리더가
 /// 둘 다 이 위로 자기만의 하단 액션 영역(선택지 버튼들 / "다음" 버튼)만 얹는다
 /// — 배경, 문단/비트/이미지 블록 타이핑, 설정은 두 리더가 완전히 같은 동작을
@@ -72,6 +83,28 @@ class SceneFrame extends StatefulWidget {
   /// enabled인데 null/빈 문자열이면 조용히 재생을 건너뛴다.
   final String? sfxUrl;
 
+  /// 책 읽기 모드 지면 상단에 찍는 라벨·제목·쪽번호(전부 선택) —
+  /// 배경 이미지가 있는 노드(시네마핅)에선 쓰지 않는다. LinearReader가
+  /// 노드 순서로 "12화" / "12 / 34"를 만들어 넘긴다.
+  final String? chapterLabel;
+  final String? chapterTitle;
+  final String? progressLabel;
+
+  /// 두 쪽 펼침을 "노드 단위"로 갈러 그릴 때 — 호출부가 다음 노드의
+  /// 바록을 [blocks] 뒤에 이어 붙여 넘기고, 이 인덱스부터가 오른쪽 쪽이라고
+  /// 알려준다. null이다면 바록 개수 절반으로 나눈다(한 노드를 두 쪽에
+  /// 나눠 단는 기존 동작).
+  final int? spreadSplitIndex;
+
+  /// 오른쪽 쪽이 다른 노드일 때 그 노드의 쪽 표기.
+  final String? secondaryChapterLabel;
+  final String? secondaryProgressLabel;
+
+  /// 설정에서 "쪽 보기"가 바뀔 때 알려준다 — 두 페이지를 노드 단위로 펼치는
+  /// 판단은 호출부(LinearReader)가 하므로 그쪽도 변경을 알아야 한다. 게스트는
+  /// readerPrefs 문서가 없어 Firestore를 통해 전달되지 않는다.
+  final ValueChanged<String>? onPageModeChanged;
+
   const SceneFrame({
     super.key,
     required this.blocks,
@@ -80,6 +113,13 @@ class SceneFrame extends StatefulWidget {
     this.ttsAllowed = false,
     this.effects = const NodeEffects(),
     this.sfxUrl,
+    this.chapterLabel,
+    this.chapterTitle,
+    this.progressLabel,
+    this.spreadSplitIndex,
+    this.secondaryChapterLabel,
+    this.secondaryProgressLabel,
+    this.onPageModeChanged,
   });
 
   @override
@@ -349,6 +389,10 @@ class _SceneFrameState extends State<SceneFrame>
                   onToggleTts: _toggleTtsPlayback,
                   onToggleBgm: _toggleBgm,
                   onFontSelected: (fontId) => _updatePrefs(_prefs.copyWith(fontId: fontId)),
+                  onPageModeSelected: (mode) {
+                    _updatePrefs(_prefs.copyWith(pageMode: mode));
+                    widget.onPageModeChanged?.call(mode);
+                  },
                   onAnimationToggled: (enabled) =>
                       _updatePrefs(_prefs.copyWith(animationEnabled: enabled)),
                 ),
@@ -384,6 +428,180 @@ class _SceneFrameState extends State<SceneFrame>
   void _openSettings() => setState(() => _settingsOpen = true);
   void _closeSettings() => setState(() => _settingsOpen = false);
 
+  /// 배경 이미지가 없는 노드 — 가운데 지면에 얹어 책처럼 읽힌다.
+  ///
+  /// 한 쪽([ReaderPrefs.pageModeSingle])이면 720px 지면 하나, 두 쪽
+  /// ([ReaderPrefs.pageModeSpread])이면 1000px 안에 두 쪽을 펼치고 가운데
+  /// 접힘선을 둔다. 두 쪽 나누기는 블록 단위다 — 문단/비트를 앞쪽 절반과
+  /// 뒤쪽 절반으로 갈라 담는다. 글자 높이를 재서 정확히 넘치는 지점을 찾는
+  /// 방식이 아니라(그건 렌더 후 측정이 필요하다) 블록 개수 기준이라,
+  /// 문단 하나가 한 쪽보다 길면 그 쪽만 스크롤된다.
+  Widget _buildBookScene() {
+    final blocks = _buildVisibleBlocks();
+    // 두 쪽은 나눌 분량이 있을 때만 펼친다 — 바로 밑에서 반으로 갈라
+    // 담기 때문에, 문단이 하나밖이면 오른쪽 쪽이 통째로 뱈다.
+    final spread = _prefs.isSpread && blocks.length >= 2;
+    final rightInset = _settingsOpen ? _settingsPanelWidth : 0.0;
+
+    return Padding(
+      padding: EdgeInsets.only(right: rightInset),
+      child: Center(
+        child: SizedBox(
+          width: spread ? _bookSpreadWidth : _bookPageWidth,
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(0, 64, 0, 40),
+            child: DecoratedBox(
+              decoration: BoxDecoration(
+                gradient: const LinearGradient(
+                  begin: Alignment.topCenter,
+                  end: Alignment.bottomCenter,
+                  colors: [_bookPaperTop, _bookPaperBottom],
+                ),
+                border: Border.symmetric(
+                  vertical: BorderSide(color: _ivory.withOpacity(0.10)),
+                ),
+              ),
+              child: spread ? _buildSpread(blocks) : _buildSinglePage(blocks),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildSinglePage(List<Widget> blocks) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(56, 44, 56, 32),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _BookPageHeader(
+            chapterLabel: widget.chapterLabel,
+            chapterTitle: widget.chapterTitle,
+            progressLabel: widget.progressLabel,
+          ),
+          Expanded(
+            child: SingleChildScrollView(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: blocks,
+              ),
+            ),
+          ),
+          _buildBookFooter(),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildSpread(List<Widget> blocks) {
+    // 호출부가 노드 경계를 알려줬으면 그 지점에서 자른다(왼쪽 1페이지 /
+    // 오른쪽 2페이지). 안 알려줬으면 바록 개수 절반으로 나눐다.
+    final split =
+        (widget.spreadSplitIndex ?? (blocks.length / 2).ceil()).clamp(0, blocks.length);
+    final left = blocks.take(split).toList();
+    final right = blocks.skip(split).toList();
+    final rightIsOtherNode = widget.spreadSplitIndex != null;
+
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Expanded(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(44, 36, 44, 28),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                _BookPageHeader(
+                  chapterLabel: widget.chapterLabel,
+                  chapterTitle: widget.chapterTitle,
+                  progressLabel: widget.progressLabel,
+                ),
+                Expanded(
+                  child: SingleChildScrollView(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: left,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+        // 가운데 접힘선 — 위아래로 사라지는 1px.
+        DecoratedBox(
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              begin: Alignment.topCenter,
+              end: Alignment.bottomCenter,
+              colors: [
+                _ivory.withOpacity(0),
+                _ivory.withOpacity(0.16),
+                _ivory.withOpacity(0),
+              ],
+            ),
+          ),
+          child: const SizedBox(width: 1),
+        ),
+        Expanded(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(44, 36, 44, 28),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // ⚠️ 오른쪽 쪽도 같은 헤더 위젯을 그린다(제목만 감춤) —
+                // 높이를 숫자로 흉내 내면 글자 크기가 바뀔 때마다 좌우
+                // 가름선과 첫 줄이 어긋난다.
+                _BookPageHeader(
+                  chapterLabel: rightIsOtherNode
+                      ? widget.secondaryChapterLabel
+                      : widget.chapterLabel,
+                  chapterTitle: widget.chapterTitle,
+                  progressLabel: rightIsOtherNode
+                      ? widget.secondaryProgressLabel
+                      : widget.progressLabel,
+                  // 오른쪽이 같은 노드의 뒷부분이면 라벨·쪽번호를 다시 찍지
+                  // 않는다(한 화에 하나). 다른 노드라면 그 노드의 표기를 보여줌다.
+                  hideText: !rightIsOtherNode,
+                ),
+                Expanded(
+                  child: SingleChildScrollView(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: right,
+                    ),
+                  ),
+                ),
+                _buildBookFooter(),
+              ],
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  /// 지면 아래 오른쪽에 붙는 액션 영역 — 선형은 "다음"/"완료", 인터랙티브는
+  /// 선택지들이 그대로 들어온다.
+  Widget _buildBookFooter() {
+    return Padding(
+      padding: const EdgeInsets.only(top: 20),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.end,
+        children: [
+          Container(
+            height: 1,
+            margin: const EdgeInsets.only(bottom: 20),
+            color: _ivory.withOpacity(0.10),
+          ),
+          _buildSkipButton() ?? const SizedBox.shrink(),
+          _buildActionArea(),
+        ],
+      ),
+    );
+  }
+
   /// 좁은 폭 — 상단 배경 배너 + 본문 + 액션 영역(기존 그대로).
   Widget _buildMobileScene() {
     return Column(
@@ -414,12 +632,18 @@ class _SceneFrameState extends State<SceneFrame>
     );
   }
 
-  /// 데스크톱 — 배경이 화면 전체를 채우고, 본문/액션은 하단 스크림 위에 얹힌다.
+  /// 데스크톱 — 배경 이미지가 있으면 시네마틱(사진 전면 + 하단 스크림),
+  /// 없으면 책 읽기 모드(가운데 지면)로 갈린다.
   ///
-  /// 설정 사이드바가 열리면 본문과 액션 영역을 패널 폭만큼 안으로 밀어 넣는다
-  /// — 안 그러면 오른쪽 선택지가 패널 아래로 들어가 눌리지 않는다.
+  /// 배경이 없는 노드에 그라디언트만 깔아 두면 "이미지가 로드 안 된 화면"처럼
+  /// 보인다 — 애초에 사진이 없는 이야기는 책처럼 읽히는 편이 맞다.
   Widget _buildDesktopScene() {
     final url = widget.backgroundImageUrl;
+    if (url == null || url.isEmpty) return _buildBookScene();
+    return _buildCinematicScene(url);
+  }
+
+  Widget _buildCinematicScene(String url) {
     final rightInset = _settingsOpen ? _settingsPanelWidth + 60 : 60.0;
 
     return Stack(
@@ -448,29 +672,30 @@ class _SceneFrameState extends State<SceneFrame>
             ),
           ),
         ),
-        Positioned(
-          left: 60,
-          right: 0,
-          bottom: 40,
+        // ⚠️ 본문/액션은 Positioned가 아니라 Stack의 일반 자식으로 둔다 —
+        // StackFit.expand가 이 자식에게 화면 전체 크기를 tight로 주므로
+        // 하단 정렬(Column mainAxisAlignment.end)만으로 자리가 정해지고,
+        // Positioned로 띄웠을 때처럼 크기·히트테스트가 애매해지지 않는다
+        // (선택지가 보이는데 눌리지 않는 문제의 원인이었다).
+        SafeArea(
           child: Padding(
-            padding: EdgeInsets.only(right: rightInset),
+            padding: EdgeInsets.only(left: 60, right: rightInset, bottom: 40, top: 16),
             child: Column(
+              mainAxisAlignment: MainAxisAlignment.end,
               crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisSize: MainAxisSize.min,
               children: [
                 SizedBox(
                   width: _desktopReadingWidth,
                   child: Align(alignment: Alignment.centerRight, child: _buildSkipButton()),
                 ),
-                ConstrainedBox(
-                  constraints: const BoxConstraints(
-                    maxWidth: _desktopReadingWidth,
-                    maxHeight: 320,
-                  ),
-                  child: SingleChildScrollView(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: _buildVisibleBlocks(),
+                Flexible(
+                  child: ConstrainedBox(
+                    constraints: const BoxConstraints(maxWidth: _desktopReadingWidth),
+                    child: SingleChildScrollView(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: _buildVisibleBlocks(),
+                      ),
                     ),
                   ),
                 ),
@@ -566,11 +791,19 @@ class _SceneFrameState extends State<SceneFrame>
     }
     return TextStyle(
       fontSize: 16,
-      height: 1.75,
-      color: Colors.white,
+      // 배경 이미지가 없는 책 모드에서는 줄간격을 넓혀 읽는 밀도를 낮춘다.
+      height: _isBookMode ? _bookLineHeight : 1.75,
+      color: _isBookMode ? _ivory : Colors.white,
       fontFamily: fontFamily,
       fontFamilyFallback: const ['NotoSansKR'],
     );
+  }
+
+  /// 데스크톱 폭 + 배경 이미지 없음 = 책 읽기 모드.
+  bool get _isBookMode {
+    final url = widget.backgroundImageUrl;
+    return MediaQuery.sizeOf(context).width >= _desktopBreakpoint &&
+        (url == null || url.isEmpty);
   }
 
   /// null을 반환하면 테마 기본값(NotoSansKR)을 그대로 쓴다. 'serif'/'mono'는
@@ -639,6 +872,7 @@ class _ReaderSettingsPanel extends StatelessWidget {
   final VoidCallback onToggleTts;
   final VoidCallback onToggleBgm;
   final ValueChanged<String> onFontSelected;
+  final ValueChanged<String> onPageModeSelected;
   final ValueChanged<bool> onAnimationToggled;
 
   const _ReaderSettingsPanel({
@@ -649,6 +883,7 @@ class _ReaderSettingsPanel extends StatelessWidget {
     required this.onToggleTts,
     required this.onToggleBgm,
     required this.onFontSelected,
+    required this.onPageModeSelected,
     required this.onAnimationToggled,
   });
 
@@ -717,6 +952,30 @@ class _ReaderSettingsPanel extends StatelessWidget {
                     const SizedBox(width: 8),
                   ],
                 ],
+              ),
+              const SizedBox(height: 16),
+              // 쪽 보기 — 배경 이미지가 없는 노드(책 모드)에서만 의미가 있다.
+              Text(
+                '쪽 보기',
+                style: TextStyle(fontSize: 13, color: _ivory.withOpacity(0.8)),
+              ),
+              const SizedBox(height: 10),
+              Row(
+                children: [
+                  for (final option in _pageModeOptions) ...[
+                    _FontChip(
+                      label: option.label,
+                      selected: prefs.pageMode == option.id,
+                      onTap: () => onPageModeSelected(option.id),
+                    ),
+                    const SizedBox(width: 8),
+                  ],
+                ],
+              ),
+              const SizedBox(height: 8),
+              Text(
+                '배경 이미지가 없는 노드에서만 두 쪽으로 펼칩니다',
+                style: TextStyle(fontSize: 11.5, height: 1.6, color: _ivory.withOpacity(0.45)),
               ),
               const SizedBox(height: 16),
               Row(
@@ -849,6 +1108,105 @@ const List<({String id, String label})> _fontOptions = [
   (id: 'serif', label: '세리프'),
   (id: 'mono', label: '모노'),
 ];
+
+const List<({String id, String label})> _pageModeOptions = [
+  (id: ReaderPrefs.pageModeSingle, label: '한 쪽'),
+  (id: ReaderPrefs.pageModeSpread, label: '두 쪽'),
+];
+
+/// 책 모드 지면 상단 — 챕터 라벨 / 쪽번호 / 제목 / 가름선.
+///
+/// 두 쪽 펼침의 오른쪽 쪽은 [hideText]로 같은 위젯을 그대로 그리되
+/// 보이는 글자만 감춘다(Visibility.maintainSize) — 높이를 숫자로 흉내 내면
+/// 글자 크기가 바뀔 때마다 좌우 가름선과 첫 줄이 어긋난다. 쪽번호는 한
+/// 페이지에 하나이므로 오른쪽에 다시 찍지 않는다.
+class _BookPageHeader extends StatelessWidget {
+  final String? chapterLabel;
+  final String? chapterTitle;
+  final String? progressLabel;
+  final bool hideText;
+
+  const _BookPageHeader({
+    required this.chapterLabel,
+    required this.chapterTitle,
+    required this.progressLabel,
+    this.hideText = false,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final label = chapterLabel;
+    final title = chapterTitle;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.baseline,
+          textBaseline: TextBaseline.alphabetic,
+          children: [
+            if (label != null && label.isNotEmpty)
+              _Hideable(
+                hidden: hideText,
+                child: Text(
+                  label,
+                  style: TextStyle(
+                    fontSize: 11,
+                    letterSpacing: 1.2,
+                    color: _gold.withOpacity(0.75),
+                    fontFeatures: const [],
+                  ),
+                ),
+              ),
+            const Spacer(),
+            if (progressLabel != null && progressLabel!.isNotEmpty)
+              _Hideable(
+                hidden: hideText,
+                child: Text(
+                  progressLabel!,
+                  style: TextStyle(fontSize: 11, color: _ivory.withOpacity(0.4)),
+                ),
+              ),
+          ],
+        ),
+        const SizedBox(height: 6),
+        if (title != null && title.isNotEmpty) ...[
+          _Hideable(
+            hidden: hideText,
+            child: Text(
+              title,
+              style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w700, color: _ivory),
+            ),
+          ),
+          const SizedBox(height: 16),
+        ],
+        Container(
+          height: 1,
+          margin: const EdgeInsets.only(bottom: 22),
+          color: _ivory.withOpacity(0.12),
+        ),
+      ],
+    );
+  }
+}
+
+class _Hideable extends StatelessWidget {
+  final bool hidden;
+  final Widget child;
+
+  const _Hideable({required this.hidden, required this.child});
+
+  @override
+  Widget build(BuildContext context) {
+    return Visibility(
+      visible: !hidden,
+      maintainSize: true,
+      maintainAnimation: true,
+      maintainState: true,
+      child: child,
+    );
+  }
+}
 
 class _ReaderSettingsSheet extends StatelessWidget {
   final bool expanded;
