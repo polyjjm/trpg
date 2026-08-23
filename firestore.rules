@@ -758,16 +758,37 @@ service cloud.firestore {
     // 문서는 색인일 뿐이고 실제 파일은 Storage에 있다"는 같은 구조다. 셋 다
     // 팩별이 아니라 **모든 작가가 공유**한다(FIRESTORE_SCHEMA.md 참고).
     //
-    // ⚠️ 여기서 잠그는 건 색인 문서지 파일이 아니다. Storage 쪽 규칙은 이
-    // 저장소에 storage.rules 파일 자체가 없어서 Firebase 콘솔에서 손으로
-    // 관리한다 — 이 규칙들이 Storage 접근을 제한한다고 착각하지 말 것.
+    // ⚠️ 여기서 잠그는 건 색인 문서지 파일이 아니다. Storage 쪽 규칙은
+    // 저장소 루트의 storage.rules(PR #5에서 추가)가 관리한다 — 다만 그
+    // 규칙도 Firebase download-token URL에는 적용되지 않는다(토큰 URL은
+    // 규칙을 우회한다). 그래서 이 색인 문서들의 read를 좁히는 게 의미가
+    // 있다: 문서 안에 그 장기 token URL이 그대로 들어 있기 때문이다.
     // =========================================================================
 
-    // images/{imageId} — 색인 문서. 실제 파일은 Storage(콘솔 관리 규칙)에 있다.
+    // images/{imageId} — 색인 문서. 실제 파일은 Storage에 있다.
     // 업로더를 추적하는 필드가 아직 없어 모든 author/admin이 공유하는
     // 라이브러리다 — uploaderId가 생기면 그때 좁힐 수 있다.
     // 카테고리 변경은 author/admin에게 허용하되, 이 액션으로 URL/이름 등
     // 다른 필드를 건드릴 수 없도록 category 한 필드만 화이트리스트로 연다.
+    //
+    // ⚠️ read를 isAuthorOrAdmin()으로 좁히지 **못한다**(sfxLibrary/bgmLibrary는
+    // 좁혔다). doc/private_media_firestore_rules.patch.md는 세 컬렉션을 전부
+    // 좁히라고 하지만, 그 문서는 리더 경로로 StoryReaderRepository 하나만
+    // 확인했다. 실제로는 카탈로그도 이 컬렉션을 직접 읽는다:
+    //
+    //   StoryPackRepository._fetchImageUrls()
+    //     ← _toVisiblePacks()  (watchVisiblePacks — 홈 탭 전체 표지)
+    //     ← fetchPacksByIds()  (번들 카드 표지)
+    //
+    // 둘 다 순수 독자 경로이고 **표지 이미지**를 읽는다. 여기서 read를 좁히면
+    // 모든 독자의 홈 탭 표지가 통째로 깨진다 — 보안이 좋아지는 게 아니라
+    // 카탈로그가 죽는다. 표지는 애초에 공개 정보라(무엇을 파는지 보여줘야
+    // 한다) 이 컬렉션에 남은 노출은 "표지 URL이 로그인 사용자에게 보인다"
+    // 수준이다.
+    //
+    // 제대로 닫으려면 표지도 resolveStoryMedia 같은 서버 게이트를 타거나,
+    // 표지 URL만 storyPacks.liveMetadata에 비정규화해서 카탈로그가 images를
+    // 아예 안 읽게 만들어야 한다 — 별도 작업이다.
     match /images/{imageId} {
       allow read: if isSignedIn();
       allow create, delete: if isAuthorOrAdmin();
@@ -781,21 +802,31 @@ service cloud.firestore {
     // fetchPublishedNodes()가 sfxLibrary를 조인 조회하면서 로그인 여부와 무관하게
     // 매번 permission-denied가 났다(실제로 겪은 버그).
     // 카테고리 변경은 images와 동일하게 category 필드 하나만 허용한다.
+    //
+    // read를 isAuthorOrAdmin()으로 좁혔다(doc/private_media_firestore_rules.patch.md).
+    // 위에 적힌 "리더가 sfxLibrary를 조인 조회한다"는 건 **더 이상 사실이
+    // 아니다** — PR #4에서 StoryReaderRepository가 resolveStoryMedia Cloud
+    // Function을 거치도록 바뀌면서 이 컬렉션을 직접 읽지 않는다(lib/ 전체를
+    // grep해서 확인함: admin 3개 저장소 외에 sfxLibrary/bgmLibrary를 읽는
+    // 코드가 없다). 이 문서에 남아 있는 장기 download-token URL이 독자에게
+    // 노출되지 않도록 닫는다.
     match /sfxLibrary/{sfxId} {
-      allow read: if isSignedIn();
+      allow read: if isAuthorOrAdmin();
       allow create, delete: if isAuthorOrAdmin();
       allow update: if isAuthorOrAdmin()
         && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['category']);
     }
 
     // bgmLibrary/{bgmId} — sfxLibrary와 같은 패턴의 색인 문서(실제 파일은
-    // Storage admin/story_bgm/{bgmId}.mp3에 있다 — Storage 쪽 규칙은
-    // storage.rules 파일이 없어서 콘솔에서 손으로 관리한다, FIRESTORE_SCHEMA.md
-    // "Storage 규칙" 절 참고). update는 없다 — sfxLibrary와 달리 category
-    // 같은 사후 수정 가능한 필드가 아예 없어서(admin_bgm.dart), 업로드/삭제
-    // 둘로 충분하다.
+    // Storage admin/story_bgm/{bgmId}.mp3에 있다 — Storage 규칙은 이제
+    // 저장소 루트의 storage.rules가 관리한다, PR #5). update는 없다 —
+    // sfxLibrary와 달리 category 같은 사후 수정 가능한 필드가 아예 없어서
+    // (admin_bgm.dart), 업로드/삭제 둘로 충분하다.
+    //
+    // read는 sfxLibrary와 같은 이유로 isAuthorOrAdmin()으로 좁혔다 — 리더는
+    // resolveStoryMedia를 통해서만 BGM URL을 받는다.
     match /bgmLibrary/{bgmId} {
-      allow read: if isSignedIn();
+      allow read: if isAuthorOrAdmin();
       allow create, delete: if isAuthorOrAdmin();
     }
 
