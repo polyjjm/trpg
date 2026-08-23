@@ -10,8 +10,7 @@
 /// 인스턴스를 그대로 계속 쓸 수 있는 이유다(lib/features/auth/pages/
 /// sign_in_page.dart가 Kakao 로그인은 AuthScope를 거치지 않고 직접
 /// `KakaoAuthService().signIn()`을 부르면서도, 로그인 *이후* 상태 조회는
-/// 여전히 AuthScope 쪽 인스턴스로 하는 이유가 바로 이거다). [LocalAuthService]는
-/// 로그인하지 않은 로컬 전용 상태로 남아 있는 항상-신호-없음 구현이다.
+/// 여전히 AuthScope 쪽 인스턴스로 하는 이유가 바로 이거다).
 abstract class AuthService {
   /// 현재 로그인된 사용자가 있는지.
   bool get isSignedIn;

@@ -2,8 +2,9 @@
 ///
 /// CLAUDE.md의 "Death / Revival system" 절에서 계획한 부활 아이템 구매·
 /// 리워드 광고 시청을 위한 자리(seam)만 잡아 둔다. 실제 IAP/광고 SDK가 정해지면
-/// 이 인터페이스를 구현하는 새 클래스로 교체한다 — 지금은 [NoOpMonetizationService]만
-/// 있고, 실제 결제는 항상 실패로 처리된다.
+/// 이 인터페이스를 구현하는 새 클래스로 교체한다 — 지금 구현체는
+/// `AdMobMonetizationService` 하나뿐이고, 그중 리워드 광고만 실제로 동작한다
+/// (`purchaseRevivalItem`은 IAP SDK가 정해질 때까지 항상 실패를 반환한다).
 ///
 /// 코인 충전/이야기 팩 구매는 이 인터페이스에 속하지 않는다 — 둘 다 실제
 /// 결제 수단(Toss Payments)과 서버 검증(confirmCoinCharge/purchasePack Cloud

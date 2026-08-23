@@ -9,8 +9,7 @@ import 'monetization_service.dart';
 /// AdMob 리워드 광고로 [MonetizationService.showRewardedAd]를 구현한 버전.
 ///
 /// 부활 아이템 구매(`purchaseRevivalItem`)는 광고가 아니라 실제 인앱 결제(IAP)
-/// SDK가 필요한 영역이라, SDK가 정해지기 전까지는 [NoOpMonetizationService]와
-/// 동일하게 항상 실패를 반환한다.
+/// SDK가 필요한 영역이라, SDK가 정해지기 전까지는 항상 실패를 반환한다.
 class AdMobMonetizationService implements MonetizationService {
   AdMobMonetizationService();
 
