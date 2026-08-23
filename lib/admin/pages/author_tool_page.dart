@@ -14,6 +14,7 @@ import '../data/admin_story_repository.dart';
 import '../data/admin_tts_voice_repository.dart';
 import '../data/node_edit_session_cache.dart';
 import '../models/admin_story_pack.dart';
+import '../models/pack_submit_state.dart';
 import '../models/story_pack_type.dart';
 import '../widgets/admin_theme.dart';
 import 'admin_dashboard_page.dart';
@@ -30,16 +31,25 @@ enum _AdminTab { story, images, sfx, bgm, notices }
 /// 로그인 + 역할 확인(author/admin) 통과 후 보이는 "작가 도구" 본체 —
 /// 콘텐츠 편집(스토리 노드/이미지 라이브러리/공지사항)만 다룬다. author와
 /// admin 둘 다 여기로 들어온다. 플랫폼 운영 기능(승인 대기함/작가 신청/장르
-/// 관리 등)은 별도의 AdminDashboardPage로 분리됐다 — admin 계정만 "관리자
-/// 페이지로" 링크로 그쪽에 들어갈 수 있다.
+/// 관리 등)은 별도의 AdminDashboardPage다.
 ///
-/// 통합 헤더(로고/타이틀 + 스토리팩 전환·생성·설정 + 테마 토글 + 닉네임/유저
-/// 정보 + 링크, 전부 한 줄) → navtabs → 탭별 본문 순서.
+/// 상단 바 구성이 바뀌었다 — 예전엔 로고/팩 선택/팩 설정 버튼/테마/이메일
+/// 배지/닉네임 입력칸/링크 3개가 전부 한 줄에 늘어서서, 정작 중요한 액션이
+/// 어느 것인지 읽히지 않았다. 지금은:
+///
+/// - 팩 설정은 팩 셀렉터 안으로 들어갔다(드롭다운 + 구분선 + 톱니) — 팩에
+///   딸린 설정이니 팩을 고르는 컨트롤이 그걸 여는 자리이기도 한 게 자연스럽다.
+/// - "변경사항 전체 승인요청"이 여기로 올라왔다 — 팩 단위 액션인데 예전엔
+///   노드 목록 사이드바 안에 있어서 묻혔다. 이 화면에서 유일한 코랄 채움
+///   버튼이라, 한 프레임 안에서 이게 주 액션임이 분명해진다.
+/// - 이메일 배지 / 닉네임 입력칸 / 로그아웃 링크는 아바타 메뉴로 접었다 —
+///   닉네임은 상시 노출될 값이 아니라 프로필에 속한다.
+/// - "독자로 보기"와 "관리자 페이지로"는 새 창으로 연다.
 class AuthorToolPage extends StatefulWidget {
   final GoogleAuthService authService;
   final String email;
 
-  /// author는 콘텐츠 편집만, admin은 여기에 더해 "관리자 페이지로" 링크도 본다.
+  /// author는 콘텐츠 편집만, admin은 여기에 더해 "관리자 페이지로"도 본다.
   final bool isAdmin;
 
   const AuthorToolPage({
@@ -62,26 +72,14 @@ class _AuthorToolPageState extends State<AuthorToolPage> {
   final AdminNoticeRepository _noticeRepository = AdminNoticeRepository();
   final UserProfileRepository _userProfileRepository = UserProfileRepository();
 
-  final TextEditingController _nicknameController = TextEditingController(
-    text: '좀비작가',
-  );
-
   _AdminTab _activeTab = _AdminTab.story;
   String? _activePackId;
 
-  /// 저장 안 한 노드 편집 내용의 세션 캐시(node_edit_session_cache.dart) —
-  /// 이 State가 살아있는 동안(로그아웃 전까지) 하나만 만들어서 StoryTabView에
-  /// 그대로 내려준다. StoryTabView 자신은 팩을 바꿀 때마다 통째로
-  /// 재생성되므로, 캐시가 거기 속해 있으면 전환할 때마다 사라진다 — 팩/탭을
-  /// 오가도 편집 중이던 내용이 남아있어야 하니 더 오래 사는 이 State가 들고
-  /// 있는다.
+  /// 저장 안 한 노드 편집 내용의 세션 캐시 — 이 State가 살아있는 동안
+  /// (로그아웃 전까지) 하나만 만들어서 StoryTabView에 그대로 내려준다.
+  /// StoryTabView 자신은 팩을 바꿀 때마다 통째로 재생성되므로, 캐시가 거기
+  /// 속해 있으면 전환할 때마다 사라진다.
   final NodeEditSessionCache _sessionCache = NodeEditSessionCache();
-
-  @override
-  void dispose() {
-    _nicknameController.dispose();
-    super.dispose();
-  }
 
   Future<void> _handleSignOut() async {
     await widget.authService.signOut();
@@ -95,7 +93,15 @@ class _AuthorToolPageState extends State<AuthorToolPage> {
     );
   }
 
+  /// 관리자 페이지 — 별도 창으로 연다. [ExternalLinks.adminDashboardUrl]이
+  /// 아직 없으면 예전처럼 같은 창에서 이동한다(그쪽이 동작하지 않는 것보다
+  /// 낫다).
   void _openAdminDashboard() {
+    final url = ExternalLinks.adminDashboardUrl;
+    if (url.isNotEmpty) {
+      openExternalLink(url);
+      return;
+    }
     Navigator.push(
       context,
       MaterialPageRoute(
@@ -148,10 +154,9 @@ class _AuthorToolPageState extends State<AuthorToolPage> {
   /// admin은 전체 스토리팩을, author는 자기 소유 스토리팩만 본다.
   ///
   /// `late final`로 State가 살아있는 동안 딱 한 번만 만든다 — 예전엔 getter라
-  /// build()가 돌 때마다(탭 전환, 팩 전환 등 아무 setState에서나) 새 Stream을
-  /// 만들어 반환했고, 그러면 이 Stream을 구독하는 바깥 StreamBuilder가 "다른
-  /// 스트림으로 바뀌었다"고 보고 구독을 끊었다 다시 맺으면서 화면 전체가
-  /// 매번 깜빡였다.
+  /// build()가 돌 때마다 새 Stream을 만들어 반환했고, 그러면 바깥
+  /// StreamBuilder가 "다른 스트림으로 바뀌었다"고 보고 구독을 끊었다 다시
+  /// 맺으면서 화면 전체가 매번 깜빡였다.
   late final Stream<List<AdminStoryPack>> _packsStream = _createPacksStream();
 
   Stream<List<AdminStoryPack>> _createPacksStream() {
@@ -171,20 +176,22 @@ class _AuthorToolPageState extends State<AuthorToolPage> {
         builder: (context, snapshot) {
           final packs = snapshot.data ?? const <AdminStoryPack>[];
           final activePackId =
-              (_activePackId != null && packs.any((p) => p.id == _activePackId))
+          (_activePackId != null && packs.any((p) => p.id == _activePackId))
               ? _activePackId
               : (packs.isNotEmpty ? packs.first.id : null);
+          final activePack = activePackId == null
+              ? null
+              : packs.where((p) => p.id == activePackId).firstOrNull;
 
           return Column(
             children: [
               _TopBar(
-                nicknameController: _nicknameController,
                 email: widget.email,
                 isAdmin: widget.isAdmin,
                 onOpenAdminDashboard: _openAdminDashboard,
                 onSignOut: _handleSignOut,
                 packs: packs,
-                activePackId: activePackId,
+                activePack: activePack,
                 onPackChanged: (id) => setState(() => _activePackId = id),
                 onNewPack: _handleNewPack,
                 onOpenSettings: activePackId == null
@@ -254,7 +261,199 @@ class _AuthorToolPageState extends State<AuthorToolPage> {
   }
 }
 
-/// 라이트/다크 토글 버튼 — admin_theme.dart 상단 doc에 적어 둔 대로, 지금은
+/// 로고 → 팩 셀렉터(+팩 설정) → (여백) → 전체 승인요청 → 독자로 보기 →
+/// 테마 → 아바타 메뉴.
+class _TopBar extends StatelessWidget {
+  final String email;
+  final bool isAdmin;
+  final VoidCallback onOpenAdminDashboard;
+  final VoidCallback onSignOut;
+  final List<AdminStoryPack> packs;
+  final AdminStoryPack? activePack;
+  final ValueChanged<String> onPackChanged;
+  final VoidCallback onNewPack;
+  final VoidCallback? onOpenSettings;
+
+  const _TopBar({
+    required this.email,
+    required this.isAdmin,
+    required this.onOpenAdminDashboard,
+    required this.onSignOut,
+    required this.packs,
+    required this.activePack,
+    required this.onPackChanged,
+    required this.onNewPack,
+    required this.onOpenSettings,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      height: 56,
+      padding: const EdgeInsets.symmetric(horizontal: 20),
+      decoration: BoxDecoration(
+        color: AdminColors.panel,
+        border: Border(bottom: BorderSide(color: AdminColors.border)),
+      ),
+      // ⚠️ SingleChildScrollView로 감싸면 안 된다 — 내용이 뷰포트보다 좁을 때
+      // Viewport가 가운데로 몰아버려서, 넓은 화면에서 상단 바 내용 전체가
+      // 화면 중앙에 뭉쳐 보인다(실제로 그렇게 됐다). 좁은 창에서 잘리는 건
+      // Spacer가 0으로 줄어든 뒤의 이야기이고, 그때도 오른쪽 항목들은
+      // 남는다.
+      child: Row(
+        children: [
+          SvgPicture.asset(UiPaths.logo, width: 20, height: 20),
+          const SizedBox(width: 8),
+          Text(
+            '작가 도구',
+            style: TextStyle(
+              fontSize: 14,
+              fontWeight: FontWeight.w700,
+              color: AdminColors.ivory,
+            ),
+          ),
+          const SizedBox(width: 14),
+          _VerticalRule(),
+          const SizedBox(width: 14),
+          _PackSelectorPill(
+            packs: packs,
+            activePack: activePack,
+            onPackChanged: onPackChanged,
+            onNewPack: onNewPack,
+            onOpenSettings: onOpenSettings,
+          ),
+          const Spacer(),
+          ValueListenableBuilder<PackSubmitState?>(
+            // 전역 notifier(pack_submit_state.dart) — 값을 채우는 건
+            // StoryTabView다. 아직 안 채웠으면 버튼이 아예 없다.
+            valueListenable: packSubmitState,
+            builder: (context, state, _) {
+              if (state == null || state.unsubmittedCount == 0) {
+                return const SizedBox.shrink();
+              }
+              return Padding(
+                padding: const EdgeInsets.only(right: 14),
+                child: _SubmitAllButton(
+                  count: state.unsubmittedCount,
+                  onTap: state.onSubmitAll,
+                ),
+              );
+            },
+          ),
+          _VerticalRule(),
+          const SizedBox(width: 14),
+          _ExternalTextLink(
+            label: '독자로 보기',
+            onTap: () => openExternalLink(ExternalLinks.readerAppUrl),
+          ),
+          const SizedBox(width: 10),
+          const _ThemeModeToggle(),
+          const SizedBox(width: 8),
+          _AccountMenu(
+            email: email,
+            isAdmin: isAdmin,
+            onOpenAdminDashboard: onOpenAdminDashboard,
+            onSignOut: onSignOut,
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _VerticalRule extends StatelessWidget {
+  @override
+  Widget build(BuildContext context) {
+    return Container(width: 1, height: 22, color: AdminColors.border);
+  }
+}
+
+/// 이 화면에서 유일한 코랄 채움 버튼 — 팩 단위 승인 요청.
+class _SubmitAllButton extends StatelessWidget {
+  final int count;
+  final VoidCallback onTap;
+
+  const _SubmitAllButton({required this.count, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(8),
+      child: Container(
+        height: 36,
+        padding: const EdgeInsets.symmetric(horizontal: 14),
+        decoration: BoxDecoration(
+          color: AdminColors.gold,
+          borderRadius: BorderRadius.circular(8),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Text(
+              '변경사항 전체 승인요청',
+              style: TextStyle(
+                fontSize: 13,
+                fontWeight: FontWeight.w700,
+                color: Colors.white,
+              ),
+            ),
+            const SizedBox(width: 8),
+            Container(
+              constraints: const BoxConstraints(minWidth: 19),
+              height: 19,
+              alignment: Alignment.center,
+              padding: const EdgeInsets.symmetric(horizontal: 5),
+              decoration: BoxDecoration(
+                color: Colors.black.withOpacity(0.28),
+                borderRadius: BorderRadius.circular(999),
+              ),
+              child: Text(
+                '$count',
+                style: const TextStyle(
+                  fontSize: 11,
+                  fontWeight: FontWeight.w800,
+                  color: Colors.white,
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _ExternalTextLink extends StatelessWidget {
+  final String label;
+  final VoidCallback onTap;
+
+  const _ExternalTextLink({required this.label, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(6),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 6),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              label,
+              style: TextStyle(fontSize: 12.5, color: AdminColors.muted),
+            ),
+            const SizedBox(width: 4),
+            Icon(Icons.open_in_new_rounded, size: 15, color: AdminColors.muted),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// 라이트/다크 토글 — admin_theme.dart 상단 doc에 적어 둔 대로, 지금은
 /// MaterialApp.themeMode만 바꾼다(기본 Material 위젯에만 반영, AdminColors로
 /// 직접 칠한 화면 대부분은 아직 반응하지 않는다).
 class _ThemeModeToggle extends StatelessWidget {
@@ -269,16 +468,12 @@ class _ThemeModeToggle extends StatelessWidget {
         return InkWell(
           onTap: () => AdminTheme.toggle(),
           borderRadius: BorderRadius.circular(999),
-          child: Container(
-            padding: const EdgeInsets.all(6),
-            decoration: BoxDecoration(
-              color: AdminColors.panel2,
-              shape: BoxShape.circle,
-              border: Border.all(color: AdminColors.border),
-            ),
+          child: Padding(
+            padding: const EdgeInsets.all(8),
             child: Icon(
-              isDark ? Icons.dark_mode_rounded : Icons.light_mode_rounded,
-              size: 16,
+              // 다크 모드일 때 "라이트로 바꾸는 버튼"이므로 해 아이콘이 맞다.
+              isDark ? Icons.light_mode_rounded : Icons.dark_mode_rounded,
+              size: 18,
               color: AdminColors.muted,
             ),
           ),
@@ -288,31 +483,129 @@ class _ThemeModeToggle extends StatelessWidget {
   }
 }
 
-/// 로고/타이틀 → 스토리팩 선택 → 팩 설정 → (여백) → 테마 토글 → 유저 정보 →
-/// 링크들까지 전부 한 줄에 담는 통합 헤더 — 예전엔 스토리팩 선택 영역이
-/// 별도 배경(#131315)의 두 번째 줄이었지만, 그 구분을 없애고 top bar와 같은
-/// 배경 하나로 합쳤다. 화면이 좁아 한 줄에 다 안 들어가면(주로 개발자 도구를
-/// 옆에 띄운 좁은 창) 잘리는 대신 가로 스크롤되게 뒀다.
-class _TopBar extends StatelessWidget {
-  final TextEditingController nicknameController;
+/// 아바타 + 닉네임 + 드롭다운 — 이메일, 관리자 페이지, 로그아웃이 이 안에
+/// 들어간다. 닉네임 수정은 프로필에 속하는 일이라 상단 바에 입력칸을 상시
+/// 띄우지 않는다.
+class _AccountMenu extends StatelessWidget {
   final String email;
   final bool isAdmin;
   final VoidCallback onOpenAdminDashboard;
   final VoidCallback onSignOut;
-  final List<AdminStoryPack> packs;
-  final String? activePackId;
-  final ValueChanged<String> onPackChanged;
-  final VoidCallback onNewPack;
-  final VoidCallback? onOpenSettings;
 
-  const _TopBar({
-    required this.nicknameController,
+  const _AccountMenu({
     required this.email,
     required this.isAdmin,
     required this.onOpenAdminDashboard,
     required this.onSignOut,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final initial = email.isEmpty ? '?' : email.characters.first.toUpperCase();
+
+    return PopupMenuButton<String>(
+      tooltip: '',
+      color: AdminColors.panel2,
+      offset: const Offset(0, 44),
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(10),
+        side: BorderSide(color: AdminColors.border),
+      ),
+      onSelected: (value) {
+        switch (value) {
+          case 'admin':
+            onOpenAdminDashboard();
+          case 'signout':
+            onSignOut();
+        }
+      },
+      itemBuilder: (context) => [
+        PopupMenuItem<String>(
+          enabled: false,
+          height: 40,
+          child: Text(
+            email,
+            style: TextStyle(fontSize: 11.5, color: AdminColors.muted),
+          ),
+        ),
+        if (isAdmin)
+          PopupMenuItem<String>(
+            value: 'admin',
+            height: 42,
+            child: Row(
+              children: [
+                Text(
+                  '관리자 페이지',
+                  style: TextStyle(fontSize: 13, color: AdminColors.ivory),
+                ),
+                const SizedBox(width: 6),
+                Icon(
+                  Icons.open_in_new_rounded,
+                  size: 14,
+                  color: AdminColors.muted,
+                ),
+              ],
+            ),
+          ),
+        PopupMenuItem<String>(
+          value: 'signout',
+          height: 42,
+          child: Text(
+            '로그아웃',
+            style: TextStyle(fontSize: 13, color: AdminColors.ivory),
+          ),
+        ),
+      ],
+      child: Container(
+        height: 36,
+        padding: const EdgeInsets.only(left: 5, right: 8),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              width: 26,
+              height: 26,
+              alignment: Alignment.center,
+              decoration: BoxDecoration(
+                color: AdminColors.badgeBg,
+                shape: BoxShape.circle,
+              ),
+              child: Text(
+                initial,
+                style: const TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w800,
+                  color: AdminColors.gold,
+                ),
+              ),
+            ),
+            const SizedBox(width: 7),
+            Icon(
+              Icons.expand_more_rounded,
+              size: 16,
+              color: AdminColors.muted,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// 팩 전환 드롭다운 + "+"(새 스토리팩) + 구분선 + 톱니(팩 설정)를 하나의
+/// 컨트롤로 묶는다 — 팩 설정은 지금 보고 있는 팩에 딸린 설정이니, 팩을
+/// 고르는 컨트롤이 그걸 여는 자리이기도 한 게 자연스럽다. 예전엔 옆에
+/// 따로 놓인 "팩 설정" 버튼이었다.
+class _PackSelectorPill extends StatelessWidget {
+  final List<AdminStoryPack> packs;
+  final AdminStoryPack? activePack;
+  final ValueChanged<String> onPackChanged;
+  final VoidCallback onNewPack;
+  final VoidCallback? onOpenSettings;
+
+  const _PackSelectorPill({
     required this.packs,
-    required this.activePackId,
+    required this.activePack,
     required this.onPackChanged,
     required this.onNewPack,
     required this.onOpenSettings,
@@ -321,168 +614,44 @@ class _TopBar extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
-      decoration: BoxDecoration(
-        color: AdminColors.panel,
-        border: Border(bottom: BorderSide(color: AdminColors.border)),
-      ),
-      child: Row(
-        children: [
-          SvgPicture.asset(UiPaths.logo, width: 20, height: 20),
-          const SizedBox(width: 8),
-          Text(
-            '작가 도구',
-            style: TextStyle(
-              fontSize: 16,
-              fontWeight: FontWeight.w700,
-              color: AdminColors.ivory,
-            ),
-          ),
-          const SizedBox(width: 16),
-          _PackSelectorPill(
-            packs: packs,
-            activePackId: activePackId,
-            onPackChanged: onPackChanged,
-            onNewPack: onNewPack,
-          ),
-          const SizedBox(width: 8),
-          OutlinedButton(
-            onPressed: onOpenSettings,
-            style: OutlinedButton.styleFrom(
-              foregroundColor: AdminColors.ivory,
-              side: BorderSide(color: AdminColors.inputBorder),
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(6),
-              ),
-            ),
-            child: const Text('팩 설정', style: TextStyle(fontSize: 12)),
-          ),
-          const Spacer(),
-          const _ThemeModeToggle(),
-          const SizedBox(width: 10),
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-            decoration: BoxDecoration(
-              color: AdminColors.badgeBg,
-              borderRadius: BorderRadius.circular(999),
-            ),
-            child: Text(
-              email,
-              style: const TextStyle(fontSize: 10, color: AdminColors.gold),
-            ),
-          ),
-          const SizedBox(width: 8),
-          Text(
-            '작가 닉네임',
-            style: TextStyle(fontSize: 12, color: AdminColors.muted),
-          ),
-          const SizedBox(width: 6),
-          SizedBox(
-            width: 120,
-            child: TextField(
-              controller: nicknameController,
-              textAlign: TextAlign.right,
-              style: TextStyle(fontSize: 12, color: AdminColors.inputText),
-              decoration: InputDecoration(
-                isDense: true,
-                filled: true,
-                fillColor: AdminColors.inputFill,
-                contentPadding: const EdgeInsets.symmetric(
-                  horizontal: 10,
-                  vertical: 7,
-                ),
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(6),
-                  borderSide: BorderSide(color: AdminColors.inputBorder),
-                ),
-              ),
-            ),
-          ),
-          const SizedBox(width: 16),
-          if (isAdmin) ...[
-            InkWell(
-              onTap: onOpenAdminDashboard,
-              child: Text(
-                '관리자 페이지로',
-                style: TextStyle(fontSize: 12, color: AdminColors.muted),
-              ),
-            ),
-            const SizedBox(width: 14),
-          ],
-          InkWell(
-            onTap: () => openExternalLink(ExternalLinks.readerAppUrl),
-            child: Text(
-              '독자로 보기',
-              style: TextStyle(fontSize: 12, color: AdminColors.muted),
-            ),
-          ),
-          const SizedBox(width: 14),
-          InkWell(
-            onTap: onSignOut,
-            child: Text(
-              '로그아웃',
-              style: TextStyle(fontSize: 12, color: AdminColors.muted),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-/// 드롭다운(스토리팩 전환) + "+"(새 스토리팩) 버튼을 하나의 알약 모양
-/// 컨테이너로 묶는다 — 예전엔 각자 자기 테두리를 가진 별개 위젯이었다.
-class _PackSelectorPill extends StatelessWidget {
-  final List<AdminStoryPack> packs;
-  final String? activePackId;
-  final ValueChanged<String> onPackChanged;
-  final VoidCallback onNewPack;
-
-  const _PackSelectorPill({
-    required this.packs,
-    required this.activePackId,
-    required this.onPackChanged,
-    required this.onNewPack,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      height: 34,
-      padding: const EdgeInsets.only(left: 12, right: 4),
+      height: 36,
       decoration: BoxDecoration(
         color: AdminColors.inputFill,
-        borderRadius: BorderRadius.circular(999),
+        borderRadius: BorderRadius.circular(8),
         border: Border.all(color: AdminColors.inputBorder),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
+          const SizedBox(width: 12),
           ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 180),
+            constraints: const BoxConstraints(maxWidth: 200),
             child: DropdownButtonHideUnderline(
               child: DropdownButton<String>(
-                value: activePackId,
+                value: activePack?.id,
                 isDense: true,
                 icon: Icon(
                   Icons.expand_more_rounded,
-                  size: 16,
+                  size: 18,
                   color: AdminColors.muted,
                 ),
                 dropdownColor: AdminColors.inputDropdownMenuBg,
-                style: TextStyle(color: AdminColors.inputText, fontSize: 13),
+                style: TextStyle(
+                  color: AdminColors.inputText,
+                  fontSize: 13.5,
+                  fontWeight: FontWeight.w600,
+                ),
                 hint: Text(
                   '스토리팩 선택',
-                  style: TextStyle(color: AdminColors.muted, fontSize: 13),
+                  style: TextStyle(color: AdminColors.muted, fontSize: 13.5),
                 ),
                 items: packs
                     .map(
                       (p) => DropdownMenuItem<String>(
-                        value: p.id,
-                        child: Text(p.title, overflow: TextOverflow.ellipsis),
-                      ),
-                    )
+                    value: p.id,
+                    child: Text(p.title, overflow: TextOverflow.ellipsis),
+                  ),
+                )
                     .toList(),
                 onChanged: (id) {
                   if (id != null) onPackChanged(id);
@@ -490,14 +659,65 @@ class _PackSelectorPill extends StatelessWidget {
               ),
             ),
           ),
-          const SizedBox(width: 4),
-          Container(width: 1, height: 18, color: AdminColors.inputBorder),
-          InkWell(
-            onTap: onNewPack,
-            customBorder: const CircleBorder(),
-            child: const Padding(
-              padding: EdgeInsets.all(7),
-              child: Icon(Icons.add_rounded, size: 16, color: AdminColors.gold),
+          // 팩 타입은 만든 뒤 바꿀 수 없는 값이라 배지로만 보여준다.
+          if (activePack != null) ...[
+            const SizedBox(width: 6),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+              decoration: BoxDecoration(
+                color: AdminColors.bg,
+                borderRadius: BorderRadius.circular(999),
+                border: Border.all(color: AdminColors.border),
+              ),
+              child: Text(
+                activePack!.type == StoryPackType.interactive ? '인터랙티브' : '선형',
+                style: TextStyle(
+                  fontSize: 10.5,
+                  fontWeight: FontWeight.w700,
+                  color: AdminColors.muted,
+                ),
+              ),
+            ),
+          ],
+          const SizedBox(width: 8),
+          Container(width: 1, height: 20, color: AdminColors.inputBorder),
+          Tooltip(
+            message: '새 스토리팩',
+            child: InkWell(
+              onTap: onNewPack,
+              customBorder: const CircleBorder(),
+              child: const Padding(
+                padding: EdgeInsets.all(8),
+                child: Icon(
+                  Icons.add_rounded,
+                  size: 17,
+                  color: AdminColors.gold,
+                ),
+              ),
+            ),
+          ),
+          Container(width: 1, height: 20, color: AdminColors.inputBorder),
+          Tooltip(
+            message: '팩 설정',
+            child: InkWell(
+              onTap: onOpenSettings,
+              borderRadius: const BorderRadius.only(
+                topRight: Radius.circular(7),
+                bottomRight: Radius.circular(7),
+              ),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 9,
+                  vertical: 8,
+                ),
+                child: Icon(
+                  Icons.tune_rounded,
+                  size: 17,
+                  color: onOpenSettings == null
+                      ? AdminColors.inputDisabledBorder
+                      : AdminColors.muted,
+                ),
+              ),
             ),
           ),
         ],
@@ -515,6 +735,7 @@ class _NavTabs extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
+      height: 44,
       padding: const EdgeInsets.symmetric(horizontal: 20),
       decoration: BoxDecoration(
         color: AdminColors.panel,
@@ -569,7 +790,8 @@ class _NavTab extends StatelessWidget {
     return InkWell(
       onTap: onTap,
       child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+        padding: const EdgeInsets.symmetric(horizontal: 14),
+        alignment: Alignment.center,
         decoration: BoxDecoration(
           border: Border(
             bottom: BorderSide(
@@ -582,6 +804,7 @@ class _NavTab extends StatelessWidget {
           label,
           style: TextStyle(
             fontSize: 13,
+            fontWeight: selected ? FontWeight.w700 : FontWeight.w400,
             color: selected ? AdminColors.gold : AdminColors.muted,
           ),
         ),
@@ -695,9 +918,9 @@ class _NewPackDialogState extends State<_NewPackDialog> {
           onPressed: _titleController.text.trim().isEmpty
               ? null
               : () => Navigator.pop(context, (
-                  _titleController.text.trim(),
-                  _type,
-                )),
+          _titleController.text.trim(),
+          _type,
+          )),
           child: const Text('만들기', style: TextStyle(color: AdminColors.gold)),
         ),
       ],
@@ -735,10 +958,14 @@ class _TypeOption extends StatelessWidget {
           label,
           style: TextStyle(
             fontSize: 13,
-            color: selected ? AdminColors.gold : AdminColors.ivory,
+            color: selected ? AdminColors.statusPendingText : AdminColors.ivory,
           ),
         ),
       ),
     );
   }
+}
+
+extension _FirstOrNull<T> on Iterable<T> {
+  T? get firstOrNull => isEmpty ? null : first;
 }
