@@ -112,6 +112,12 @@ class AdminStoryRepository {
   /// defaultBackgroundImage는 title/genres/description/coverImageId와 달리
   /// liveMetadata 승인 게이트를 거치지 않는다 — 순수 렌더링 기본값이라
   /// 저장하는 즉시 바로 반영된다(검토가 필요한 "콘텐츠"가 아니라는 판단).
+  /// defaultBgmId/defaultTtsVoiceId는 반대다 — title/genres 등과 완전히
+  /// 같은 대우로 liveMetadata 게이트를 그대로 거친다(admin_story_pack.dart의
+  /// AdminStoryPack.defaultBgmId/defaultTtsVoiceId doc 참고) — 여기서
+  /// top-level 필드로 즉시 저장하는 건 다른 draft 필드와 똑같이
+  /// "임시저장"일 뿐이고, 독자에게 실제로 반영되려면 아래
+  /// [requestMetadataEdit]/[approveMetadataEdit]을 거쳐야 한다.
   Future<void> saveDraftPackSettings(
     String packId, {
     required String title,
@@ -123,6 +129,8 @@ class AdminStoryRepository {
     required DateTime? discountStartAt,
     required DateTime? discountEndAt,
     required String? defaultBackgroundImage,
+    required String? defaultBgmId,
+    required String? defaultTtsVoiceId,
   }) async {
     await _packs.doc(packId).update({
       'title': title,
@@ -138,6 +146,8 @@ class AdminStoryRepository {
           ? Timestamp.fromDate(discountEndAt)
           : null,
       'defaultBackgroundImage': defaultBackgroundImage,
+      'defaultBgmId': defaultBgmId,
+      'defaultTtsVoiceId': defaultTtsVoiceId,
     });
   }
 
@@ -232,6 +242,8 @@ class AdminStoryRepository {
     required int? salePrice,
     required DateTime? discountStartAt,
     required DateTime? discountEndAt,
+    required String? defaultBgmId,
+    required String? defaultTtsVoiceId,
   }) async {
     await _packs.doc(packId).update({
       'title': title,
@@ -246,6 +258,8 @@ class AdminStoryRepository {
       'discountEndAt': discountEndAt != null
           ? Timestamp.fromDate(discountEndAt)
           : null,
+      'defaultBgmId': defaultBgmId,
+      'defaultTtsVoiceId': defaultTtsVoiceId,
       'pendingMetadataAction': 'edit',
       'metadataSubmittedAt': FieldValue.serverTimestamp(),
       'metadataRejectionReason': null,
@@ -319,6 +333,8 @@ class AdminStoryRepository {
     'discountEndAt': pack.discountEndAt != null
         ? Timestamp.fromDate(pack.discountEndAt!)
         : null,
+    'defaultBgmId': pack.defaultBgmId,
+    'defaultTtsVoiceId': pack.defaultTtsVoiceId,
   };
 
   Stream<List<AdminStoryNodeSummary>> watchNodeSummaries(String packId) {
@@ -377,7 +393,10 @@ class AdminStoryRepository {
   }
 
   /// 승인: 삭제 요청이면 실제로 문서를 지우고, 등록/수정 요청이면 지금 draft
-  /// 내용을 liveSnapshot으로 복사하고 published로 바꾼다.
+  /// 내용을 liveSnapshot으로 복사하고 published로 바꾼다. rejectionReason도
+  /// 같이 지운다 — 방어적 처리다(정상 흐름에서는 재제출 시점에 이미
+  /// requestApprovalForNode가 지우지만, 혹시 그 경로를 안 거치고 옛 반려
+  /// 사유가 남은 채로 승인되는 경우에도 승인된 버전에는 안 남아야 한다).
   Future<void> approveNode(String packId, AdminStoryNode node) async {
     if (node.pendingAction == PendingAction.delete) {
       await deleteNodeDoc(packId, node.id);
@@ -388,21 +407,32 @@ class AdminStoryRepository {
       'liveSnapshot': node.contentSnapshot(),
       'status': 'published',
       'pendingAction': null,
+      'rejectionReason': null,
     });
   }
 
   /// 반려: 삭제 요청이면 요청만 취소하고, 등록/수정 요청이면 draft 상태로
   /// 되돌려 작가가 다시 손볼 수 있게 한다 — liveSnapshot(이미 연재 중인 버전)은
-  /// 건드리지 않는다.
-  Future<void> rejectNode(String packId, AdminStoryNode node) async {
+  /// 건드리지 않는다. [reason]을 rejectionReason에 저장해서 작가가 노드
+  /// 목록/편집 화면에서 왜 반려됐는지 볼 수 있게 한다(approvals_tab.dart가
+  /// 반려 사유 입력을 필수로 강제한다).
+  Future<void> rejectNode(
+    String packId,
+    AdminStoryNode node, {
+    required String reason,
+  }) async {
     if (node.pendingAction == PendingAction.delete) {
-      await _nodes(packId).doc(node.id).update({'pendingAction': null});
+      await _nodes(
+        packId,
+      ).doc(node.id).update({'pendingAction': null, 'rejectionReason': reason});
       return;
     }
 
-    await _nodes(
-      packId,
-    ).doc(node.id).update({'status': 'draft', 'pendingAction': null});
+    await _nodes(packId).doc(node.id).update({
+      'status': 'draft',
+      'pendingAction': null,
+      'rejectionReason': reason,
+    });
   }
 }
 

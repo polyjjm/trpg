@@ -8,11 +8,13 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../../../core/ads/ad_ids.dart';
 import '../data/genre_repository.dart';
 import '../data/home_banner_repository.dart';
+import '../data/home_event_repository.dart';
 import '../data/pack_bundle_repository.dart';
 import '../data/ranking_repository.dart';
 import '../data/story_pack_repository.dart';
 import '../models/genre.dart';
 import '../models/home_banner.dart';
+import '../models/home_event.dart';
 import '../models/pack_bundle.dart';
 import '../models/ranking_snapshot.dart';
 import '../models/story_pack.dart';
@@ -21,6 +23,7 @@ import '../widgets/catalog_desktop_nav_bar.dart';
 import '../widgets/desktop_ranking_list.dart';
 import '../widgets/hero_banner_section.dart';
 import '../widgets/home_desktop_layout.dart';
+import '../widgets/home_event_dialog.dart';
 import '../widgets/ranking_section.dart';
 import '../widgets/shelf_ledge_divider.dart';
 import '../widgets/story_cover_card.dart';
@@ -89,6 +92,20 @@ class _HomeTabState extends State<HomeTab> {
 
   final RankingRepository _rankingRepository = RankingRepository();
   late final Future<RankingSnapshotPair> _rankingFuture = _rankingRepository.fetchLatest();
+
+  final HomeEventRepository _eventRepository = HomeEventRepository();
+  late final Stream<List<HomeEvent>> _eventsStream = _eventRepository.watchActiveEvents();
+
+  // 이벤트 팝업은 홈 탭이 열릴 때 딱 한 번만 띄운다("오늘 이미 봤는지"는
+  // HomeEventDismissalStore가 따로 판단) — 두 스트림(팩 목록, 활성 이벤트
+  // 목록)이 둘 다 첫 데이터를 내놓은 뒤에만 트리거한다. linkedPackId를
+  // 실제 StoryPack으로 찾으려면 팩 목록이 먼저 준비돼 있어야 하고, 어느
+  // 쪽이 먼저 도착하든 상관없이 나중에 도착하는 쪽에서 조건이 채워지면
+  // 바로 띄워야 하므로, 두 스트림의 builder 양쪽에서 같은 트리거 메서드를
+  // 부른다.
+  bool _homeEventPopupTriggered = false;
+  List<StoryPack> _latestPacks = const <StoryPack>[];
+  List<HomeEvent>? _latestEvents;
 
   BannerAd? _bannerAd;
   bool _isBannerLoaded = false;
@@ -168,6 +185,28 @@ class _HomeTabState extends State<HomeTab> {
     if (snapshot.connectionState == ConnectionState.waiting) return;
     _reportedContentReady = true;
     WidgetsBinding.instance.addPostFrameCallback((_) => widget.onContentReady?.call());
+  }
+
+  /// [_latestPacks]/[_latestEvents]가 둘 다 채워진 뒤 딱 한 번만 실행된다 —
+  /// 실제로 "봤는지" 판단(하루 한 번/다시 보지 않기)은
+  /// showHomeEventPopupIfNeeded 안에서 한다. 여러 이벤트가 동시에 활성
+  /// 상태여도 _eventsStream이 이미 sortOrder 순으로 걸러 주므로 첫 번째만
+  /// 쓴다(HomeEventRepository.watchActiveEvents 참고).
+  void _maybeTriggerHomeEventPopup() {
+    if (_homeEventPopupTriggered) return;
+    if (!_reportedContentReady) return;
+    final events = _latestEvents;
+    if (events == null) return;
+    _homeEventPopupTriggered = true;
+
+    final event = events.isEmpty ? null : events.first;
+    if (event == null) return;
+    final packs = _latestPacks;
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      unawaited(showHomeEventPopupIfNeeded(context: context, event: event, allPacks: packs));
+    });
   }
 
   /// 검색어를 확정한다 — 모바일 오버레이의 엔터/최근 검색어 탭, 데스크톱
@@ -299,6 +338,8 @@ class _HomeTabState extends State<HomeTab> {
                           }
 
                           final packs = snapshot.data ?? const <StoryPack>[];
+                          _latestPacks = packs;
+                          _maybeTriggerHomeEventPopup();
                           final trimmedQuery = _query.trim();
                           final query = trimmedQuery.toLowerCase();
                           final filteredPacks = query.isEmpty
@@ -323,6 +364,18 @@ class _HomeTabState extends State<HomeTab> {
             // 데스크톱은 상단 바 입력창이 검색을 맡으므로 오버레이를 트리에
             // 넣지 않는다(닫힌 상태로 남겨두면 포커스를 가져갈 수 있다).
             if (!isDesktop) Positioned.fill(child: _buildSearchOverlay()),
+            // 화면에 아무 것도 안 그리는 구독 전용 위젯 — _eventsStream의
+            // 첫 데이터를 _latestEvents에 담아 _maybeTriggerHomeEventPopup을
+            // 부른다(실제 팝업은 showHomeEventPopupIfNeeded가 별도
+            // showDialog로 띄운다).
+            StreamBuilder<List<HomeEvent>>(
+              stream: _eventsStream,
+              builder: (context, snapshot) {
+                _latestEvents = snapshot.data;
+                _maybeTriggerHomeEventPopup();
+                return const SizedBox.shrink();
+              },
+            ),
           ],
         ),
       ),

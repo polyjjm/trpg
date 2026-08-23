@@ -16,10 +16,17 @@ class ResolvedStoryNode {
   /// 참고) — 지금은 리더가 바로 꽂아 쓸 수 있는 형태로 미리 resolve만 해 둔다.
   final String? sfxUrl;
 
+  /// bgmLibrary/{bgmId}에서 조인한 다운로드 URL — node.effects.bgm?.bgmId가
+  /// 있을 때만 값을 갖는다(silence 지시일 땐 bgmId 자체가 없어서 항상 null).
+  /// SceneFrame이 아니라 리더 페이지(InteractiveReader/LinearReader)의
+  /// BgmSessionController가 이 값을 쓴다 — bgm_session_controller.dart 참고.
+  final String? bgmUrl;
+
   const ResolvedStoryNode({
     required this.node,
     required this.backgroundImageUrl,
     this.sfxUrl,
+    this.bgmUrl,
   });
 }
 
@@ -41,9 +48,15 @@ class StoryReaderRepository {
   /// 발행된(published) 노드만, order 오름차순으로 정렬해 반환한다.
   /// [packDefaultBackgroundImageId]는 이 팩의 storyPacks.defaultBackgroundImage —
   /// 어떤 노드도 배경을 명시적으로 고르지 않았을 때의 최종 폴백이다.
-  Future<List<ResolvedStoryNode>> fetchPublishedNodes(
+  /// [packDefaultBgmId]는 storyPacks.defaultBgmId(liveMetadata에서 이미 resolve된
+  /// 값 — 호출부인 InteractiveReader/LinearReader가 widget.pack.defaultBgmId를
+  /// 그대로 넘긴다) — 반환값의 defaultBgmUrl로 조인된다. 리딩 세션 시작
+  /// 시점에 "첫 노드가 BGM을 아예 안 정했을 때"만 쓰인다(bgm_session_controller.dart).
+  Future<({List<ResolvedStoryNode> nodes, String? defaultBgmUrl})>
+  fetchPublishedNodes(
     String packId, {
     String? packDefaultBackgroundImageId,
+    String? packDefaultBgmId,
   }) async {
     // fetchPublishedNodes 안에서 순서대로 nodes/images/sfxLibrary, 세 번
     // 별도로 읽는다 — 어느 쪽에서 permission-denied가 나는지 구분하려고
@@ -83,7 +96,15 @@ class StoryReaderRepository {
     final sfxUrls = await _fetchSfxUrls(sfxIds);
     debugPrint('fetchPublishedNodes($packId): sfx 쿼리 성공');
 
-    return [
+    final bgmIds = <String>{
+      ...nodes.map((n) => n.effects.bgm?.bgmId).whereType<String>(),
+      ?packDefaultBgmId,
+    };
+    debugPrint('fetchPublishedNodes($packId): bgm 쿼리 시작 ($bgmIds)');
+    final bgmUrls = await _fetchBgmUrls(bgmIds);
+    debugPrint('fetchPublishedNodes($packId): bgm 쿼리 성공');
+
+    final resolvedNodes = [
       for (final node in nodes)
         ResolvedStoryNode(
           node: node,
@@ -103,8 +124,16 @@ class StoryReaderRepository {
           sfxUrl: node.effects.sfx.enabled
               ? sfxUrls[node.effects.sfx.sfxId]
               : null,
+          bgmUrl: bgmUrls[node.effects.bgm?.bgmId],
         ),
     ];
+
+    return (
+      nodes: resolvedNodes,
+      defaultBgmUrl: packDefaultBgmId != null
+          ? bgmUrls[packDefaultBgmId]
+          : null,
+    );
   }
 
   Future<Map<String, String>> _fetchImageUrls(Set<String> imageIds) async {
@@ -146,6 +175,18 @@ class StoryReaderRepository {
     final snapshot = await _firestore
         .collection('sfxLibrary')
         .where(FieldPath.documentId, whereIn: sfxIds.toList())
+        .get();
+    return {
+      for (final doc in snapshot.docs)
+        doc.id: doc.data()['storageUrl'] as String? ?? '',
+    };
+  }
+
+  Future<Map<String, String>> _fetchBgmUrls(Set<String> bgmIds) async {
+    if (bgmIds.isEmpty) return {};
+    final snapshot = await _firestore
+        .collection('bgmLibrary')
+        .where(FieldPath.documentId, whereIn: bgmIds.toList())
         .get();
     return {
       for (final doc in snapshot.docs)

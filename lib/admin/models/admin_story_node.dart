@@ -1,4 +1,5 @@
 import '../../core/text/paragraph_blocks.dart';
+import '../data/node_diff.dart';
 import 'admin_node_block.dart';
 import 'admin_node_choice.dart';
 import 'node_effects.dart';
@@ -60,10 +61,40 @@ class AdminStoryNode {
   NodeStatus status;
   PendingAction? pendingAction;
 
+  /// 마지막 반려 사유 — admin이 등록/수정 요청을 반려할 때 적는다
+  /// (approvals_tab.dart). 승인되면(approveNode) 지워지고, 작가가 다시
+  /// 손봐서 재제출하면(requestApprovalForNode) 그 시점에도 지워진다 —
+  /// 새로 제출한 버전에 옛 반려 사유가 계속 붙어 있으면 안 되기 때문이다.
+  /// null이면 반려된 적이 없거나, 반려 이후 이미 재제출/승인됐다는 뜻.
+  String? rejectionReason;
+
   /// 마지막으로 승인되어 실제 플레이어에게 보이는 콘텐츠 스냅샷
   /// (blocks/backgroundImage/choices/nextNodeId). 한 번도 승인된 적 없으면
   /// null — 이 값의 null 여부로 "신규 등록"인지 "기존 노드 수정"인지 판단한다.
   Map<String, dynamic>? liveSnapshot;
+
+  /// TTS 캐시 — synthesizeNodeTts Cloud Function만 쓴다(Admin SDK로 규칙을
+  /// 우회해서 쓴다). 이 모델은 이 두 필드를 읽어서 그대로 다시 쓰기만 한다
+  /// (절대 값을 스스로 계산/변경하지 않는다) — [toFirestoreJson]이 이
+  /// 필드들을 payload에 포함하지 않으면, saveNode()의 전체 덮어쓰기(`.set()`)가
+  /// 매번 작가의 무관한 draft 저장만으로도 캐시를 지워버려서, 다음 리더가
+  /// 실제로는 그대로인 라이브 콘텐츠에 대해 또 Typecast를 호출하게 되는
+  /// 낭비가 생긴다 — 그래서 liveSnapshot/rejectionReason과 똑같이 "그냥
+  /// 보존만 하는" 필드로 모델에 포함시켰다. [contentSnapshot]에는 포함하지
+  /// 않는다 — 작가가 쓴 콘텐츠가 아니라 서버가 만든 캐시 산출물이라
+  /// liveSnapshot으로 복사될 대상이 아니다.
+  String? ttsAudioUrl;
+  String? ttsAudioGeneratedForBodyHash;
+
+  /// "미리듣기" 잠정 캐시 — previewNodeTts Cloud Function만 쓴다(작가가 아직
+  /// 저장도 안 한 초안으로 미리 들어본 결과). [ttsAudioUrl]/
+  /// [ttsAudioGeneratedForBodyHash]와 똑같은 "그냥 보존만 하는" 이유로
+  /// 모델에 포함된다 — 승인 시점에 해시가 일치하면(초안이 그대로 승인됐으면)
+  /// onNodeApprovedGenerateTts가 이 파일을 재생성 없이 그대로 ttsAudioUrl로
+  /// 승격한다(functions/src/index.ts 참고). [contentSnapshot]에는 포함하지
+  /// 않는다 — 이유는 위 ttsAudioUrl과 같다.
+  String? ttsPreviewAudioUrl;
+  String? ttsPreviewAudioGeneratedForBodyHash;
 
   /// 로컬 편집 세션에서만 쓰는 플래그. Firestore에는 저장하지 않는다.
   bool dirty;
@@ -81,6 +112,11 @@ class AdminStoryNode {
     this.status = NodeStatus.draft,
     this.pendingAction,
     this.liveSnapshot,
+    this.rejectionReason,
+    this.ttsAudioUrl,
+    this.ttsAudioGeneratedForBodyHash,
+    this.ttsPreviewAudioUrl,
+    this.ttsPreviewAudioGeneratedForBodyHash,
     this.dirty = false,
   }) : blocks = blocks ?? [],
        choices = choices ?? [];
@@ -129,6 +165,13 @@ class AdminStoryNode {
       status: NodeStatusJson.fromWire(json['status'] as String?),
       pendingAction: pendingActionFromWire(json['pendingAction'] as String?),
       liveSnapshot: (json['liveSnapshot'] as Map<String, dynamic>?),
+      rejectionReason: json['rejectionReason'] as String?,
+      ttsAudioUrl: json['ttsAudioUrl'] as String?,
+      ttsAudioGeneratedForBodyHash:
+          json['ttsAudioGeneratedForBodyHash'] as String?,
+      ttsPreviewAudioUrl: json['ttsPreviewAudioUrl'] as String?,
+      ttsPreviewAudioGeneratedForBodyHash:
+          json['ttsPreviewAudioGeneratedForBodyHash'] as String?,
     );
   }
 
@@ -141,6 +184,11 @@ class AdminStoryNode {
     'status': status.wireValue,
     'pendingAction': pendingAction?.wireValue,
     'liveSnapshot': liveSnapshot,
+    'rejectionReason': rejectionReason,
+    'ttsAudioUrl': ttsAudioUrl,
+    'ttsAudioGeneratedForBodyHash': ttsAudioGeneratedForBodyHash,
+    'ttsPreviewAudioUrl': ttsPreviewAudioUrl,
+    'ttsPreviewAudioGeneratedForBodyHash': ttsPreviewAudioGeneratedForBodyHash,
   };
 
   /// 승인 시 liveSnapshot에 복사해 넣을, 지금 이 순간의 콘텐츠 스냅샷.
@@ -153,4 +201,16 @@ class AdminStoryNode {
     'nextNodeId': nextNodeId,
     'effects': effects.toJson(),
   };
+
+  /// 이 노드가 "아직 승인 요청을 보내지 않은, 라이브 버전과 다른 내용"을
+  /// 갖고 있는지 — sidebar의 "수정됨" 배지, "변경사항 전체 승인요청" 버튼,
+  /// 승인 대기함의 "내용상 변경 없음" 판정까지 전부 이 getter 하나만 부른다.
+  /// 실제 비교는 [NodeDiff.compute]에 통째로 위임한다(node_diff.dart의
+  /// 클래스 doc 참고 — 이 계산 로직을 여러 곳에 따로 두지 않기 위해
+  /// 그쪽으로 모았다). 이미 승인 요청이 걸려 있으면(pendingAction != null)
+  /// 그 자체로 false — 제출 대상이 아니다.
+  bool get hasUnsubmittedChanges {
+    if (pendingAction != null) return false;
+    return NodeDiff.compute(this).anyChanged;
+  }
 }

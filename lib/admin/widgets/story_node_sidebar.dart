@@ -10,14 +10,24 @@ class StoryNodeSidebar extends StatelessWidget {
   final List<AdminStoryNodeSummary> nodes;
   final String? selectedNodeId;
 
-  /// 세션 캐시(node_edit_session_cache.dart)에 저장 안 한 편집 내용이 있는
-  /// 노드 id 전부 — 선택 여부와 무관하게, 목록에 있는 모든 노드에 대해
-  /// "수정됨" 배지를 보여주는 데 쓴다.
+  /// 세션 캐시(node_edit_session_cache.dart)에 편집 내용이 있고, 그
+  /// 내용이 실제로 라이브 버전과 다른(AdminStoryNode.hasUnsubmittedChanges)
+  /// 노드 id — 선택 여부와 무관하게, 목록에 있는 모든 노드에 대해 "수정됨"
+  /// 배지를 보여주는 데 쓴다. story_tab_view.dart의 _refreshUnsubmittedNodes가
+  /// 캐시에 있는 노드를 판단할 때도 같은 getter를 쓴다 — 두 표시가 서로
+  /// 다른 기준으로 어긋나지 않는다.
   final Set<String> unsavedNodeIds;
 
   final VoidCallback onAddNode;
   final ValueChanged<String> onSelect;
   final ValueChanged<String> onDelete;
+
+  /// 이 팩에서 임시저장은 됐지만(또는 아직 임시저장도 안 한 채 편집
+  /// 중이지만) 아직 승인 요청을 보내지 않은 노드 수 — 0이면 "변경사항 전체
+  /// 승인요청" 버튼을 비활성화한다(story_tab_view.dart의
+  /// _refreshUnsubmittedNodes 참고).
+  final int unsubmittedCount;
+  final VoidCallback onSubmitAllChanges;
 
   /// 드래그로 노드 순서를 바꿨을 때 — ReorderableListView 관례 그대로
   /// (oldIndex, newIndex)를 넘긴다. story_tab_view.dart가 order 값을
@@ -39,6 +49,8 @@ class StoryNodeSidebar extends StatelessWidget {
     required this.onAddNode,
     required this.onSelect,
     required this.onDelete,
+    required this.unsubmittedCount,
+    required this.onSubmitAllChanges,
     required this.onReorder,
     required this.bulkSelectedIds,
     required this.onToggleBulkSelect,
@@ -85,6 +97,40 @@ class StoryNodeSidebar extends StatelessWidget {
                     '+ 새 스토리 노드',
                     style: TextStyle(
                       fontSize: 13,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 8),
+              // 노드마다 따로 "승인 요청 보내기"를 누르는 대신, 이 팩에서
+              // 임시저장만 되고 아직 승인 대기로 안 넘어간 변경사항을 전부
+              // 모아 한 번에 제출한다(story_tab_view.dart의
+              // _handleBulkSubmitAllChanges). 제출할 게 없으면 눌러도
+              // 아무 일도 안 일어나지 않게, 버튼 자체를 비활성화해 둔다.
+              SizedBox(
+                width: double.infinity,
+                child: OutlinedButton(
+                  onPressed: unsubmittedCount == 0 ? null : onSubmitAllChanges,
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: AdminColors.gold,
+                    disabledForegroundColor: AdminColors.muted,
+                    side: BorderSide(
+                      color: unsubmittedCount == 0
+                          ? AdminColors.border
+                          : AdminColors.gold,
+                    ),
+                    padding: const EdgeInsets.symmetric(vertical: 10),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                  ),
+                  child: Text(
+                    unsubmittedCount == 0
+                        ? '변경사항 전체 승인요청'
+                        : '변경사항 전체 승인요청 ($unsubmittedCount)',
+                    style: const TextStyle(
+                      fontSize: 12.5,
                       fontWeight: FontWeight.w700,
                     ),
                   ),
@@ -255,6 +301,7 @@ class _NodeItem extends StatelessWidget {
                         StatusTag(
                           status: node.status,
                           pendingAction: node.pendingAction,
+                          rejectionReason: node.rejectionReason,
                         ),
                         if (hasUnsavedEdits) ...[
                           const SizedBox(width: 4),

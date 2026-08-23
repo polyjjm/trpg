@@ -7,22 +7,25 @@ import '../../core/constants/external_links.dart';
 import '../../core/platform/open_external_link.dart';
 import '../../core/user/user_profile_repository.dart';
 import '../data/admin_notice_repository.dart';
+import '../data/admin_bgm_repository.dart';
 import '../data/admin_image_repository.dart';
 import '../data/admin_sfx_repository.dart';
 import '../data/admin_story_repository.dart';
+import '../data/admin_tts_voice_repository.dart';
 import '../data/node_edit_session_cache.dart';
 import '../models/admin_story_pack.dart';
 import '../models/story_pack_type.dart';
 import '../widgets/admin_theme.dart';
 import 'admin_dashboard_page.dart';
 import 'admin_gate_page.dart';
+import 'bgm_library_tab.dart';
 import 'image_library_tab.dart';
 import 'notices_tab.dart';
 import 'pack_settings_page.dart';
 import 'sfx_library_tab.dart';
 import 'story_tab_view.dart';
 
-enum _AdminTab { story, images, sfx, notices }
+enum _AdminTab { story, images, sfx, bgm, notices }
 
 /// 로그인 + 역할 확인(author/admin) 통과 후 보이는 "작가 도구" 본체 —
 /// 콘텐츠 편집(스토리 노드/이미지 라이브러리/공지사항)만 다룬다. author와
@@ -54,6 +57,8 @@ class _AuthorToolPageState extends State<AuthorToolPage> {
   final AdminStoryRepository _storyRepository = AdminStoryRepository();
   final AdminImageRepository _imageRepository = AdminImageRepository();
   final AdminSfxRepository _sfxRepository = AdminSfxRepository();
+  final AdminBgmRepository _bgmRepository = AdminBgmRepository();
+  final AdminTtsVoiceRepository _ttsVoiceRepository = AdminTtsVoiceRepository();
   final AdminNoticeRepository _noticeRepository = AdminNoticeRepository();
   final UserProfileRepository _userProfileRepository = UserProfileRepository();
 
@@ -133,6 +138,8 @@ class _AuthorToolPageState extends State<AuthorToolPage> {
           packId: packId,
           repository: _storyRepository,
           imageRepository: _imageRepository,
+          bgmRepository: _bgmRepository,
+          ttsVoiceRepository: _ttsVoiceRepository,
         ),
       ),
     );
@@ -220,6 +227,8 @@ class _AuthorToolPageState extends State<AuthorToolPage> {
           repository: _storyRepository,
           imageRepository: _imageRepository,
           sfxRepository: _sfxRepository,
+          bgmRepository: _bgmRepository,
+          ttsVoiceRepository: _ttsVoiceRepository,
           sessionCache: _sessionCache,
         );
       case _AdminTab.images:
@@ -227,6 +236,11 @@ class _AuthorToolPageState extends State<AuthorToolPage> {
       case _AdminTab.sfx:
         return SfxLibraryTab(
           repository: _sfxRepository,
+          currentUserId: widget.authService.userId,
+        );
+      case _AdminTab.bgm:
+        return BgmLibraryTab(
+          repository: _bgmRepository,
           currentUserId: widget.authService.userId,
         );
       case _AdminTab.notices:
@@ -522,6 +536,11 @@ class _NavTabs extends StatelessWidget {
             label: '효과음 라이브러리',
             selected: active == _AdminTab.sfx,
             onTap: () => onSelected(_AdminTab.sfx),
+          ),
+          _NavTab(
+            label: '배경음악 라이브러리',
+            selected: active == _AdminTab.bgm,
+            onTap: () => onSelected(_AdminTab.bgm),
           ),
           _NavTab(
             label: '공지사항',

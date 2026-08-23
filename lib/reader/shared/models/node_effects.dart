@@ -199,12 +199,54 @@ class HapticEffect {
   }
 }
 
+/// [sfxId]는 sfxLibrary/{sfxId} 참조인 것과 똑같이 [bgmId]는 bgmLibrary/{bgmId}
+/// 참조다 — StoryReaderRepository가 같은 join 패턴으로 storageUrl을 resolve해
+/// ResolvedStoryNode.bgmUrl에 담아 준다.
+///
+/// 나머지 다섯 효과(blackout/shake/sfx/flash/haptic)와 달리 "enabled" 불리언이
+/// 없다 — 이 값이 아예 null인지 아닌지 자체가 의미를 가진다(node_effects.dart
+/// 관례: 노드 문서에 `effects.bgm` 필드가 없거나 null이면 "이전과 동일(상속)",
+/// 있으면 이 값이 지시하는 대로 트랙 전환/무음 전환을 한다). BGM 재생/전환
+/// 판단은 SceneFrame이 아니라 리더 페이지(InteractiveReader/LinearReader)가
+/// BgmSessionController로 한다 — SceneFrame은 노드가 바뀔 때마다 새로 만들어져
+/// "지금 재생 중인 BGM"이라는 세션 상태를 들고 있을 수 없기 때문이다
+/// (lib/reader/shared/bgm_session_controller.dart 참고).
+class BgmEffect {
+  /// 전환할 트랙 — [silence]가 true면 이 값은 무시된다.
+  final String? bgmId;
+
+  /// true면 [bgmId]와 무관하게 지금 재생 중인 BGM을 무음으로 페이드아웃한다.
+  final bool silence;
+
+  /// 0.0~1.0, 기본 1.0 — [bgmId]가 설정돼 있을 때만 의미가 있다. 크로스페이드가
+  /// (또는 같은 트랙이 이어지는 채로 볼륨만 바뀔 때는 짧은 볼륨 전환이) 끝난
+  /// 뒤 정착할 목표 볼륨 — `AudioService.crossfadeToBgm`/`adjustBgmVolume`이
+  /// "완전히 페이드인된 상태"를 항상 1.0이 아니라 이 값으로 취급한다
+  /// (bgm_session_controller.dart 참고).
+  final double volume;
+
+  const BgmEffect({this.bgmId, this.silence = false, this.volume = 1.0});
+
+  /// json이 null이면(필드 자체가 없거나 명시적으로 null) "상속" — 반드시 null을
+  /// 돌려준다. 다른 Effect들의 `fromJson(null) → 기본값 인스턴스`와 다른
+  /// 유일한 이유다.
+  static BgmEffect? fromJson(Map<String, dynamic>? json) {
+    if (json == null) return null;
+    return BgmEffect(
+      bgmId: json['bgmId'] as String?,
+      silence: json['silence'] as bool? ?? false,
+      volume: (json['volume'] as num?)?.toDouble() ?? 1.0,
+    );
+  }
+}
+
 class NodeEffects {
   final BlackoutEffect blackout;
   final ShakeEffect shake;
   final SfxEffect sfx;
   final FlashEffect flash;
   final HapticEffect haptic;
+  final BgmEffect? bgm;
 
   const NodeEffects({
     this.blackout = const BlackoutEffect(),
@@ -212,6 +254,7 @@ class NodeEffects {
     this.sfx = const SfxEffect(),
     this.flash = const FlashEffect(),
     this.haptic = const HapticEffect(),
+    this.bgm,
   });
 
   factory NodeEffects.fromJson(Map<String, dynamic>? json) {
@@ -224,6 +267,7 @@ class NodeEffects {
       sfx: SfxEffect.fromJson(json['sfx'] as Map<String, dynamic>?),
       flash: FlashEffect.fromJson(json['flash'] as Map<String, dynamic>?),
       haptic: HapticEffect.fromJson(json['haptic'] as Map<String, dynamic>?),
+      bgm: BgmEffect.fromJson(json['bgm'] as Map<String, dynamic>?),
     );
   }
 }

@@ -1,10 +1,13 @@
 import 'package:flutter/material.dart';
 
+import '../data/admin_tts_voice_repository.dart';
+import '../models/admin_bgm.dart';
 import '../models/admin_image.dart';
 import '../models/admin_image_category.dart';
 import '../models/admin_sfx.dart';
 import '../models/admin_story_node.dart';
 import '../models/admin_story_node_summary.dart';
+import '../models/admin_tts_voice.dart';
 import '../models/pending_action.dart';
 import '../models/story_pack_type.dart';
 import 'admin_theme.dart';
@@ -30,6 +33,18 @@ class NodeEditor extends StatefulWidget {
   final bool isIdEditable;
   final List<AdminImage> images;
   final List<AdminSfx> sfxLibrary;
+  final List<AdminBgm> bgmLibrary;
+  final List<AdminTtsVoice> ttsVoices;
+  final VoidCallback onRefreshTtsVoices;
+  final bool refreshingTtsVoices;
+
+  /// "미리듣기" 버튼(NodeEffectsEditor 안)이 previewNodeTts를 부르는 데
+  /// 필요하다 — packId는 이 노드가 속한 팩, defaultTtsVoiceId는 그 팩의
+  /// 기본 내레이터 보이스(팩 설정에서 승인된 값).
+  final AdminTtsVoiceRepository ttsVoiceRepository;
+  final String packId;
+  final String? defaultTtsVoiceId;
+
   final StoryPackType packType;
 
   /// 이동 대상 후보(선택지/다음 노드 선택기용) — 저장된 노드 + 세션 캐시
@@ -49,7 +64,6 @@ class NodeEditor extends StatefulWidget {
 
   final VoidCallback onChanged;
   final VoidCallback onSaveDraft;
-  final VoidCallback onRequestApproval;
   final VoidCallback onCancelDeleteRequest;
 
   const NodeEditor({
@@ -59,13 +73,19 @@ class NodeEditor extends StatefulWidget {
     required this.isIdEditable,
     required this.images,
     required this.sfxLibrary,
+    required this.bgmLibrary,
+    required this.ttsVoices,
+    required this.onRefreshTtsVoices,
+    required this.refreshingTtsVoices,
+    required this.ttsVoiceRepository,
+    required this.packId,
+    required this.defaultTtsVoiceId,
     required this.packType,
     required this.candidates,
     required this.inheritedBackgroundImageId,
     this.creationSourceId,
     required this.onChanged,
     required this.onSaveDraft,
-    required this.onRequestApproval,
     required this.onCancelDeleteRequest,
   });
 
@@ -114,7 +134,9 @@ class _NodeEditorState extends State<NodeEditor> {
         node.effects.blackout.enabled ||
         node.effects.shake.enabled ||
         node.effects.sfx.enabled ||
-        node.effects.haptic.enabled;
+        node.effects.haptic.enabled ||
+        node.effects.bgm != null ||
+        node.effects.tts != null;
 
     return SingleChildScrollView(
       padding: const EdgeInsets.fromLTRB(24, 20, 24, 20),
@@ -135,6 +157,10 @@ class _NodeEditorState extends State<NodeEditor> {
             NodeBodyBlocksEditor(
               blocks: node.blocks,
               onChanged: widget.onChanged,
+              showTtsOverride: widget.packType == StoryPackType.interactive,
+              ttsVoices: widget.ttsVoices,
+              onRefreshTtsVoices: widget.onRefreshTtsVoices,
+              refreshingTtsVoices: widget.refreshingTtsVoices,
             ),
             const SizedBox(height: 14),
             Wrap(
@@ -172,6 +198,15 @@ class _NodeEditorState extends State<NodeEditor> {
               NodeEffectsEditor(
                 effects: node.effects,
                 sfxLibrary: widget.sfxLibrary,
+                bgmLibrary: widget.bgmLibrary,
+                ttsVoices: widget.ttsVoices,
+                onRefreshTtsVoices: widget.onRefreshTtsVoices,
+                refreshingTtsVoices: widget.refreshingTtsVoices,
+                ttsVoiceRepository: widget.ttsVoiceRepository,
+                packId: widget.packId,
+                nodeId: node.id,
+                blocks: node.blocks,
+                defaultTtsVoiceId: widget.defaultTtsVoiceId,
                 onChanged: (effects) {
                   node.effects = effects;
                   widget.onChanged();
@@ -202,10 +237,7 @@ class _NodeEditorState extends State<NodeEditor> {
                 ),
               ),
             const SizedBox(height: 12),
-            _SaveBar(
-              onSaveDraft: widget.onSaveDraft,
-              onRequestApproval: widget.onRequestApproval,
-            ),
+            _SaveBar(onSaveDraft: widget.onSaveDraft),
             const SizedBox(height: 24),
           ],
         ),
@@ -215,6 +247,23 @@ class _NodeEditorState extends State<NodeEditor> {
 
   List<Widget> _buildBanners() {
     final banners = <Widget>[];
+
+    // 반려 사유는 dirty/승인대기 상태와 별개로 항상 먼저 보여준다 — 반려된
+    // 노드를 고치는 중(dirty)이어도 "왜 반려됐는지"를 계속 볼 수 있어야
+    // 한다. 재제출하면(_requestApprovalForNode) 이 필드가 지워지므로,
+    // 반려 사유가 남아 있다는 것 자체가 "아직 안 고쳐서 다시 안 보냈다"는
+    // 뜻이다.
+    final rejectionReason = node.rejectionReason;
+    if (rejectionReason != null && rejectionReason.isNotEmpty) {
+      banners.add(
+        InfoBanner(
+          style: InfoBannerStyle.rejected,
+          text:
+              '반려됐어요: $rejectionReason\n'
+              '고친 뒤 임시저장하고, 사이드바의 "변경사항 전체 승인요청"으로 다시 제출해주세요.',
+        ),
+      );
+    }
 
     if (widget.dirty) {
       banners.add(
@@ -572,11 +621,14 @@ class _BackgroundAppliesForwardToggle extends StatelessWidget {
   }
 }
 
+/// 저장 바 — "승인 요청 보내기"는 더 이상 여기 없다. 예전엔 노드마다 따로
+/// 승인 요청을 보냈지만, 이제는 "노드별로 쓰기" 사이드바의
+/// "변경사항 전체 승인요청" 버튼 하나로 이 팩의 미제출 변경사항을 한 번에
+/// 모아 보낸다(story_tab_view.dart) — 여기 남은 건 "나만 보이는" 임시저장뿐이다.
 class _SaveBar extends StatelessWidget {
   final VoidCallback onSaveDraft;
-  final VoidCallback onRequestApproval;
 
-  const _SaveBar({required this.onSaveDraft, required this.onRequestApproval});
+  const _SaveBar({required this.onSaveDraft});
 
   @override
   Widget build(BuildContext context) {
@@ -602,21 +654,9 @@ class _SaveBar extends StatelessWidget {
             ),
             child: const Text('임시저장 (나만 보임)', style: TextStyle(fontSize: 13)),
           ),
-          ElevatedButton(
-            onPressed: onRequestApproval,
-            style: ElevatedButton.styleFrom(
-              backgroundColor: AdminColors.gold,
-              foregroundColor: Colors.white,
-              elevation: 0,
-              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 11),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(8),
-              ),
-            ),
-            child: const Text(
-              '승인 요청 보내기',
-              style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700),
-            ),
+          Text(
+            '승인 요청은 사이드바의 "변경사항 전체 승인요청"으로 한 번에 보내요.',
+            style: TextStyle(fontSize: 11.5, color: AdminColors.muted),
           ),
           OutlinedButton(
             onPressed: () {

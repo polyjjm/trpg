@@ -15,7 +15,21 @@ class ReaderPrefs {
   final bool animationEnabled;
   final int typingSpeedMs;
   final bool ttsEnabled;
-  final bool bgmEnabled;
+
+  /// 내레이션이 끝까지 재생되면(일시정지가 아니라) 자동으로 다음 노드로
+  /// 넘어갈지 — 기본 켜짐(요청 사양: "auto-continue should be the default
+  /// behavior but not forced"). ReaderSessionController가 이 값을
+  /// 받아(setAutoContinueEnabled) 실제 자동 이어재생 여부를 판단한다.
+  final bool ttsAutoContinueEnabled;
+
+  /// BGM 마스터 볼륨(리더 본인의 취향) — 0.0(무음)~1.0(원본 그대로), 기본
+  /// 1.0. 노드 작성자가 정한 effects.bgm.volume(0.0~1.0)과는 별개의, 곱해지는
+  /// 값이다 — 최종 재생 볼륨 = authoredVolume × bgmMasterVolume
+  /// (`AudioService`의 `_effectiveVolume` 참고). 슬라이더를 드래그하는 동안은
+  /// [ReaderPrefsRepository]에 매 프레임 저장하지 않는다(SceneFrame이 로컬로만
+  /// 반영하다가 손을 뗄 때 한 번 저장한다) — 오디오 자체는 드래그 중에도
+  /// AudioService.setBgmMasterVolume으로 즉시 반영된다.
+  final double bgmMasterVolume;
 
   /// 책 읽기 모드(배경 이미지가 없는 노드)에서 한 쪽씩 볼지 두 쪽을 펼칠지 —
   /// 'single' | 'spread'. 배경 이미지가 있는 노드는 시네마틱 레이아웃이라
@@ -24,6 +38,9 @@ class ReaderPrefs {
   /// 좁은 폭에서는 두 쪽을 펼칠 자리가 없어 항상 한 쪽으로 그린다 — 값 자체는
   /// 유지되므로 데스크톱으로 돌아오면 다시 두 쪽이 된다.
   final String pageMode;
+
+  /// 본문 글자 색 — 'ivory'(기본) / 'white' / 'sepia' / 'gray'.
+  final String textColorId;
 
   /// 본문 글자 크기 배율 — 0.9(작게) / 1.0(보통) / 1.15(크게).
   /// 리더 설정에서 고르고, SceneFrame이 문단·비트 크기에 곱한다.
@@ -36,9 +53,11 @@ class ReaderPrefs {
     required this.animationEnabled,
     required this.typingSpeedMs,
     required this.ttsEnabled,
-    required this.bgmEnabled,
+    required this.ttsAutoContinueEnabled,
+    required this.bgmMasterVolume,
     required this.pageMode,
     required this.fontScale,
+    required this.textColorId,
     this.lastNoticeReadAt,
   });
 
@@ -49,10 +68,20 @@ class ReaderPrefs {
     animationEnabled: true,
     typingSpeedMs: 40,
     ttsEnabled: false,
-    bgmEnabled: true,
+    ttsAutoContinueEnabled: true,
+    bgmMasterVolume: 1.0,
     pageMode: pageModeSingle,
     fontScale: 1.0,
+    textColorId: 'ivory',
   );
+
+  /// 설정에 노출하는 글자 색 선택지 — 지면(어두운 배경) 위에서 읽히는 값만.
+  static const List<({String id, String label, int argb})> textColorOptions = [
+    (id: 'ivory', label: '기본', argb: 0xFFE2D4BF),
+    (id: 'white', label: '흰색', argb: 0xFFF5F5F5),
+    (id: 'sepia', label: '세피아', argb: 0xFFD9B98C),
+    (id: 'gray', label: '회색', argb: 0xFFA8A8A2),
+  ];
 
   /// 설정에 노출하는 글자 크기 선택지.
   static const List<({double value, String label})> fontScaleOptions = [
@@ -69,47 +98,76 @@ class ReaderPrefs {
   factory ReaderPrefs.fromFirestore(Map<String, dynamic> json) {
     return ReaderPrefs(
       fontId: json['fontId'] as String? ?? defaults.fontId,
-      animationEnabled: json['animationEnabled'] as bool? ?? defaults.animationEnabled,
-      typingSpeedMs: (json['typingSpeedMs'] as num?)?.toInt() ?? defaults.typingSpeedMs,
+      animationEnabled:
+          json['animationEnabled'] as bool? ?? defaults.animationEnabled,
+      typingSpeedMs:
+          (json['typingSpeedMs'] as num?)?.toInt() ?? defaults.typingSpeedMs,
       ttsEnabled: json['ttsEnabled'] as bool? ?? defaults.ttsEnabled,
-      bgmEnabled: json['bgmEnabled'] as bool? ?? defaults.bgmEnabled,
+      ttsAutoContinueEnabled:
+          json['ttsAutoContinueEnabled'] as bool? ??
+          defaults.ttsAutoContinueEnabled,
+      bgmMasterVolume: _readBgmMasterVolume(json),
       // 모르는 값이 들어와도(예: 옛 문서, 오타) 조용히 한 쪽으로 떨어진다 —
       // 화면이 깨지는 것보다 낫다.
-      pageMode: json['pageMode'] == pageModeSpread ? pageModeSpread : defaults.pageMode,
+      pageMode: json['pageMode'] == pageModeSpread
+          ? pageModeSpread
+          : defaults.pageMode,
       // 범위를 벗어난 값이 들어와도 화면이 깨지지 않게 잠근다.
       fontScale: ((json['fontScale'] as num?)?.toDouble() ?? defaults.fontScale)
           .clamp(0.8, 1.4),
+      textColorId: textColorOptions.any((o) => o.id == json['textColorId'])
+          ? json['textColorId'] as String
+          : defaults.textColorId,
       lastNoticeReadAt: (json['lastNoticeReadAt'] as Timestamp?)?.toDate(),
     );
   }
 
+  /// [bgmMasterVolume]은 예전 `bgmEnabled`(bool) 필드를 대체한다 — 문서에
+  /// 이미 새 필드가 있으면 그대로 쓰고, 없는데(마이그레이션 전 계정) 옛
+  /// `bgmEnabled`만 있으면 그 값을 1.0/0.0으로 한 번 옮겨 읽는다. 옛 필드도
+  /// 새 필드도 둘 다 없으면(최초 진입) 기본값 1.0.
+  static double _readBgmMasterVolume(Map<String, dynamic> json) {
+    final volume = json['bgmMasterVolume'] as num?;
+    if (volume != null) return volume.toDouble().clamp(0.0, 1.0);
+    final legacyEnabled = json['bgmEnabled'] as bool?;
+    if (legacyEnabled != null) return legacyEnabled ? 1.0 : 0.0;
+    return defaults.bgmMasterVolume;
+  }
+
   Map<String, dynamic> toFirestore() => {
-        'fontId': fontId,
-        'animationEnabled': animationEnabled,
-        'typingSpeedMs': typingSpeedMs,
-        'ttsEnabled': ttsEnabled,
-        'bgmEnabled': bgmEnabled,
-        'pageMode': pageMode,
-        'fontScale': fontScale,
-      };
+    'fontId': fontId,
+    'animationEnabled': animationEnabled,
+    'typingSpeedMs': typingSpeedMs,
+    'ttsEnabled': ttsEnabled,
+    'ttsAutoContinueEnabled': ttsAutoContinueEnabled,
+    'bgmMasterVolume': bgmMasterVolume,
+    'pageMode': pageMode,
+    'fontScale': fontScale,
+    'textColorId': textColorId,
+  };
 
   ReaderPrefs copyWith({
     String? fontId,
     bool? animationEnabled,
     int? typingSpeedMs,
     bool? ttsEnabled,
-    bool? bgmEnabled,
+    bool? ttsAutoContinueEnabled,
+    double? bgmMasterVolume,
     String? pageMode,
     double? fontScale,
+    String? textColorId,
   }) {
     return ReaderPrefs(
       fontId: fontId ?? this.fontId,
       animationEnabled: animationEnabled ?? this.animationEnabled,
       typingSpeedMs: typingSpeedMs ?? this.typingSpeedMs,
       ttsEnabled: ttsEnabled ?? this.ttsEnabled,
-      bgmEnabled: bgmEnabled ?? this.bgmEnabled,
+      ttsAutoContinueEnabled:
+          ttsAutoContinueEnabled ?? this.ttsAutoContinueEnabled,
+      bgmMasterVolume: bgmMasterVolume ?? this.bgmMasterVolume,
       pageMode: pageMode ?? this.pageMode,
       fontScale: fontScale ?? this.fontScale,
+      textColorId: textColorId ?? this.textColorId,
       lastNoticeReadAt: lastNoticeReadAt,
     );
   }

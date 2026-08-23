@@ -4,6 +4,8 @@ import {onCall, HttpsError} from "firebase-functions/v2/https";
 import {defineSecret} from "firebase-functions/params";
 import {initializeApp} from "firebase-admin/app";
 import {FieldValue, getFirestore} from "firebase-admin/firestore";
+import {getStorage} from "firebase-admin/storage";
+import {createHash, randomUUID} from "crypto";
 
 initializeApp();
 const db = getFirestore();
@@ -17,6 +19,14 @@ const db = getFirestore();
 async function isCallerAdmin(uid: string): Promise<boolean> {
   const snap = await db.collection("users").doc(uid).get();
   return snap.data()?.role === "admin";
+}
+
+/** isCallerAdmin과 같은 이유 — author/admin 둘 다 허용하는 함수(예:
+ * refreshTypecastVoices)가 쓴다. */
+async function isCallerAuthorOrAdmin(uid: string): Promise<boolean> {
+  const snap = await db.collection("users").doc(uid).get();
+  const role = snap.data()?.role;
+  return role === "author" || role === "admin";
 }
 
 /** users/{uid}.displayName/email — 거래 문서에 그대로 박아 두기 위한 조회. */
@@ -837,5 +847,908 @@ export const computeDailyRevenueSnapshot = onSchedule(
       refundedCoins,
       generatedAt: FieldValue.serverTimestamp(),
     });
+  }
+);
+
+// ─────────────────────────────────────────────────────────────────────────
+// TTS 내레이션 (Typecast) — 노드별로 한 번 생성해서 Storage에 캐시해 두고,
+// 그 이후 방문자는 전부 캐시만 재생한다(매 리딩 세션마다 Typecast API를
+// 다시 부르지 않는다). BGM/SFX가 "작가가 미리 올린 파일"을 재생하는 것과
+// 달리, TTS는 "본문 텍스트로부터 서버가 대신 만들어 주는 파일"이라 이
+// 생성/캐싱 자체가 이 기능의 핵심이다.
+//
+// ✅ **문서 대조 완료**(https://typecast.ai/docs/api-reference/text-to-speech/
+// text-to-speech, https://typecast.ai/docs/api-reference/voices/list-voices) —
+// 아래 Typecast 호출부(callTypecastTts/fetchTypecastVoiceList)의 엔드포인트
+// URL·인증 헤더 이름·요청/응답 필드명을 실제 공식 문서와 대조해 다음을
+// 바로잡았다: 보이스 목록 엔드포인트는 /v1/voices가 아니라 /v2/voices다.
+// emotion_preset을 쓰려면 prompt.emotion_type을 "preset"으로(Smart Emotion은
+// "smart"로) 명시해야 한다 — discriminator 필드라 생략하면 스펙에 정의된
+// 동작이 없다. whisper/toneup/tonedown 프리셋은 ssfm-v21에 없고 ssfm-v30
+// 에서만 지원돼서 model도 ssfm-v30으로 바꿨다(lib/admin/models/node_effects.dart의
+// TtsEmotionPreset과 반드시 같이 맞춰야 한다 — 아래 각주 참고). 그 외(캐싱/
+// 해시/Storage 업로드/Firestore 갱신/보안 검증) 구조는 이 프로젝트의 기존
+// 함수(confirmCoinCharge 등)와 같은 검증된 패턴이다.
+// ─────────────────────────────────────────────────────────────────────────
+
+// Typecast(TTS) API 키 — 절대 코드에 하드코딩하지 않는다. 배포 전에
+// `firebase functions:secrets:set TYPECAST_API_KEY`로 실제 값을 주입해야
+// synthesizeNodeTts/refreshTypecastVoices(Scheduled)가 동작한다.
+const typecastApiKey = defineSecret("TYPECAST_API_KEY");
+
+const TYPECAST_API_BASE = "https://api.typecast.ai";
+
+/** 블록(문단) 하나가 실제로 어떤 보이스/감정/피치/템포로 낭독될지 확정된
+ * 값 — 해석 순서는 블록 오버라이드 → 노드의 effects.tts → 팩의
+ * defaultTtsVoiceId/중립값이다(요청 사양: "Resolution order per block").
+ * 텍스트가 없는 블록(이미지 등)이나 어느 단계에서도 보이스를 못 찾은
+ * 블록은 이 타입으로 만들어지지 않는다(resolveBlockTts가 null을 돌려준다). */
+type ResolvedBlockTts = {
+  text: string;
+  voiceId: string;
+  emotion: string | null;
+  emotionIntensity: number;
+  pitch: number;
+  tempo: number;
+};
+
+/** 블록 하나 + 노드 effects.tts + 팩 기본 보이스를 합쳐 이 블록이 실제로
+ * 낭독될 설정을 확정한다. 세 단계 모두 "필드 단위"로 개별 폴백한다(예:
+ * 블록이 voiceId만 재정의하고 감정은 재정의하지 않았으면, 감정은 노드
+ * 설정을 그대로 물려받는다) — "블록에 뭐라도 설정하면 전부 블록 값을
+ * 쓴다"가 아니다. 텍스트가 비어 있거나(이미지 블록 등) 세 단계 어디서도
+ * voiceId를 못 찾으면 null(이 블록은 낭독 대상에서 빠진다). */
+function resolveBlockTts(
+  block: Record<string, unknown>,
+  nodeEffectsTts: Record<string, unknown> | null | undefined,
+  packDefaultVoiceId: string | null
+): ResolvedBlockTts | null {
+  const text = typeof block.text === "string" ? block.text.trim() : "";
+  if (!text) return null;
+
+  const blockVoiceId = typeof block.ttsVoiceId === "string" ? block.ttsVoiceId : null;
+  const nodeVoiceId = typeof nodeEffectsTts?.voiceId === "string" ? nodeEffectsTts.voiceId : null;
+  const voiceId = blockVoiceId ?? nodeVoiceId ?? packDefaultVoiceId;
+  if (!voiceId) return null;
+
+  const blockEmotion = typeof block.ttsEmotion === "string" ? block.ttsEmotion : null;
+  const nodeEmotion = typeof nodeEffectsTts?.emotion === "string" ? nodeEffectsTts.emotion : null;
+  const emotion = blockEmotion ?? nodeEmotion;
+
+  const blockIntensity =
+    typeof block.ttsEmotionIntensity === "number" ? block.ttsEmotionIntensity : null;
+  const nodeIntensity =
+    typeof nodeEffectsTts?.emotionIntensity === "number" ? nodeEffectsTts.emotionIntensity : null;
+  const emotionIntensity = blockIntensity ?? nodeIntensity ?? 1.0;
+
+  const blockPitch = typeof block.ttsPitch === "number" ? block.ttsPitch : null;
+  const nodePitch = typeof nodeEffectsTts?.pitch === "number" ? nodeEffectsTts.pitch : null;
+  const pitch = blockPitch ?? nodePitch ?? 0;
+
+  const blockTempo = typeof block.ttsTempo === "number" ? block.ttsTempo : null;
+  const nodeTempo = typeof nodeEffectsTts?.tempo === "number" ? nodeEffectsTts.tempo : null;
+  const tempo = blockTempo ?? nodeTempo ?? 1.0;
+
+  return {text, voiceId, emotion, emotionIntensity, pitch, tempo};
+}
+
+/** 노드의 blocks 배열 전체를 순서대로 resolveBlockTts에 통과시킨다.
+ * [nonEmptyTextBlockCount](텍스트가 있는 블록 수)보다 [resolved]가 짧으면
+ * 일부 블록이 voiceId를 못 찾고 조용히 빠진 것이다 — 호출부가 이 차이를
+ * 보고 에러를 낼지 판단한다(침묵하고 일부 문장만 낭독하면 저자가 눈치채기
+ * 어렵다). */
+function resolveAllBlocksTts(
+  blocks: unknown,
+  nodeEffectsTts: Record<string, unknown> | null | undefined,
+  packDefaultVoiceId: string | null
+): {resolved: ResolvedBlockTts[]; nonEmptyTextBlockCount: number} {
+  if (!Array.isArray(blocks)) return {resolved: [], nonEmptyTextBlockCount: 0};
+  let nonEmptyTextBlockCount = 0;
+  const resolved: ResolvedBlockTts[] = [];
+  for (const b of blocks) {
+    const block = b as Record<string, unknown>;
+    if (typeof block.text === "string" && block.text.trim().length > 0) {
+      nonEmptyTextBlockCount += 1;
+    }
+    const r = resolveBlockTts(block, nodeEffectsTts, packDefaultVoiceId);
+    if (r) resolved.push(r);
+  }
+  return {resolved, nonEmptyTextBlockCount};
+}
+
+/** 연속된 블록 중 보이스/감정/강도/피치/템포가 완전히 같은 것들을 하나의
+ * Typecast 호출(세그먼트)로 묶는다 — 다중 보이스 노드라도 화자가 안 바뀌는
+ * 구간은 API 호출 한 번으로 합쳐서 요청 수를 줄인다(요청 사양). 설정이
+ * 하나라도 다르면 새 세그먼트로 끊는다. */
+type TtsSegment = {
+  text: string;
+  voiceId: string;
+  emotion: string | null;
+  emotionIntensity: number;
+  pitch: number;
+  tempo: number;
+};
+
+function sameTtsSettings(a: ResolvedBlockTts, b: ResolvedBlockTts): boolean {
+  return (
+    a.voiceId === b.voiceId &&
+    a.emotion === b.emotion &&
+    a.emotionIntensity === b.emotionIntensity &&
+    a.pitch === b.pitch &&
+    a.tempo === b.tempo
+  );
+}
+
+function groupIntoSegments(blocks: ResolvedBlockTts[]): TtsSegment[] {
+  const segments: TtsSegment[] = [];
+  for (const block of blocks) {
+    const last = segments[segments.length - 1];
+    if (last && sameTtsSettings(last, block)) {
+      last.text = `${last.text}. ${block.text}`;
+    } else {
+      segments.push({...block});
+    }
+  }
+  return segments;
+}
+
+/** 캐시 유효성 판단 기준 — 블록별로 실제 적용될 텍스트+보이스/감정/피치/
+ * 템포 전체(세그먼트로 묶기 전, 블록 단위 그대로)를 통째로 해시한다 — 이
+ * 중 어느 블록의 설정 하나라도 바뀌면 다른 해시가 나와서 캐시를 못 쓰고
+ * 다시 생성한다(요청 사양: "cache-hash must now be computed over the full
+ * resolved per-block settings"). */
+function hashTtsInput(blocks: ResolvedBlockTts[]): string {
+  return createHash("sha256").update(JSON.stringify(blocks)).digest("hex");
+}
+
+/**
+ * Admin SDK에는 클라이언트 SDK의 getDownloadURL() 같은 헬퍼가 없다 — 직접
+ * firebaseStorageDownloadTokens 메타데이터를 심고, 클라이언트가 만드는 것과
+ * 똑같은 형식의 다운로드 URL을 조립한다. 그래야 별도 서명 URL(만료 있음)이나
+ * 공개 파일(누구나 읽음, Storage 규칙을 아예 안 탐)을 쓰지 않고, 기존
+ * images/sfxLibrary/bgmLibrary와 똑같이 Storage 보안 규칙
+ * (`request.auth != null`)만으로 읽기가 통제된다.
+ */
+async function uploadAndGetDownloadUrl(
+  path: string,
+  bytes: Buffer,
+  contentType: string
+): Promise<string> {
+  const bucket = getStorage().bucket();
+  const file = bucket.file(path);
+  const token = randomUUID();
+
+  await file.save(bytes, {
+    metadata: {
+      contentType,
+      metadata: {firebaseStorageDownloadTokens: token},
+    },
+  });
+
+  return (
+    `https://firebasestorage.googleapis.com/v0/b/${bucket.name}/o/` +
+    `${encodeURIComponent(path)}?alt=media&token=${token}`
+  );
+}
+
+/**
+ * Typecast TTS 생성 API를 non-streaming으로 호출해 오디오 바이트를 통째로
+ * 받는다(사전 생성/캐싱 용도라 스트리밍이 필요 없다 — 요청 사양). 실패하면
+ * 예외를 던진다(호출부가 HttpsError로 감싼다).
+ */
+async function callTypecastTts(params: {
+  apiKey: string;
+  text: string;
+  voiceId: string;
+  emotion: string | null;
+  emotionIntensity: number;
+  pitch: number;
+  tempo: number;
+  audioFormat: "mp3" | "wav";
+}): Promise<Buffer> {
+  // prompt는 discriminator 필드(emotion_type)로 갈리는 두 모양 중 하나다 —
+  // "preset"(emotion_preset/emotion_intensity 사용)이거나 "smart"(Typecast가
+  // 본문만 보고 감정을 자동 추론, 그 외 필드 없음). 이 필드를 아예 생략했을
+  // 때의 동작은 문서에 정의돼 있지 않아서, Smart Emotion도 명시적으로
+  // emotion_type: "smart"를 보낸다.
+  const prompt = params.emotion ?
+    {
+      emotion_type: "preset",
+      emotion_preset: params.emotion,
+      emotion_intensity: params.emotionIntensity,
+    } :
+    {emotion_type: "smart"};
+
+  if (!params.apiKey) {
+    console.error("Typecast API 키가 비어 있어요 — TYPECAST_API_KEY 시크릿을 확인하세요.");
+  }
+  console.log(
+    `Typecast TTS 요청: voiceId=${params.voiceId}, textLength=${params.text.length}, ` +
+      `prompt=${JSON.stringify(prompt)}, pitch=${params.pitch}, tempo=${params.tempo}`
+  );
+
+  const response = await fetch(`${TYPECAST_API_BASE}/v1/text-to-speech`, {
+    method: "POST",
+    headers: {
+      "X-API-KEY": params.apiKey,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      text: params.text,
+      voice_id: params.voiceId,
+      // whisper/toneup/tonedown 프리셋은 ssfm-v21에 없고 ssfm-v30에서만
+      // 지원된다(TtsEmotionPreset과 반드시 같이 맞출 것 — 위 파일 상단 각주
+      // 참고).
+      model: "ssfm-v30",
+      prompt,
+      output: {
+        audio_pitch: params.pitch,
+        audio_tempo: params.tempo,
+        audio_format: params.audioFormat,
+      },
+    }),
+  });
+
+  if (!response.ok) {
+    const errorBody = await response.text();
+    console.error(`Typecast TTS 응답: status=${response.status}, body=${errorBody.slice(0, 500)}`);
+    throw new Error(`Typecast TTS 호출 실패 (${response.status}): ${errorBody}`);
+  }
+
+  const audioBuffer = Buffer.from(await response.arrayBuffer());
+  console.log(
+    `Typecast TTS 응답: status=${response.status}, format=${params.audioFormat}, ` +
+      `contentType=${response.headers.get("content-type")}, bytes=${audioBuffer.length}`
+  );
+  return audioBuffer;
+}
+
+/**
+ * WAV(RIFF/PCM) 파일의 fmt/data 청크를 파싱한다 — Typecast의 wav 출력은
+ * 항상 16-bit PCM mono 44100Hz로 문서화돼 있지만(세그먼트마다 보이스/감정이
+ * 달라도 이 포맷 자체는 고정), 방어적으로 fmt 청크 값을 그대로 읽어서 쓴다.
+ */
+function parseWavPcm(buffer: Buffer): {
+  sampleRate: number;
+  numChannels: number;
+  bitsPerSample: number;
+  data: Buffer;
+} {
+  if (
+    buffer.length < 12 ||
+    buffer.toString("ascii", 0, 4) !== "RIFF" ||
+    buffer.toString("ascii", 8, 12) !== "WAVE"
+  ) {
+    throw new Error("Typecast wav 응답이 올바른 RIFF/WAVE 파일이 아니에요.");
+  }
+
+  let offset = 12;
+  let fmt: {sampleRate: number; numChannels: number; bitsPerSample: number} | null = null;
+  let data: Buffer | null = null;
+  while (offset + 8 <= buffer.length) {
+    const chunkId = buffer.toString("ascii", offset, offset + 4);
+    const chunkSize = buffer.readUInt32LE(offset + 4);
+    const chunkStart = offset + 8;
+    if (chunkId === "fmt ") {
+      fmt = {
+        numChannels: buffer.readUInt16LE(chunkStart + 2),
+        sampleRate: buffer.readUInt32LE(chunkStart + 4),
+        bitsPerSample: buffer.readUInt16LE(chunkStart + 14),
+      };
+    } else if (chunkId === "data") {
+      data = buffer.subarray(chunkStart, chunkStart + chunkSize);
+    }
+    // 청크는 짝수 바이트로 정렬된다(홀수 크기면 패딩 1바이트가 붙는다).
+    offset = chunkStart + chunkSize + (chunkSize % 2);
+  }
+
+  if (!fmt || !data) {
+    throw new Error("Typecast wav 응답에서 fmt/data 청크를 못 찾았어요.");
+  }
+  return {...fmt, data};
+}
+
+/** parseWavPcm이 읽은 포맷 정보로 새 WAV 헤더(44바이트, 확장 필드 없는
+ * 표준 PCM 헤더)를 만든다. */
+function buildWavHeader(
+  dataLength: number,
+  sampleRate: number,
+  numChannels: number,
+  bitsPerSample: number
+): Buffer {
+  const byteRate = (sampleRate * numChannels * bitsPerSample) / 8;
+  const blockAlign = (numChannels * bitsPerSample) / 8;
+  const header = Buffer.alloc(44);
+  header.write("RIFF", 0, "ascii");
+  header.writeUInt32LE(36 + dataLength, 4);
+  header.write("WAVE", 8, "ascii");
+  header.write("fmt ", 12, "ascii");
+  header.writeUInt32LE(16, 16);
+  header.writeUInt16LE(1, 20); // PCM
+  header.writeUInt16LE(numChannels, 22);
+  header.writeUInt32LE(sampleRate, 24);
+  header.writeUInt32LE(byteRate, 28);
+  header.writeUInt16LE(blockAlign, 32);
+  header.writeUInt16LE(bitsPerSample, 34);
+  header.write("data", 36, "ascii");
+  header.writeUInt32LE(dataLength, 40);
+  return header;
+}
+
+/**
+ * 여러 wav 세그먼트를 순서대로 이어 붙여 하나의 wav 파일로 만든다 — 각
+ * 세그먼트의 PCM 데이터만 뽑아 이어 붙이고 새 헤더 하나로 감싼다(개별
+ * 세그먼트 헤더는 버린다). 세그먼트가 하나뿐이면 그대로 돌려준다.
+ */
+function concatenateWavSegments(segments: Buffer[]): Buffer {
+  if (segments.length === 1) return segments[0];
+  const parsed = segments.map(parseWavPcm);
+  const {sampleRate, numChannels, bitsPerSample} = parsed[0];
+  const data = Buffer.concat(parsed.map((p) => p.data));
+  const header = buildWavHeader(data.length, sampleRate, numChannels, bitsPerSample);
+  return Buffer.concat([header, data]);
+}
+
+/**
+ * 세그먼트 목록을 실제 오디오 파일 하나로 만든다. 세그먼트가 하나뿐이면
+ * (다중 보이스를 안 쓰는 절대다수의 노드) 기존 그대로 mp3 하나만 요청한다
+ * — 파일이 작고 이미 검증된 경로다. 세그먼트가 둘 이상이면(블록별 보이스
+ * 오버라이드로 화자가 바뀌는 노드) wav로 받아 이어 붙인다 — mp3는 프레임을
+ * 그냥 이어 붙이면 디코더에 따라 끊김/잡음이 날 수 있어(ID3/Xing 헤더 등)
+ * 신뢰할 수 없고, ffmpeg 같은 네이티브 의존성 없이 안전하게 이어 붙일 수
+ * 있는 포맷이 PCM wav뿐이다.
+ */
+async function synthesizeNodeAudio(params: {
+  apiKey: string;
+  segments: TtsSegment[];
+}): Promise<{bytes: Buffer; extension: "mp3" | "wav"; contentType: string}> {
+  if (params.segments.length === 0) {
+    throw new Error("낭독할 세그먼트가 없어요.");
+  }
+
+  if (params.segments.length === 1) {
+    const seg = params.segments[0];
+    const bytes = await callTypecastTts({apiKey: params.apiKey, ...seg, audioFormat: "mp3"});
+    return {bytes, extension: "mp3", contentType: "audio/mpeg"};
+  }
+
+  console.log(
+    `synthesizeNodeAudio: 다중 보이스 세그먼트 ${params.segments.length}개, wav로 이어 붙임.`
+  );
+  const wavBuffers = await Promise.all(
+    params.segments.map((seg) =>
+      callTypecastTts({apiKey: params.apiKey, ...seg, audioFormat: "wav"})
+    )
+  );
+  const bytes = concatenateWavSegments(wavBuffers);
+  return {bytes, extension: "wav", contentType: "audio/wav"};
+}
+
+/**
+ * 캐시 필드(officialUrl/officialHash 또는 previewUrl/previewHash — 호출부가
+ * 어느 쌍을 넘기든 상관없다)를 보고 재사용 가능한지 먼저 확인한 뒤, 아니면
+ * 새로 생성해 업로드한다 — synthesizeNodeTts(리더 폴백)/previewNodeTts(작가
+ * 미리듣기)/onNodeApprovedGenerateTts(승인 시점 생성) 셋 다 이 함수 하나를
+ * 공유한다.
+ */
+async function synthesizeOrReuseTts(params: {
+  apiKey: string;
+  storagePathBase: string;
+  resolvedBlocks: ResolvedBlockTts[];
+  cachedUrl: string | null;
+  cachedHash: string | null;
+}): Promise<{audioUrl: string; cached: boolean; hash: string}> {
+  const hash = hashTtsInput(params.resolvedBlocks);
+  if (params.cachedUrl && params.cachedHash === hash) {
+    return {audioUrl: params.cachedUrl, cached: true, hash};
+  }
+
+  const segments = groupIntoSegments(params.resolvedBlocks);
+  const {bytes, extension, contentType} = await synthesizeNodeAudio({
+    apiKey: params.apiKey,
+    segments,
+  });
+  const audioUrl = await uploadAndGetDownloadUrl(
+    `${params.storagePathBase}.${extension}`,
+    bytes,
+    contentType
+  );
+  return {audioUrl, cached: false, hash};
+}
+
+/**
+ * 노드 하나의 내레이션 오디오를 준비해서 URL을 돌려준다 — 캐시가 이미
+ * 유효하면(ttsAudioGeneratedForBodyHash가 지금 계산한 해시와 같음) Typecast를
+ * 아예 호출하지 않고 기존 ttsAudioUrl만 돌려준다. 리더 화면이 TTS 재생
+ * 버튼을 누를 때마다 이 함수를 그대로 부른다 — "이미 생성됐는지"를
+ * 클라이언트가 미리 판단하지 않는다(그 판단 자체가 이 함수의 일이다).
+ *
+ * 항상 **liveSnapshot**(마지막으로 승인된 콘텐츠)만 읽는다 — 아직 승인 안
+ * 된 draft 본문으로 내레이션을 만들면 독자가 실제로 보는 글과 다른 오디오가
+ * 나온다(요청 사양: "TTS should always match what readers actually see").
+ */
+export const synthesizeNodeTts = onCall(
+  {secrets: [typecastApiKey]},
+  async (request) => {
+    const uid = request.auth?.uid;
+    if (!uid) {
+      throw new HttpsError("unauthenticated", "로그인이 필요합니다.");
+    }
+
+    const data = request.data as {packId?: unknown; nodeId?: unknown};
+    const {packId, nodeId} = data;
+    if (
+      typeof packId !== "string" || packId.length === 0 ||
+      typeof nodeId !== "string" || nodeId.length === 0
+    ) {
+      throw new HttpsError("invalid-argument", "요청 값이 올바르지 않습니다.");
+    }
+
+    console.log(`synthesizeNodeTts 호출: packId=${packId}, nodeId=${nodeId}, uid=${uid}`);
+
+    const nodeRef = db
+      .collection("storyPacks")
+      .doc(packId)
+      .collection("nodes")
+      .doc(nodeId);
+    const [packSnap, nodeSnap] = await Promise.all([
+      db.collection("storyPacks").doc(packId).get(),
+      nodeRef.get(),
+    ]);
+    if (!nodeSnap.exists) {
+      console.warn(`synthesizeNodeTts: 존재하지 않는 노드 (packId=${packId}, nodeId=${nodeId}).`);
+      throw new HttpsError("not-found", "존재하지 않는 노드예요.");
+    }
+
+    const nodeData = nodeSnap.data()!;
+    const liveSnapshot = nodeData.liveSnapshot as Record<string, unknown> | undefined;
+    if (!liveSnapshot) {
+      // 발행(승인)된 적 없는 노드 — 리더가 애초에 볼 수 없는 노드라 TTS를
+      // 만들 이유가 없다.
+      console.warn(
+        `synthesizeNodeTts: liveSnapshot이 없는 노드 (packId=${packId}, nodeId=${nodeId}).`
+      );
+      throw new HttpsError(
+        "failed-precondition",
+        "아직 발행되지 않은 노드는 내레이션을 만들 수 없어요."
+      );
+    }
+
+    const packDefaultVoiceId =
+      typeof packSnap.data()?.liveMetadata?.defaultTtsVoiceId === "string" ?
+        packSnap.data()!.liveMetadata.defaultTtsVoiceId :
+        null;
+    const nodeEffects = liveSnapshot.effects as Record<string, unknown> | undefined;
+    const nodeEffectsTts = nodeEffects?.tts as Record<string, unknown> | null | undefined;
+
+    const {resolved, nonEmptyTextBlockCount} = resolveAllBlocksTts(
+      liveSnapshot.blocks,
+      nodeEffectsTts,
+      packDefaultVoiceId
+    );
+    if (nonEmptyTextBlockCount === 0) {
+      console.warn(`synthesizeNodeTts: 본문이 비어 있음 (packId=${packId}, nodeId=${nodeId}).`);
+      throw new HttpsError("failed-precondition", "본문이 비어 있어요.");
+    }
+    if (resolved.length === 0) {
+      console.warn(
+        `synthesizeNodeTts: 보이스 미설정 (packId=${packId}, nodeId=${nodeId}, ` +
+          `packDefaultVoiceId=${packDefaultVoiceId}).`
+      );
+      throw new HttpsError(
+        "failed-precondition",
+        "이 스토리팩에 기본 내레이터 보이스가 설정돼 있지 않아요."
+      );
+    }
+    if (resolved.length < nonEmptyTextBlockCount) {
+      console.warn(
+        `synthesizeNodeTts: 일부 문단만 보이스 해석됨 (packId=${packId}, nodeId=${nodeId}, ` +
+          `resolved=${resolved.length}/${nonEmptyTextBlockCount}).`
+      );
+      throw new HttpsError(
+        "failed-precondition",
+        "일부 문단에 사용할 보이스를 찾지 못했어요 — 노드 기본 보이스나 팩 기본 보이스를 설정해주세요."
+      );
+    }
+
+    const cachedUrl = typeof nodeData.ttsAudioUrl === "string" ? nodeData.ttsAudioUrl : null;
+    const cachedHash =
+      typeof nodeData.ttsAudioGeneratedForBodyHash === "string" ?
+        nodeData.ttsAudioGeneratedForBodyHash :
+        null;
+
+    let result;
+    try {
+      result = await synthesizeOrReuseTts({
+        apiKey: typecastApiKey.value(),
+        storagePathBase: `admin/story_tts/${packId}/${nodeId}`,
+        resolvedBlocks: resolved,
+        cachedUrl,
+        cachedHash,
+      });
+    } catch (error) {
+      console.error(`Typecast TTS 생성 실패 (packId=${packId}, nodeId=${nodeId}):`, error);
+      throw new HttpsError("aborted", "내레이션 생성에 실패했어요.");
+    }
+
+    if (result.cached) {
+      console.log(`synthesizeNodeTts: 캐시 히트 (packId=${packId}, nodeId=${nodeId}).`);
+    } else {
+      console.log(`synthesizeNodeTts: 캐시 미스, 새로 생성함 (packId=${packId}, nodeId=${nodeId}).`);
+      await nodeRef.update({
+        ttsAudioUrl: result.audioUrl,
+        ttsAudioGeneratedForBodyHash: result.hash,
+      });
+    }
+
+    return {audioUrl: result.audioUrl, cached: result.cached};
+  }
+);
+
+/**
+ * 노드 편집기의 "미리듣기" 버튼이 부른다(요청 사양 Part 1-1) —
+ * synthesizeNodeTts와 달리 Firestore의 liveSnapshot을 읽지 않는다. 작가가
+ * 지금 타이핑 중인 초안은 임시저장 전까지 Firestore에 없기 때문에
+ * (NodeEditSessionCache, 메모리에만 있음) 클라이언트가 현재 편집 중인
+ * blocks/effects.tts를 요청 본문에 직접 실어 보낸다. 결과는
+ * ttsAudioUrl(독자용 공식 캐시)이 아니라 ttsPreviewAudioUrl/
+ * ttsPreviewAudioGeneratedForBodyHash에 저장한다 — "잠정적" 캐시라는 뜻이다.
+ * 나중에 이 초안이 그대로 승인되면(해시가 같으면) onNodeApprovedGenerateTts
+ * 트리거가 Typecast를 다시 부르지 않고 이 파일을 그대로 ttsAudioUrl로
+ * 승격한다.
+ */
+export const previewNodeTts = onCall(
+  {secrets: [typecastApiKey]},
+  async (request) => {
+    const uid = request.auth?.uid;
+    if (!uid) {
+      throw new HttpsError("unauthenticated", "로그인이 필요합니다.");
+    }
+    if (!(await isCallerAuthorOrAdmin(uid))) {
+      throw new HttpsError("permission-denied", "작가 또는 관리자만 사용할 수 있어요.");
+    }
+
+    const data = request.data as {
+      packId?: unknown;
+      nodeId?: unknown;
+      blocks?: unknown;
+      effectsTts?: unknown;
+      defaultTtsVoiceId?: unknown;
+    };
+    const {packId, nodeId, blocks} = data;
+    if (
+      typeof packId !== "string" || packId.length === 0 ||
+      typeof nodeId !== "string" || nodeId.length === 0 ||
+      !Array.isArray(blocks)
+    ) {
+      throw new HttpsError("invalid-argument", "요청 값이 올바르지 않습니다.");
+    }
+    const effectsTts = (data.effectsTts ?? null) as Record<string, unknown> | null;
+    const packDefaultVoiceId =
+      typeof data.defaultTtsVoiceId === "string" ? data.defaultTtsVoiceId : null;
+
+    console.log(`previewNodeTts 호출: packId=${packId}, nodeId=${nodeId}, uid=${uid}`);
+
+    const {resolved, nonEmptyTextBlockCount} = resolveAllBlocksTts(
+      blocks,
+      effectsTts,
+      packDefaultVoiceId
+    );
+    if (nonEmptyTextBlockCount === 0) {
+      throw new HttpsError("failed-precondition", "본문이 비어 있어요.");
+    }
+    if (resolved.length === 0) {
+      throw new HttpsError(
+        "failed-precondition",
+        "이 스토리팩에 기본 내레이터 보이스가 설정돼 있지 않아요."
+      );
+    }
+    if (resolved.length < nonEmptyTextBlockCount) {
+      throw new HttpsError(
+        "failed-precondition",
+        "일부 문단에 사용할 보이스를 찾지 못했어요 — 노드 기본 보이스나 팩 기본 보이스를 설정해주세요."
+      );
+    }
+
+    const nodeRef = db.collection("storyPacks").doc(packId).collection("nodes").doc(nodeId);
+    const nodeSnap = await nodeRef.get();
+    if (!nodeSnap.exists) {
+      throw new HttpsError("not-found", "존재하지 않는 노드예요.");
+    }
+    const nodeData = nodeSnap.data()!;
+    const cachedUrl =
+      typeof nodeData.ttsPreviewAudioUrl === "string" ? nodeData.ttsPreviewAudioUrl : null;
+    const cachedHash =
+      typeof nodeData.ttsPreviewAudioGeneratedForBodyHash === "string" ?
+        nodeData.ttsPreviewAudioGeneratedForBodyHash :
+        null;
+
+    let result;
+    try {
+      result = await synthesizeOrReuseTts({
+        apiKey: typecastApiKey.value(),
+        // 독자용 파일(admin/story_tts/{packId}/{nodeId}.*)과 겹치지 않게
+        // preview 하위 경로를 따로 둔다 — 승인 시점에 재사용할 때는 URL을
+        // 그대로 ttsAudioUrl에 복사할 뿐, 파일을 옮기지 않는다.
+        storagePathBase: `admin/story_tts_preview/${packId}/${nodeId}`,
+        resolvedBlocks: resolved,
+        cachedUrl,
+        cachedHash,
+      });
+    } catch (error) {
+      console.error(
+        `Typecast TTS 미리듣기 생성 실패 (packId=${packId}, nodeId=${nodeId}):`,
+        error
+      );
+      throw new HttpsError("aborted", "미리듣기 생성에 실패했어요.");
+    }
+
+    if (!result.cached) {
+      await nodeRef.update({
+        ttsPreviewAudioUrl: result.audioUrl,
+        ttsPreviewAudioGeneratedForBodyHash: result.hash,
+      });
+    }
+
+    return {audioUrl: result.audioUrl, cached: result.cached};
+  }
+);
+
+/**
+ * 노드가 승인돼 liveSnapshot이 갱신될 때마다(approveNode,
+ * lib/admin/data/admin_story_repository.dart — 클라이언트가 직접 Firestore를
+ * 쓰는 승인 흐름이라 Cloud Function 훅이 아니라 문서 변경 트리거로 잡는다)
+ * 그 시점에 바로 TTS를 만들어 둔다(요청 사양 Part 1-2) — 첫 독자가 방문할
+ * 때 생성을 기다리지 않게 하려는 목적. synthesizeNodeTts는 여전히 남아있다
+ * — 이 트리거가 실패하거나(예: Typecast 일시 장애) 이 기능이 추가되기 전에
+ * 이미 승인된 옛 노드를 위한 폴백 경로다(요청 사양: "keep generation-on-
+ * demand as a fallback only").
+ *
+ * before/after의 status/liveSnapshot이 둘 다 같으면(= 이 트리거 자신이 방금
+ * ttsAudioUrl만 갱신한 두 번째 이벤트, 또는 무관한 필드만 바뀐 쓰기) 그냥
+ * 건너뛴다 — 안 그러면 매번 자기 자신의 쓰기가 다시 트리거를 불러 무한
+ * 루프가 된다.
+ */
+export const onNodeApprovedGenerateTts = onDocumentWritten(
+  {document: "storyPacks/{packId}/nodes/{nodeId}", secrets: [typecastApiKey]},
+  async (event) => {
+    const after = event.data?.after;
+    if (!after || !after.exists) return; // 삭제된 노드 — 만들 이유 없음.
+    const afterData = after.data()!;
+    if (afterData.status !== "published") return;
+
+    const before = event.data?.before;
+    const beforeData = before?.exists ? before.data()! : null;
+    const statusUnchanged = beforeData?.status === afterData.status;
+    const liveSnapshotUnchanged =
+      JSON.stringify(beforeData?.liveSnapshot ?? null) ===
+      JSON.stringify(afterData.liveSnapshot ?? null);
+    if (statusUnchanged && liveSnapshotUnchanged) return;
+
+    const {packId, nodeId} = event.params;
+    const liveSnapshot = afterData.liveSnapshot as Record<string, unknown> | undefined;
+    if (!liveSnapshot) return;
+
+    console.log(`onNodeApprovedGenerateTts: 승인 감지 (packId=${packId}, nodeId=${nodeId}).`);
+
+    const packSnap = await db.collection("storyPacks").doc(packId).get();
+    const packDefaultVoiceId =
+      typeof packSnap.data()?.liveMetadata?.defaultTtsVoiceId === "string" ?
+        packSnap.data()!.liveMetadata.defaultTtsVoiceId :
+        null;
+    const nodeEffects = liveSnapshot.effects as Record<string, unknown> | undefined;
+    const nodeEffectsTts = nodeEffects?.tts as Record<string, unknown> | null | undefined;
+
+    const {resolved, nonEmptyTextBlockCount} = resolveAllBlocksTts(
+      liveSnapshot.blocks,
+      nodeEffectsTts,
+      packDefaultVoiceId
+    );
+    if (nonEmptyTextBlockCount === 0 || resolved.length < nonEmptyTextBlockCount) {
+      // 본문이 비었거나 일부/전체 블록이 보이스를 못 찾았으면 조용히
+      // 건너뛴다 — TTS는 부가 기능이라 이것 때문에 승인 자체를 막지 않는다.
+      // 리더가 방문하면 synthesizeNodeTts가 같은 조건으로 다시 시도하다
+      // 같은 이유로 실패하겠지만, 그건 저자가 노드 편집기에서 직접 확인할
+      // 문제다.
+      console.warn(
+        `onNodeApprovedGenerateTts: 본문/보이스 조건 미충족으로 건너뜀 ` +
+          `(packId=${packId}, nodeId=${nodeId}).`
+      );
+      return;
+    }
+
+    const nodeRef = db.collection("storyPacks").doc(packId).collection("nodes").doc(nodeId);
+    const hash = hashTtsInput(resolved);
+
+    const officialHash =
+      typeof afterData.ttsAudioGeneratedForBodyHash === "string" ?
+        afterData.ttsAudioGeneratedForBodyHash :
+        null;
+    if (officialHash === hash && typeof afterData.ttsAudioUrl === "string") {
+      console.log(
+        `onNodeApprovedGenerateTts: 이미 최신 캐시 존재 (packId=${packId}, nodeId=${nodeId}).`
+      );
+      return;
+    }
+
+    const previewHash =
+      typeof afterData.ttsPreviewAudioGeneratedForBodyHash === "string" ?
+        afterData.ttsPreviewAudioGeneratedForBodyHash :
+        null;
+    const previewUrl =
+      typeof afterData.ttsPreviewAudioUrl === "string" ? afterData.ttsPreviewAudioUrl : null;
+    if (previewHash === hash && previewUrl) {
+      console.log(
+        `onNodeApprovedGenerateTts: 미리듣기 캐시 재사용 (packId=${packId}, nodeId=${nodeId}).`
+      );
+      await nodeRef.update({ttsAudioUrl: previewUrl, ttsAudioGeneratedForBodyHash: hash});
+      return;
+    }
+
+    try {
+      const segments = groupIntoSegments(resolved);
+      const {bytes, extension, contentType} = await synthesizeNodeAudio({
+        apiKey: typecastApiKey.value(),
+        segments,
+      });
+      const audioUrl = await uploadAndGetDownloadUrl(
+        `admin/story_tts/${packId}/${nodeId}.${extension}`,
+        bytes,
+        contentType
+      );
+      await nodeRef.update({ttsAudioUrl: audioUrl, ttsAudioGeneratedForBodyHash: hash});
+      console.log(`onNodeApprovedGenerateTts: 새로 생성함 (packId=${packId}, nodeId=${nodeId}).`);
+    } catch (error) {
+      // 실패해도 승인 자체는 이미 끝난 뒤라 되돌리지 않는다 —
+      // synthesizeNodeTts 폴백이 리더의 첫 방문 때 다시 시도한다.
+      console.error(
+        `onNodeApprovedGenerateTts: TTS 생성 실패, synthesizeNodeTts 폴백에 맡김 ` +
+          `(packId=${packId}, nodeId=${nodeId}):`,
+        error
+      );
+    }
+  }
+);
+
+/** Typecast의 보이스 목록 API를 호출해 {id, name} 배열로 정규화한다.
+ *
+ * ⚠️ 디버그 로그: 이 함수는 "보이스 목록이 비어 있어요"가 실제로 (a) API
+ * 호출 자체가 실패하는지, (b) 200은 오는데 응답 모양이 예상과 달라
+ * 정규화 단계에서 전부 걸러지는지, (c) Typecast 계정에 진짜로 등록된
+ * 보이스가 0개인지 구분이 안 됐던 문제 때문에 각 단계마다 로그를 남긴다.
+ * API 키 값 자체는 절대 로그에 남기지 않는다(길이만 확인).
+ */
+async function fetchTypecastVoiceList(
+  apiKey: string
+): Promise<Array<{id: string; name: string}>> {
+  if (!apiKey) {
+    console.error("Typecast API 키가 비어 있어요 — TYPECAST_API_KEY 시크릿을 확인하세요.");
+  } else {
+    console.log(`Typecast API 키 확인됨 (길이 ${apiKey.length}자, 값은 로그에 남기지 않음).`);
+  }
+
+  // 보이스 목록은 /v1/voices가 아니라 /v2/voices다(문서 대조로 확인) —
+  // TTS 생성 엔드포인트(/v1/text-to-speech)와 버전이 다르다는 점에 주의.
+  const url = `${TYPECAST_API_BASE}/v2/voices`;
+  console.log(`Typecast 보이스 목록 요청: GET ${url}`);
+  const response = await fetch(url, {
+    headers: {"X-API-KEY": apiKey},
+  });
+
+  const rawBody = await response.text();
+  console.log(
+    `Typecast 보이스 목록 응답: status=${response.status}, ` +
+      `bodyPreview=${rawBody.slice(0, 500)}`
+  );
+
+  if (!response.ok) {
+    throw new Error(`Typecast 보이스 목록 조회 실패 (${response.status}): ${rawBody}`);
+  }
+
+  let body: unknown;
+  try {
+    body = JSON.parse(rawBody);
+  } catch (error) {
+    console.error("Typecast 보이스 목록 응답이 JSON이 아니에요:", error);
+    return [];
+  }
+
+  const list = Array.isArray(body) ?
+    body :
+    ((body as {voices?: unknown} | null)?.voices ?? null);
+  if (!Array.isArray(list)) {
+    console.warn(
+      "Typecast 보이스 목록 응답이 배열도 {voices: [...]}도 아니에요 — " +
+        `실제 응답 최상위 키: ${
+          body && typeof body === "object" ? Object.keys(body).join(", ") : typeof body
+        }`
+    );
+    return [];
+  }
+  console.log(`Typecast가 보이스 ${list.length}개를 응답으로 돌려줬어요(정규화 전).`);
+
+  const normalized = list
+    .map((v) => {
+      const voice = v as Record<string, unknown>;
+      const id =
+        typeof voice.voice_id === "string" ?
+          voice.voice_id :
+          typeof voice.id === "string" ?
+            voice.id :
+            null;
+      const name =
+        typeof voice.voice_name === "string" ?
+          voice.voice_name :
+          typeof voice.name === "string" ?
+            voice.name :
+            null;
+      if (!id || !name) return null;
+      return {id, name};
+    })
+    .filter((v): v is {id: string; name: string} => v !== null);
+
+  if (normalized.length !== list.length) {
+    console.warn(
+      `Typecast 보이스 ${list.length}개 중 ${
+        list.length - normalized.length
+      }개가 voice_id/voice_name(또는 id/name) 필드를 못 찾아 걸러졌어요 — ` +
+        `첫 항목 예시: ${JSON.stringify(list[0])}`
+    );
+  }
+
+  return normalized;
+}
+
+/** ttsVoiceCache/typecast 문서를 새로 받아온 목록으로 덮어쓴다 —
+ * refreshTypecastVoiceCacheScheduled/refreshTypecastVoices 둘 다 공유하는
+ * 실제 로직. */
+async function refreshTypecastVoiceCache(apiKey: string): Promise<void> {
+  const voices = await fetchTypecastVoiceList(apiKey);
+  console.log(`ttsVoiceCache/typecast에 보이스 ${voices.length}개를 저장해요.`);
+  await db.collection("ttsVoiceCache").doc("typecast").set({
+    voices,
+    fetchedAt: FieldValue.serverTimestamp(),
+  });
+}
+
+/**
+ * 매일 KST 03:00에 Typecast 보이스 목록을 다시 받아 ttsVoiceCache/typecast에
+ * 캐시해 둔다 — admin/작가 화면이 보이스를 고를 때마다 Typecast API를 부르지
+ * 않고 이 캐시 문서만 구독하면 되게 하려는 목적(요청 사양: "cache this list
+ * server-side periodically"). 임의로 고른 새벽 시각 — 운영상 문제가 있으면
+ * 바꿔도 된다.
+ */
+export const refreshTypecastVoiceCacheScheduled = onSchedule(
+  {schedule: "0 3 * * *", timeZone: "Asia/Seoul", secrets: [typecastApiKey]},
+  async () => {
+    await refreshTypecastVoiceCache(typecastApiKey.value());
+  }
+);
+
+/**
+ * 위 예약 실행과 같은 로직을 수동으로 즉시 트리거한다 — 최초 배포 직후(예약
+ * 실행을 하루 기다리지 않고) 캐시를 채우거나, 목록이 바뀌었는데 새벽까지
+ * 못 기다릴 때 admin/작가 화면의 "새로고침" 버튼이 부른다. author/admin
+ * 누구나 부를 수 있다 — 오디오 생성이 아니라 비용이 낮은 메타데이터 조회일
+ * 뿐이라 admin 전용으로 좁힐 필요가 없다고 판단했다.
+ */
+export const refreshTypecastVoices = onCall(
+  {secrets: [typecastApiKey]},
+  async (request) => {
+    const uid = request.auth?.uid;
+    if (!uid) {
+      throw new HttpsError("unauthenticated", "로그인이 필요합니다.");
+    }
+    if (!(await isCallerAuthorOrAdmin(uid))) {
+      throw new HttpsError("permission-denied", "작가 또는 관리자만 사용할 수 있어요.");
+    }
+
+    try {
+      await refreshTypecastVoiceCache(typecastApiKey.value());
+    } catch (error) {
+      console.error("Typecast 보이스 목록 새로고침 실패:", error);
+      throw new HttpsError("aborted", "보이스 목록을 불러오지 못했어요.");
+    }
+    return {success: true};
   }
 );

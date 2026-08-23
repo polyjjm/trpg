@@ -6,17 +6,23 @@ import '../models/pending_action.dart';
 import 'admin_theme.dart';
 
 /// renderStatusTag()와 동일한 우선순위로 노드 하나의 상태 배지를 그린다:
-/// 로컬 미저장 변경 > 삭제 승인대기 > 등록/수정 승인대기 > 연재중 > 초안.
+/// 로컬 미저장 변경 > 삭제 승인대기 > 등록/수정 승인대기 > 반려됨 > 연재중 > 초안.
 class StatusTag extends StatelessWidget {
   final NodeStatus status;
   final PendingAction? pendingAction;
   final bool dirty;
+
+  /// null이 아니면(그리고 dirty/승인대기가 아니면) "반려됨"을 보여준다 —
+  /// 반려된 뒤 아직 재제출 안 한 노드라는 뜻이다(재제출하면
+  /// requestApprovalForNode가 이 필드를 지운다).
+  final String? rejectionReason;
 
   const StatusTag({
     super.key,
     required this.status,
     required this.pendingAction,
     this.dirty = false,
+    this.rejectionReason,
   });
 
   factory StatusTag.forNode(AdminStoryNode node, {bool? dirtyOverride}) {
@@ -24,6 +30,7 @@ class StatusTag extends StatelessWidget {
       status: node.status,
       pendingAction: node.pendingAction,
       dirty: dirtyOverride ?? node.dirty,
+      rejectionReason: node.rejectionReason,
     );
   }
 
@@ -71,6 +78,9 @@ class StatusTag extends StatelessWidget {
         AdminColors.statusPendingBg,
         AdminColors.statusPendingText,
       );
+    }
+    if (rejectionReason != null && rejectionReason!.isNotEmpty) {
+      return ('반려됨', AdminColors.rejectBg, AdminColors.rejectText);
     }
     if (status == NodeStatus.published) {
       return (

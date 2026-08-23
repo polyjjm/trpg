@@ -4,13 +4,16 @@ import 'package:flutter/material.dart';
 import 'package:graphview/graphview.dart';
 
 import '../data/admin_story_repository.dart';
+import '../data/admin_tts_voice_repository.dart';
 import '../data/node_edit_session_cache.dart';
 import '../data/node_id_suggestion.dart';
+import '../models/admin_bgm.dart';
 import '../models/admin_image.dart';
 import '../models/admin_node_choice.dart';
 import '../models/admin_sfx.dart';
 import '../models/admin_story_node.dart';
 import '../models/admin_story_node_summary.dart';
+import '../models/admin_tts_voice.dart';
 import '../models/story_pack_type.dart';
 import 'admin_theme.dart';
 import 'choice_edit_form.dart';
@@ -63,6 +66,12 @@ class StoryMapView extends StatefulWidget {
   final bool editingNodeIdEditable;
   final List<AdminImage> images;
   final List<AdminSfx> sfxLibrary;
+  final List<AdminBgm> bgmLibrary;
+  final List<AdminTtsVoice> ttsVoices;
+  final VoidCallback onRefreshTtsVoices;
+  final bool refreshingTtsVoices;
+  final AdminTtsVoiceRepository ttsVoiceRepository;
+  final String? defaultTtsVoiceId;
   final String? inheritedBackgroundImageId;
   final String? editingNodeCreationSourceId;
 
@@ -70,18 +79,17 @@ class StoryMapView extends StatefulWidget {
   /// 달라는 신호.
   final VoidCallback onEditorChanged;
   final VoidCallback onSaveDraft;
-  final VoidCallback onRequestApproval;
   final VoidCallback onCancelDeleteRequest;
 
   /// 패널을 닫는다(명시적 닫기 버튼, 또는 빈 캔버스 탭) — 그래프 화면은
   /// 그대로 두고 [editingNode]만 null로 되돌아간다.
   final VoidCallback onClosePanel;
 
-  /// 왼쪽 아래 "전체 저장" 툴바 — [unsavedNodeIds](= 세션 캐시에 지금
-  /// 이 팩의 노드가 몇 개나 있는지, "수정됨" 배지와 같은 값)가 0보다 크면
-  /// 뜬다. 실제 저장 로직은 [_StoryTabViewState]가 개별 패널의
-  /// 임시저장/승인요청과 똑같이 갖고 있다 — 여기서는 그 핸들러를 그대로
-  /// 받아서 부른다.
+  /// 왼쪽 아래 "전체 저장" 툴바 — [unsavedNodeIds](= 세션 캐시에 있는 노드
+  /// 중 실제로 라이브 버전과 다른(AdminStoryNode.hasUnsubmittedChanges)
+  /// 노드, "수정됨" 배지와 같은 값)가 0보다 크면 뜬다. 실제 저장 로직은
+  /// [_StoryTabViewState]가 개별 패널의 임시저장/승인요청과 똑같이 갖고
+  /// 있다 — 여기서는 그 핸들러를 그대로 받아서 부른다.
   final VoidCallback onBulkSaveDraft;
   final VoidCallback onBulkRequestApproval;
 
@@ -101,11 +109,16 @@ class StoryMapView extends StatefulWidget {
     required this.editingNodeIdEditable,
     required this.images,
     required this.sfxLibrary,
+    required this.bgmLibrary,
+    required this.ttsVoices,
+    required this.onRefreshTtsVoices,
+    required this.refreshingTtsVoices,
+    required this.ttsVoiceRepository,
+    required this.defaultTtsVoiceId,
     required this.inheritedBackgroundImageId,
     required this.editingNodeCreationSourceId,
     required this.onEditorChanged,
     required this.onSaveDraft,
-    required this.onRequestApproval,
     required this.onCancelDeleteRequest,
     required this.onClosePanel,
     required this.onBulkSaveDraft,
@@ -897,13 +910,19 @@ class _StoryMapViewState extends State<StoryMapView> {
                   isIdEditable: widget.editingNodeIdEditable,
                   images: widget.images,
                   sfxLibrary: widget.sfxLibrary,
+                  bgmLibrary: widget.bgmLibrary,
+                  ttsVoices: widget.ttsVoices,
+                  onRefreshTtsVoices: widget.onRefreshTtsVoices,
+                  refreshingTtsVoices: widget.refreshingTtsVoices,
+                  ttsVoiceRepository: widget.ttsVoiceRepository,
+                  packId: widget.packId,
+                  defaultTtsVoiceId: widget.defaultTtsVoiceId,
                   packType: widget.packType,
                   candidates: widget.nodes,
                   inheritedBackgroundImageId: widget.inheritedBackgroundImageId,
                   creationSourceId: widget.editingNodeCreationSourceId,
                   onChanged: widget.onEditorChanged,
                   onSaveDraft: widget.onSaveDraft,
-                  onRequestApproval: widget.onRequestApproval,
                   onCancelDeleteRequest: widget.onCancelDeleteRequest,
                   onClose: widget.onClosePanel,
                 ),
@@ -940,9 +959,9 @@ class _StoryMapViewState extends State<StoryMapView> {
               ),
               // 오른쪽 아래 전체 보기/배율 컨트롤을 그대로 좌우만 뒤집은
               // 자리 — "수정됨" 배지와 같은 소스(widget.unsavedNodeIds, 곧
-              // NodeEditSessionCache.nodeIdsForPack)를 그대로 읽으므로
-              // 개별 저장이든 이 툴바의 일괄 저장이든 항상 실시간으로
-              // 맞는 개수를 보여준다.
+              // AdminStoryNode.hasUnsubmittedChanges로 걸러진 세션 캐시
+              // 항목)를 그대로 읽으므로 개별 저장이든 이 툴바의 일괄
+              // 저장이든 항상 실시간으로 맞는 개수를 보여준다.
               Positioned(
                 left: 16,
                 bottom: 16,
@@ -1562,10 +1581,10 @@ class _FitToScreenButton extends StatelessWidget {
 /// 자리(InteractiveViewer 바깥, 화면에 고정)를 좌우만 뒤집었다.
 /// [unsavedCount]는 [_StoryMapViewState]가 [StoryMapView.unsavedNodeIds]를
 /// 그대로 세어 넘긴다 — "수정됨" 배지와 정확히 같은 소스
-/// (NodeEditSessionCache.nodeIdsForPack)라서, 개별 노드를 저장하든 이
-/// 툴바로 한꺼번에 저장하든 항상 실시간으로 맞는 개수를 보여준다. 0개면
-/// 버튼 없이 "저장할 변경사항 없음"만 보여준다 — 빈 활성 바처럼 보이지
-/// 않게.
+/// (AdminStoryNode.hasUnsubmittedChanges로 걸러진 세션 캐시 항목)라서,
+/// 개별 노드를 저장하든 이 툴바로 한꺼번에 저장하든 항상 실시간으로 맞는
+/// 개수를 보여준다. 0개면 버튼 없이 "저장할 변경사항 없음"만 보여준다 —
+/// 빈 활성 바처럼 보이지 않게.
 class _SaveAllToolbar extends StatelessWidget {
   final int unsavedCount;
   final VoidCallback onSaveDraftAll;
@@ -1675,13 +1694,19 @@ class _NodeEditorPanel extends StatelessWidget {
   final bool isIdEditable;
   final List<AdminImage> images;
   final List<AdminSfx> sfxLibrary;
+  final List<AdminBgm> bgmLibrary;
+  final List<AdminTtsVoice> ttsVoices;
+  final VoidCallback onRefreshTtsVoices;
+  final bool refreshingTtsVoices;
+  final AdminTtsVoiceRepository ttsVoiceRepository;
+  final String packId;
+  final String? defaultTtsVoiceId;
   final StoryPackType packType;
   final List<AdminStoryNodeSummary> candidates;
   final String? inheritedBackgroundImageId;
   final String? creationSourceId;
   final VoidCallback onChanged;
   final VoidCallback onSaveDraft;
-  final VoidCallback onRequestApproval;
   final VoidCallback onCancelDeleteRequest;
   final VoidCallback onClose;
 
@@ -1692,13 +1717,19 @@ class _NodeEditorPanel extends StatelessWidget {
     required this.isIdEditable,
     required this.images,
     required this.sfxLibrary,
+    required this.bgmLibrary,
+    required this.ttsVoices,
+    required this.onRefreshTtsVoices,
+    required this.refreshingTtsVoices,
+    required this.ttsVoiceRepository,
+    required this.packId,
+    required this.defaultTtsVoiceId,
     required this.packType,
     required this.candidates,
     required this.inheritedBackgroundImageId,
     required this.creationSourceId,
     required this.onChanged,
     required this.onSaveDraft,
-    required this.onRequestApproval,
     required this.onCancelDeleteRequest,
     required this.onClose,
   });
@@ -1758,13 +1789,19 @@ class _NodeEditorPanel extends StatelessWidget {
                 isIdEditable: isIdEditable,
                 images: images,
                 sfxLibrary: sfxLibrary,
+                bgmLibrary: bgmLibrary,
+                ttsVoices: ttsVoices,
+                onRefreshTtsVoices: onRefreshTtsVoices,
+                refreshingTtsVoices: refreshingTtsVoices,
+                ttsVoiceRepository: ttsVoiceRepository,
+                packId: packId,
+                defaultTtsVoiceId: defaultTtsVoiceId,
                 packType: packType,
                 candidates: candidates,
                 inheritedBackgroundImageId: inheritedBackgroundImageId,
                 creationSourceId: creationSourceId,
                 onChanged: onChanged,
                 onSaveDraft: onSaveDraft,
-                onRequestApproval: onRequestApproval,
                 onCancelDeleteRequest: onCancelDeleteRequest,
               ),
             ),

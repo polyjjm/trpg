@@ -54,6 +54,11 @@ class AdminStoryNodeSummary {
   /// 그리는 데 쓴다.
   final String? nextNodeId;
 
+  /// AdminStoryNode.rejectionReason과 같다 — 사이드바 목록에 "반려됨" 표시를
+  /// 띄우려고 요약에도 가볍게 같이 들고 있는다(추가 조회 없음, 문서 전체가
+  /// 어차피 같이 온다).
+  final String? rejectionReason;
+
   /// [shortNodeLabel] 참고 — [preview]의 앞 15자 정도(없으면 id).
   String get shortLabel => shortNodeLabel(id: id, firstBlockText: preview);
 
@@ -68,6 +73,7 @@ class AdminStoryNodeSummary {
     required this.hasLiveSnapshot,
     this.choices = const [],
     this.nextNodeId,
+    this.rejectionReason,
   });
 
   factory AdminStoryNodeSummary.fromFirestore(
@@ -98,6 +104,7 @@ class AdminStoryNodeSummary {
       hasLiveSnapshot: json['liveSnapshot'] != null,
       choices: choices,
       nextNodeId: json['nextNodeId'] as String?,
+      rejectionReason: json['rejectionReason'] as String?,
     );
   }
 }

@@ -6,18 +6,24 @@ import '../models/reader_prefs.dart';
 /// CloudSaveService)와 같은 "단일 고정 문서 id" 패턴을 그대로 따른다. 계정에
 /// 묶인 리더 환경설정이라 기기별로 나뉘지 않는다.
 class ReaderPrefsRepository {
-  ReaderPrefsRepository({FirebaseFirestore? firestore}) : _firestore = firestore ?? FirebaseFirestore.instance;
+  ReaderPrefsRepository({FirebaseFirestore? firestore})
+    : _firestore = firestore ?? FirebaseFirestore.instance;
 
   final FirebaseFirestore _firestore;
 
-  DocumentReference<Map<String, dynamic>> _docFor(String uid) =>
-      _firestore.collection('users').doc(uid).collection('readerPrefs').doc('settings');
+  DocumentReference<Map<String, dynamic>> _docFor(String uid) => _firestore
+      .collection('users')
+      .doc(uid)
+      .collection('readerPrefs')
+      .doc('settings');
 
   /// 문서가 아직 없으면(최초 진입) [ReaderPrefs.defaults]를 흘려보낸다.
   Stream<ReaderPrefs> watch(String uid) {
     return _docFor(uid).snapshots().map((snapshot) {
       final data = snapshot.data();
-      return data == null ? ReaderPrefs.defaults : ReaderPrefs.fromFirestore(data);
+      return data == null
+          ? ReaderPrefs.defaults
+          : ReaderPrefs.fromFirestore(data);
     });
   }
 
@@ -33,9 +39,8 @@ class ReaderPrefsRepository {
   /// 공지사항 탭을 열 때 CatalogShellPage가 부른다 — lastNoticeReadAt만
   /// 서버 타임스탬프로 갱신한다(다른 필드는 안 건드린다).
   Future<void> markNoticesRead(String uid) async {
-    await _docFor(uid).set(
-      {'lastNoticeReadAt': FieldValue.serverTimestamp()},
-      SetOptions(merge: true),
-    );
+    await _docFor(uid).set({
+      'lastNoticeReadAt': FieldValue.serverTimestamp(),
+    }, SetOptions(merge: true));
   }
 }

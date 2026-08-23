@@ -11,6 +11,7 @@ import '../shared/data/story_reader_repository.dart';
 import '../shared/models/choice.dart';
 import '../shared/paywall.dart';
 import '../shared/reader_back_button.dart';
+import '../shared/reader_session_controller.dart';
 import '../shared/scene_frame.dart';
 
 const Color _ivory = Color(0xFFE2D4BF);
@@ -36,13 +37,20 @@ class InteractiveReader extends StatefulWidget {
 
 class _InteractiveReaderState extends State<InteractiveReader> {
   final StoryReaderRepository _repository = StoryReaderRepository();
-  final ReadingProgressRepository _progressRepository = ReadingProgressRepository();
+  final ReadingProgressRepository _progressRepository =
+      ReadingProgressRepository();
 
   Map<String, ResolvedStoryNode> _nodesById = {};
   String? _currentNodeId;
   String? _entryNodeId;
   bool _loading = true;
   String? _errorMessage;
+
+  /// 이 리더 페이지가 열려 있는 동안의 "지금 재생 중인 BGM"/"자동 이어재생
+  /// 대상" 세션 상태 — reader_session_controller.dart 참고. SceneFrame이
+  /// 아니라 여기서 들고 있는다(SceneFrame은 노드마다 새로 만들어진다).
+  final ReaderSessionController _sessionController = ReaderSessionController();
+  String? _defaultBgmUrl;
 
   @override
   void initState() {
@@ -52,10 +60,13 @@ class _InteractiveReaderState extends State<InteractiveReader> {
 
   Future<void> _load() async {
     try {
-      final nodes = await _repository.fetchPublishedNodes(
+      final result = await _repository.fetchPublishedNodes(
         widget.pack.id,
         packDefaultBackgroundImageId: widget.pack.defaultBackgroundImage,
+        packDefaultBgmId: widget.pack.defaultBgmId,
       );
+      final nodes = result.nodes;
+      _defaultBgmUrl = result.defaultBgmUrl;
       if (!mounted) return;
 
       if (nodes.isEmpty) {
@@ -85,6 +96,7 @@ class _InteractiveReaderState extends State<InteractiveReader> {
         _currentNodeId = resumeNodeId;
         _loading = false;
       });
+      _applySessionFor(resumeNodeId);
     } catch (e, stackTrace) {
       // catch (_)로 예외를 버리면 화면엔 "불러오지 못했어요"만 남고 콘솔에도
       // 아무것도 안 찍혀서 원인을 알 수 없었다 — 실제 예외를 남긴다.
@@ -126,21 +138,74 @@ class _InteractiveReaderState extends State<InteractiveReader> {
     return entryId;
   }
 
+  /// [ReaderSessionController.visitNode]로 넘길 인자를 이 노드 기준으로
+  /// 채워서 부른다 — 최초 진입/선택지 이동/재시작, BGM/자동 이어재생 대상을
+  /// 갱신해야 하는 모든 지점이 이 메서드 하나를 거친다.
+  void _applySessionFor(String nodeId) {
+    final node = _nodesById[nodeId];
+    if (node == null) return;
+    _sessionController.visitNode(
+      nodeBgm: node.node.effects.bgm,
+      nodeBgmUrl: node.bgmUrl,
+      defaultBgmId: widget.pack.defaultBgmId,
+      defaultBgmUrl: _defaultBgmUrl,
+    );
+    _sessionController.setAutoContinueTarget(_autoContinueTargetFor(node));
+  }
+
+  /// 이 노드에서 내레이션이 끝까지 재생되면 자동으로 넘어갈 대상 — 인터랙티브
+  /// 팩은 "선택지가 정확히 하나뿐인" 노드만 해당한다(요청 사양: "when the
+  /// current node has exactly one path forward"). 선택지가 없으면(엔딩)
+  /// 넘어갈 곳이 없고, 둘 이상이면 진짜 분기점이라 독자가 직접 골라야 한다
+  /// — 둘 다 null(자동 이어재생 없음, 조용히 멈춤).
+  String? _autoContinueTargetFor(ResolvedStoryNode node) {
+    final choices = node.node.choices ?? const <Choice>[];
+    if (choices.length == 1) return choices.first.nextNodeId;
+    return null;
+  }
+
+  /// SceneFrame이 "이 화면의 내레이션이 끝까지 재생됐다"고 알려줄 때 부른다.
+  /// 실제 자동 이어재생 여부 판단(설정 켜짐 + 대상 있음)은
+  /// ReaderSessionController가 하고, 여기는 그 결과로 어떤 화면 전환을 할지만
+  /// 안다 — 대상 노드로 이어지는 선택지를 찾아 [_handleChoice]를 그대로
+  /// 재사용한다(미리보기/유료 제한 체크 등 선택지 선택의 기존 부수효과를
+  /// 자동 이어재생에도 똑같이 적용하기 위해서 — 새로 만들지 않는다).
+  void _handleNarrationCompleted() {
+    _sessionController.handleNarrationCompleted((nextNodeId) {
+      final choices = _nodesById[_currentNodeId]?.node.choices ?? const [];
+      for (final choice in choices) {
+        if (choice.nextNodeId == nextNodeId) {
+          unawaited(_handleChoice(choice));
+          return;
+        }
+      }
+    });
+  }
+
+  @override
+  void dispose() {
+    _sessionController.dispose();
+    super.dispose();
+  }
+
   Future<void> _handleChoice(Choice choice) async {
     if (!_nodesById.containsKey(choice.nextNodeId)) return;
 
     final gameState = GameStateScope.of(context);
     final pack = widget.pack;
-    final previewLimitReached = !pack.isFree &&
+    final previewLimitReached =
+        !pack.isFree &&
         !gameState.ownsPack(pack.id) &&
-        (gameState.progressFor(pack.id)?.visitedNodeCount ?? 0) >= pack.previewNodeLimit;
+        (gameState.progressFor(pack.id)?.visitedNodeCount ?? 0) >=
+            pack.previewNodeLimit;
 
     if (previewLimitReached) {
       final purchased = await requestPackPurchase(context, gameState, pack);
       if (!purchased || !mounted) return;
     }
 
-    final targetChoices = _nodesById[choice.nextNodeId]?.node.choices ?? const <Choice>[];
+    final targetChoices =
+        _nodesById[choice.nextNodeId]?.node.choices ?? const <Choice>[];
     gameState.recordNodeVisit(
       packId: pack.id,
       nodeId: choice.nextNodeId,
@@ -149,6 +214,7 @@ class _InteractiveReaderState extends State<InteractiveReader> {
     unawaited(_persistProgress(gameState));
     if (!mounted) return;
     setState(() => _currentNodeId = choice.nextNodeId);
+    _applySessionFor(choice.nextNodeId);
   }
 
   void _restart() {
@@ -159,6 +225,7 @@ class _InteractiveReaderState extends State<InteractiveReader> {
     gameState.resetPackProgress(widget.pack.id, entryId);
     unawaited(_persistProgress(gameState));
     setState(() => _currentNodeId = entryId);
+    _applySessionFor(entryId);
   }
 
   /// 로그인 사용자만 Firestore에 저장한다 — 게스트는 GameState의 메모리
@@ -191,14 +258,20 @@ class _InteractiveReaderState extends State<InteractiveReader> {
     final errorMessage = _errorMessage;
     if (errorMessage != null) {
       return Center(
-        child: Text(errorMessage, style: TextStyle(fontSize: 14, color: _ivory.withOpacity(0.7))),
+        child: Text(
+          errorMessage,
+          style: TextStyle(fontSize: 14, color: _ivory.withOpacity(0.7)),
+        ),
       );
     }
 
     final current = _nodesById[_currentNodeId];
     if (current == null) {
       return Center(
-        child: Text('노드를 찾을 수 없어요.', style: TextStyle(fontSize: 14, color: _ivory.withOpacity(0.7))),
+        child: Text(
+          '노드를 찾을 수 없어요.',
+          style: TextStyle(fontSize: 14, color: _ivory.withOpacity(0.7)),
+        ),
       );
     }
 
@@ -206,11 +279,16 @@ class _InteractiveReaderState extends State<InteractiveReader> {
 
     return SceneFrame(
       key: ValueKey(current.node.id),
+      packId: widget.pack.id,
+      narrationNodeIds: [current.node.id],
+      onNarrationCompleted: _handleNarrationCompleted,
+      onAutoContinuePrefsChanged: _sessionController.setAutoContinueEnabled,
+      onNarrationUserToggled: _sessionController.setTtsUserEnabled,
+      autoPlayNarration: _sessionController.ttsUserEnabled,
       blocks: current.node.blocks,
       backgroundImageUrl: current.backgroundImageUrl,
       effects: current.node.effects,
       sfxUrl: current.sfxUrl,
-      ttsAllowed: widget.pack.ttsEnabled,
       actionAreaBuilder: (context) => choices.isEmpty
           ? _EndingActionArea(onRestart: _restart)
           : _ChoiceList(choices: choices, onSelected: _handleChoice),
@@ -259,7 +337,10 @@ class _ChoiceList extends StatelessWidget {
       children: [
         for (var i = 0; i < choices.length; i++) ...[
           if (i > 0) const SizedBox(height: 10),
-          _ChoiceButton(label: choices[i].label, onTap: () => onSelected(choices[i])),
+          _ChoiceButton(
+            label: choices[i].label,
+            onTap: () => onSelected(choices[i]),
+          ),
         ],
       ],
     );

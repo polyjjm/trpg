@@ -56,6 +56,19 @@ class AdminStoryPack {
   /// 검토가 필요한 "콘텐츠"로 보지 않는다.
   final String? defaultBackgroundImage;
 
+  /// bgmLibrary/{bgmId} 참조 — 리딩 세션 시작 시점(첫 노드가 effects.bgm을
+  /// 아예 안 정했을 때만) 재생할 시작 BGM. [defaultBackgroundImage]와 달리
+  /// **liveMetadata 승인 게이트를 그대로 거친다**(title/genres/description과
+  /// 같은 대우) — "지금부터 뭐가 재생될지"는 검토가 필요한 콘텐츠라는 판단.
+  final String? defaultBgmId;
+
+  /// Typecast 보이스 id(`tc_...`) — 이 팩의 기본 내레이터 보이스. 노드가
+  /// effects.tts.voiceId를 안 정했을 때 synthesizeNodeTts Cloud Function이
+  /// 폴백으로 쓴다. [defaultBgmId]와 완전히 같은 대우로 **liveMetadata 승인
+  /// 게이트를 그대로 거친다** — "어떤 목소리로 낭독될지"도 검토가 필요한
+  /// 콘텐츠라는 같은 판단.
+  final String? defaultTtsVoiceId;
+
   final PackSerializationStatus serializationStatus;
   final DateTime? serializationSubmittedAt;
   final String? serializationReviewedBy;
@@ -87,6 +100,8 @@ class AdminStoryPack {
     this.discountStartAt,
     this.discountEndAt,
     this.defaultBackgroundImage,
+    this.defaultBgmId,
+    this.defaultTtsVoiceId,
     required this.serializationStatus,
     this.serializationSubmittedAt,
     this.serializationReviewedBy,
@@ -115,6 +130,8 @@ class AdminStoryPack {
       discountStartAt: (json['discountStartAt'] as Timestamp?)?.toDate(),
       discountEndAt: (json['discountEndAt'] as Timestamp?)?.toDate(),
       defaultBackgroundImage: json['defaultBackgroundImage'] as String?,
+      defaultBgmId: json['defaultBgmId'] as String?,
+      defaultTtsVoiceId: json['defaultTtsVoiceId'] as String?,
       serializationStatus: PackSerializationStatusJson.fromWire(
         json['serializationStatus'] as String?,
       ),
@@ -150,6 +167,8 @@ class AdminStoryPack {
     'discountStartAt': null,
     'discountEndAt': null,
     'defaultBackgroundImage': defaultBackgroundImage,
+    'defaultBgmId': defaultBgmId,
+    'defaultTtsVoiceId': defaultTtsVoiceId,
     'serializationStatus': serializationStatus.wireValue,
   };
 

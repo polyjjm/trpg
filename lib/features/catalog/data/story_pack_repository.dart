@@ -66,9 +66,8 @@ class StoryPackRepository {
             ? StoryPackFormat.linear
             : StoryPackFormat.interactive,
         genres: (live?['genres'] as List<dynamic>?)?.cast<String>() ?? const [],
-        ttsEnabled: data['ttsEnabled'] as bool? ?? false,
-        ambientBgm: data['ambientBgm'] as String?,
         defaultBackgroundImage: data['defaultBackgroundImage'] as String?,
+        defaultBgmId: live?['defaultBgmId'] as String?,
         avgRating: (data['avgRating'] as num?)?.toDouble(),
         reviewCount: (data['reviewCount'] as num?)?.toInt() ?? 0,
         publishedNodeCount: publishedNodeCounts[doc.id] ?? 0,

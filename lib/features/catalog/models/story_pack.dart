@@ -48,21 +48,20 @@ class StoryPack {
   /// 무료 팩(price == 0)은 이 값을 아예 쓰지 않는다.
   final int previewNodeLimit;
 
-  /// 이 팩의 노드에 TTS 재생을 허용할지 — SceneFrame 하단 시트의 TTS
-  /// 토글은 이 값이 true일 때만 보인다(readerPrefs.ttsEnabled와는 별개로,
-  /// 팩 단위로 아예 끌 수 있는 스위치).
-  final bool ttsEnabled;
-
-  /// 노드에 bgmOverride가 없을 때 재생할 기본 배경음 트랙 id. null이면
-  /// 이 팩에 기본 BGM이 없다는 뜻.
-  final String? ambientBgm;
-
   /// images/{imageId} 참조 — 어떤 노드도 배경 이미지를 명시적으로 고르지
   /// 않았을 때 인계 체인의 최종 폴백(lib/core/story/
   /// background_image_inheritance.dart). admin 쪽 defaultBackgroundImage와
   /// 달리 liveMetadata 승인 게이트를 거치지 않는 값이라, StoryPackRepository는
   /// 이 필드를 top-level storyPacks 문서에서 곧장 읽는다.
   final String? defaultBackgroundImage;
+
+  /// bgmLibrary/{bgmId} 참조 — 리딩 세션이 시작될 때(첫 노드가 effects.bgm을
+  /// 아예 안 정했을 때만) 재생할 시작 BGM. defaultBackgroundImage와 달리
+  /// **liveMetadata 승인 게이트를 그대로 거친다**(admin/data/
+  /// admin_story_repository.dart의 _metadataSnapshot) — "지금부터 뭐가
+  /// 재생될지"는 검토가 필요한 콘텐츠라는 판단. 그래서 StoryPackRepository는
+  /// 이 필드를 top-level이 아니라 liveMetadata에서 읽는다.
+  final String? defaultBgmId;
 
   /// 리뷰 평균 평점(1~5)과 개수 — storyPacks 문서에 비정규화된 값을 그대로
   /// 읽는다(reviews 서브컬렉션을 매번 훑어 계산하지 않는다). 이 값을 최신
@@ -93,9 +92,8 @@ class StoryPack {
     required this.format,
     required this.genres,
     this.previewNodeLimit = 3,
-    this.ttsEnabled = false,
-    this.ambientBgm,
     this.defaultBackgroundImage,
+    this.defaultBgmId,
     this.avgRating,
     this.reviewCount = 0,
     this.publishedNodeCount = 0,

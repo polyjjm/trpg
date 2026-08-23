@@ -12,6 +12,7 @@ import '../shared/data/story_reader_repository.dart';
 import '../shared/models/reader_prefs.dart';
 import '../shared/paywall.dart';
 import '../shared/reader_back_button.dart';
+import '../shared/reader_session_controller.dart';
 import '../shared/scene_frame.dart';
 
 const Color _ivory = Color(0xFFE2D4BF);
@@ -40,7 +41,8 @@ class LinearReader extends StatefulWidget {
 
 class _LinearReaderState extends State<LinearReader> {
   final StoryReaderRepository _repository = StoryReaderRepository();
-  final ReadingProgressRepository _progressRepository = ReadingProgressRepository();
+  final ReadingProgressRepository _progressRepository =
+      ReadingProgressRepository();
 
   /// 펼침 여부를 정하려면 이 화면도 pageMode를 알아야 한다 — SceneFrame이
   /// 자기 안에서 구독하는 것과 같은 문서를 여기서도 본다(문서 하나에 대한
@@ -59,6 +61,12 @@ class _LinearReaderState extends State<LinearReader> {
   String? _entryNodeId;
   bool _loading = true;
   String? _errorMessage;
+
+  /// InteractiveReader와 같은 이유(reader_session_controller.dart) — 리더
+  /// 페이지 생명주기 동안의 "지금 재생 중인 BGM"/"자동 이어재생 대상" 세션
+  /// 상태.
+  final ReaderSessionController _sessionController = ReaderSessionController();
+  String? _defaultBgmUrl;
 
   @override
   void initState() {
@@ -82,15 +90,43 @@ class _LinearReaderState extends State<LinearReader> {
   @override
   void dispose() {
     _prefsSub?.cancel();
+    _sessionController.dispose();
     super.dispose();
+  }
+
+  /// InteractiveReader._applySessionFor의 BGM 부분과 같다 — 최초 진입/다음
+  /// 페이지/재시작, BGM을 갱신해야 하는 모든 지점이 이 메서드 하나를 거친다.
+  /// 자동 이어재생 대상은 여기서 정하지 않는다 — 두 쪽 펼침 여부가 화면
+  /// 폭(MediaQuery)에 달려 있어서, 그 판단을 이미 하고 있는 [_buildBody]
+  /// 안에서 [ReaderSessionController.setAutoContinueTarget]을 직접 부른다
+  /// (판단 로직을 두 곳에 중복해서 어긋날 여지를 만들지 않기 위해서다).
+  void _applyBgmFor(String nodeId) {
+    final node = _nodesById[nodeId];
+    if (node == null) return;
+    _sessionController.visitNode(
+      nodeBgm: node.node.effects.bgm,
+      nodeBgmUrl: node.bgmUrl,
+      defaultBgmId: widget.pack.defaultBgmId,
+      defaultBgmUrl: _defaultBgmUrl,
+    );
+  }
+
+  /// 자동 이어재생으로 다음 페이지/스프레드로 넘어간다 — "다음" 버튼의
+  /// onNext와 정확히 같은 [_goToNext] 호출을 그대로 재사용한다(유료 미리보기
+  /// 제한 체크 등 기존 부수효과를 그대로 적용하기 위해서).
+  void _handleAutoAdvance(String targetNodeId, {String? alsoVisited}) {
+    unawaited(_goToNext(targetNodeId, alsoVisited: alsoVisited));
   }
 
   Future<void> _load() async {
     try {
-      final nodes = await _repository.fetchPublishedNodes(
+      final result = await _repository.fetchPublishedNodes(
         widget.pack.id,
         packDefaultBackgroundImageId: widget.pack.defaultBackgroundImage,
+        packDefaultBgmId: widget.pack.defaultBgmId,
       );
+      final nodes = result.nodes;
+      _defaultBgmUrl = result.defaultBgmUrl;
       if (!mounted) return;
 
       if (nodes.isEmpty) {
@@ -122,6 +158,7 @@ class _LinearReaderState extends State<LinearReader> {
         _currentNodeId = resumeNodeId;
         _loading = false;
       });
+      _applyBgmFor(resumeNodeId);
     } catch (e, stackTrace) {
       debugPrint('LinearReader._load() 실패: $e\n$stackTrace');
       if (!mounted) return;
@@ -167,9 +204,11 @@ class _LinearReaderState extends State<LinearReader> {
 
     final gameState = GameStateScope.of(context);
     final pack = widget.pack;
-    final previewLimitReached = !pack.isFree &&
+    final previewLimitReached =
+        !pack.isFree &&
         !gameState.ownsPack(pack.id) &&
-        (gameState.progressFor(pack.id)?.visitedNodeCount ?? 0) >= pack.previewNodeLimit;
+        (gameState.progressFor(pack.id)?.visitedNodeCount ?? 0) >=
+            pack.previewNodeLimit;
 
     if (previewLimitReached) {
       final purchased = await requestPackPurchase(context, gameState, pack);
@@ -189,6 +228,7 @@ class _LinearReaderState extends State<LinearReader> {
     unawaited(_persistProgress(gameState));
     if (!mounted) return;
     setState(() => _currentNodeId = nextNodeId);
+    _applyBgmFor(nextNodeId);
   }
 
   /// 첫 페이지로 되돌린다 — InteractiveReader의 '처음부터'와 같은 흐름이다.
@@ -201,6 +241,7 @@ class _LinearReaderState extends State<LinearReader> {
     gameState.resetPackProgress(widget.pack.id, entryId);
     unawaited(_persistProgress(gameState));
     setState(() => _currentNodeId = entryId);
+    _applyBgmFor(entryId);
   }
 
   /// 로그인 사용자만 Firestore에 저장한다 — 게스트는 GameState의 메모리
@@ -254,14 +295,20 @@ class _LinearReaderState extends State<LinearReader> {
     final errorMessage = _errorMessage;
     if (errorMessage != null) {
       return Center(
-        child: Text(errorMessage, style: TextStyle(fontSize: 14, color: _ivory.withOpacity(0.7))),
+        child: Text(
+          errorMessage,
+          style: TextStyle(fontSize: 14, color: _ivory.withOpacity(0.7)),
+        ),
       );
     }
 
     final current = _nodesById[_currentNodeId];
     if (current == null) {
       return Center(
-        child: Text('페이지를 찾을 수 없어요.', style: TextStyle(fontSize: 14, color: _ivory.withOpacity(0.7))),
+        child: Text(
+          '페이지를 찾을 수 없어요.',
+          style: TextStyle(fontSize: 14, color: _ivory.withOpacity(0.7)),
+        ),
       );
     }
 
@@ -270,20 +317,28 @@ class _LinearReaderState extends State<LinearReader> {
 
     // 두 페이지를 펼치는 조건: 데스크톱 폭 + 두 페이지 모두 배경 이미지 없음 +
     // pageMode == spread + 다음 페이지가 실제로 존재. 하나라도 어긋나면 한 쪽이다.
-    final canSpread = MediaQuery.sizeOf(context).width >= _spreadBreakpoint &&
+    final canSpread =
+        MediaQuery.sizeOf(context).width >= _spreadBreakpoint &&
         _prefs.isSpread &&
         _hasNoBackground(current) &&
         nextNode != null &&
         _hasNoBackground(nextNode);
 
     if (!canSpread) {
+      _sessionController.setAutoContinueTarget(nextNodeId);
       return SceneFrame(
         key: ValueKey(current.node.id),
+        packId: widget.pack.id,
+        narrationNodeIds: [current.node.id],
+        onNarrationCompleted: () =>
+            _sessionController.handleNarrationCompleted(_handleAutoAdvance),
+        onAutoContinuePrefsChanged: _sessionController.setAutoContinueEnabled,
+        onNarrationUserToggled: _sessionController.setTtsUserEnabled,
+        autoPlayNarration: _sessionController.ttsUserEnabled,
         blocks: current.node.blocks,
         backgroundImageUrl: current.backgroundImageUrl,
         effects: current.node.effects,
         sfxUrl: current.sfxUrl,
-        ttsAllowed: widget.pack.ttsEnabled,
         simplifiedSettings: true,
         chapterLabel: _chapterLabelFor(current.node.id),
         progressLabel: _progressLabelFor(current.node.id),
@@ -302,15 +357,27 @@ class _LinearReaderState extends State<LinearReader> {
     // 넘기고 경계 인덱스를 알려주면 SceneFrame이 그 지점에서 쪽을 자른다
     // (타이핑은 왼쪽 페이지부터 순서대로 이어진다).
     final afterId = nextNode.node.nextNodeId;
+    _sessionController.setAutoContinueTarget(afterId);
 
     return SceneFrame(
       key: ValueKey('${current.node.id}+${nextNode.node.id}'),
+      packId: widget.pack.id,
+      // 두 쪽 다 이어서 낭독한다(요청 사양 Part 2) — 왼쪽 쪽 내레이션이
+      // 끝나면 화면 전환 없이 곧바로 오른쪽 쪽으로 넘어가고, 오른쪽 쪽까지
+      // 끝나야만 onNarrationCompleted가 불려서 다음 스프레드(afterId)로
+      // 넘어간다.
+      narrationNodeIds: [current.node.id, nextNode.node.id],
+      onNarrationCompleted: () => _sessionController.handleNarrationCompleted(
+        (target) => _handleAutoAdvance(target, alsoVisited: nextNode.node.id),
+      ),
+      onAutoContinuePrefsChanged: _sessionController.setAutoContinueEnabled,
+      onNarrationUserToggled: _sessionController.setTtsUserEnabled,
+      autoPlayNarration: _sessionController.ttsUserEnabled,
       blocks: [...current.node.blocks, ...nextNode.node.blocks],
       spreadSplitIndex: current.node.blocks.length,
       backgroundImageUrl: null,
       effects: current.node.effects,
       sfxUrl: current.sfxUrl,
-      ttsAllowed: widget.pack.ttsEnabled,
       simplifiedSettings: true,
       chapterLabel: _chapterLabelFor(current.node.id),
       progressLabel: _progressLabelFor(current.node.id),
@@ -409,7 +476,11 @@ class _NextButton extends StatefulWidget {
   final bool isLast;
   final VoidCallback onTap;
 
-  const _NextButton({required this.label, required this.isLast, required this.onTap});
+  const _NextButton({
+    required this.label,
+    required this.isLast,
+    required this.onTap,
+  });
 
   @override
   State<_NextButton> createState() => _NextButtonState();
@@ -456,7 +527,11 @@ class _NextButtonState extends State<_NextButton> {
                 ),
                 if (!widget.isLast) ...[
                   const SizedBox(width: 8),
-                  Icon(Icons.arrow_forward_rounded, size: 19, color: _gold.withOpacity(0.8)),
+                  Icon(
+                    Icons.arrow_forward_rounded,
+                    size: 19,
+                    color: _gold.withOpacity(0.8),
+                  ),
                 ],
               ],
             ),

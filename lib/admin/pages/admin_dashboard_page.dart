@@ -22,10 +22,13 @@ import 'all_story_packs_section.dart';
 import 'approvals_tab.dart';
 import 'author_applications_tab.dart';
 import 'author_management_section.dart';
+import '../data/admin_image_repository.dart';
 import 'genre_management_section.dart';
 import 'global_notice_management_section.dart';
 import '../data/global_notice_repository.dart';
 import 'home_banner_management_section.dart';
+import '../data/home_event_repository.dart';
+import 'home_event_management_section.dart';
 import 'billing_dashboard_section.dart';
 import '../data/billing_repository.dart';
 import 'pack_approvals_tab.dart';
@@ -44,6 +47,7 @@ enum _AdminSection {
   authorManagement,
   genreManagement,
   homeBanners,
+  homeEvents,
   globalNotices,
   pointPackages,
   packBundles,
@@ -187,12 +191,14 @@ class _AdminDashboardShellState extends State<_AdminDashboardShell> {
   final UserProfileRepository _userProfileRepository = UserProfileRepository();
   final GenreRepository _genreRepository = GenreRepository();
   final HomeBannerRepository _homeBannerRepository = HomeBannerRepository();
+  final HomeEventRepository _homeEventRepository = HomeEventRepository();
   final AdminPointPackageRepository _pointPackageRepository =
       AdminPointPackageRepository();
   final AdminPackBundleRepository _packBundleRepository =
       AdminPackBundleRepository();
   final AdminBillingRepository _billingRepository = AdminBillingRepository();
   final AdminGlobalNoticeRepository _globalNoticeRepository = AdminGlobalNoticeRepository();
+  final AdminImageRepository _imageRepository = AdminImageRepository();
 
   _AdminSection _activeSection = _AdminSection.overview;
 
@@ -289,7 +295,9 @@ class _AdminDashboardShellState extends State<_AdminDashboardShell> {
             final packs = snapshot.data ?? const <AdminStoryPack>[];
             return ApprovalsTab(
               repository: _storyRepository,
+              imageRepository: _imageRepository,
               packTitles: {for (final p in packs) p.id: p.title},
+              packTypes: {for (final p in packs) p.id: p.type},
             );
           },
         );
@@ -323,6 +331,11 @@ class _AdminDashboardShellState extends State<_AdminDashboardShell> {
       case _AdminSection.homeBanners:
         return HomeBannerManagementSection(
           repository: _homeBannerRepository,
+          packsStream: _packTitlesStream,
+        );
+      case _AdminSection.homeEvents:
+        return HomeEventManagementSection(
+          repository: _homeEventRepository,
           packsStream: _packTitlesStream,
         );
       case _AdminSection.globalNotices:
@@ -547,6 +560,12 @@ class _Sidebar extends StatelessWidget {
             label: '홈 배너 관리',
             selected: active == _AdminSection.homeBanners,
             onTap: () => onSelected(_AdminSection.homeBanners),
+          ),
+          _SidebarItem(
+            icon: Icons.celebration_rounded,
+            label: '홈 이벤트 관리',
+            selected: active == _AdminSection.homeEvents,
+            onTap: () => onSelected(_AdminSection.homeEvents),
           ),
           _SidebarItem(
             icon: Icons.campaign_rounded,

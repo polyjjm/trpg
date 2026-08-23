@@ -1,19 +1,25 @@
 import 'package:flutter/material.dart';
 
+import '../data/admin_bgm_repository.dart';
 import '../data/admin_image_repository.dart';
 import '../data/admin_story_repository.dart';
+import '../data/admin_tts_voice_repository.dart';
 import '../data/genre_repository.dart';
+import '../models/admin_bgm.dart';
 import '../models/admin_image.dart';
 import '../models/admin_image_category.dart';
 import '../models/admin_story_node_summary.dart';
 import '../models/admin_story_pack.dart';
+import '../models/admin_tts_voice.dart';
 import '../models/genre.dart';
 import '../models/node_status.dart';
 import '../models/pack_serialization_status.dart';
 import '../widgets/admin_theme.dart';
+import '../widgets/bgm_picker_field.dart';
 import '../widgets/image_picker_field.dart';
 import '../widgets/info_banner.dart';
 import '../widgets/labeled_field.dart';
+import '../widgets/tts_voice_picker_field.dart';
 
 /// 스토리팩의 메타데이터(제목/장르/설명/표지)를 편집하는 화면.
 ///
@@ -36,12 +42,16 @@ class PackSettingsPage extends StatefulWidget {
   final String packId;
   final AdminStoryRepository repository;
   final AdminImageRepository imageRepository;
+  final AdminBgmRepository bgmRepository;
+  final AdminTtsVoiceRepository ttsVoiceRepository;
 
   const PackSettingsPage({
     super.key,
     required this.packId,
     required this.repository,
     required this.imageRepository,
+    required this.bgmRepository,
+    required this.ttsVoiceRepository,
   });
 
   @override
@@ -58,6 +68,11 @@ class _PackSettingsPageState extends State<PackSettingsPage> {
       .watchActiveGenres();
   late final Stream<List<AdminImage>> _imagesStream = widget.imageRepository
       .watchImages();
+  late final Stream<List<AdminBgm>> _bgmsStream = widget.bgmRepository
+      .watchBgmLibrary();
+  late final Stream<List<AdminTtsVoice>> _ttsVoicesStream = widget
+      .ttsVoiceRepository
+      .watchVoices();
   late final Stream<List<AdminStoryNodeSummary>> _nodeSummariesStream = widget
       .repository
       .watchNodeSummaries(widget.packId);
@@ -69,12 +84,34 @@ class _PackSettingsPageState extends State<PackSettingsPage> {
   final Set<String> _selectedGenreSlugs = {};
   String? _coverImageId;
   String? _defaultBackgroundImageId;
+  String? _defaultBgmId;
+  String? _defaultTtsVoiceId;
   DateTime? _discountStartAt;
   DateTime? _discountEndAt;
 
   bool _initialized = false;
   bool _dirty = false;
   bool _saving = false;
+  bool _refreshingTtsVoices = false;
+
+  Future<void> _handleRefreshTtsVoices() async {
+    if (_refreshingTtsVoices) return;
+    setState(() => _refreshingTtsVoices = true);
+    try {
+      await widget.ttsVoiceRepository.refreshVoices();
+    } catch (e) {
+      // 예전엔 catch가 없어서 refreshTypecastVoices가 실패해도(예: 인증/
+      // 권한/Typecast API 오류) 로딩 스피너만 원상복구되고 사용자에게는 아무
+      // 신호도 없이 조용히 "보이스 목록이 비어 있어요" 상태로 남았다 — 실제로
+      // 겪은 버그(디버깅 시 클라이언트가 호출을 시도했는지조차 알 수 없었다).
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('보이스 목록 새로고침에 실패했어요: $e')));
+    } finally {
+      if (mounted) setState(() => _refreshingTtsVoices = false);
+    }
+  }
 
   void _initFrom(AdminStoryPack pack) {
     if (_initialized) return;
@@ -82,10 +119,14 @@ class _PackSettingsPageState extends State<PackSettingsPage> {
     _titleController.text = pack.title;
     _descriptionController.text = pack.description;
     _priceController.text = '${pack.price}';
-    _salePriceController.text = pack.salePrice != null ? '${pack.salePrice}' : '';
+    _salePriceController.text = pack.salePrice != null
+        ? '${pack.salePrice}'
+        : '';
     _selectedGenreSlugs.addAll(pack.genres);
     _coverImageId = pack.coverImageId;
     _defaultBackgroundImageId = pack.defaultBackgroundImage;
+    _defaultBgmId = pack.defaultBgmId;
+    _defaultTtsVoiceId = pack.defaultTtsVoiceId;
     _discountStartAt = pack.discountStartAt;
     _discountEndAt = pack.discountEndAt;
     _titleController.addListener(_markDirty);
@@ -102,7 +143,8 @@ class _PackSettingsPageState extends State<PackSettingsPage> {
   }
 
   Future<void> _pickDiscountDate({required bool isStart}) async {
-    final initial = (isStart ? _discountStartAt : _discountEndAt) ?? DateTime.now();
+    final initial =
+        (isStart ? _discountStartAt : _discountEndAt) ?? DateTime.now();
     final picked = await showDatePicker(
       context: context,
       initialDate: initial,
@@ -156,6 +198,8 @@ class _PackSettingsPageState extends State<PackSettingsPage> {
         discountStartAt: _discountStartAt,
         discountEndAt: _discountEndAt,
         defaultBackgroundImage: _defaultBackgroundImageId,
+        defaultBgmId: _defaultBgmId,
+        defaultTtsVoiceId: _defaultTtsVoiceId,
       );
     } catch (e) {
       _handleError(e);
@@ -187,6 +231,8 @@ class _PackSettingsPageState extends State<PackSettingsPage> {
         discountStartAt: _discountStartAt,
         discountEndAt: _discountEndAt,
         defaultBackgroundImage: _defaultBackgroundImageId,
+        defaultBgmId: _defaultBgmId,
+        defaultTtsVoiceId: _defaultTtsVoiceId,
       );
       await widget.repository.requestSerialization(widget.packId);
     } catch (e) {
@@ -209,6 +255,8 @@ class _PackSettingsPageState extends State<PackSettingsPage> {
         salePrice: _salePriceValue,
         discountStartAt: _discountStartAt,
         discountEndAt: _discountEndAt,
+        defaultBgmId: _defaultBgmId,
+        defaultTtsVoiceId: _defaultTtsVoiceId,
       );
     } catch (e) {
       _handleError(e);
@@ -370,7 +418,10 @@ class _PackSettingsPageState extends State<PackSettingsPage> {
                     child: TextFormField(
                       controller: _priceController,
                       keyboardType: TextInputType.number,
-                      style: TextStyle(color: AdminColors.inputText, fontSize: 13),
+                      style: TextStyle(
+                        color: AdminColors.inputText,
+                        fontSize: 13,
+                      ),
                       decoration: adminInputDecoration(hintText: '0 = 무료'),
                     ),
                   ),
@@ -382,7 +433,10 @@ class _PackSettingsPageState extends State<PackSettingsPage> {
                     child: TextFormField(
                       controller: _salePriceController,
                       keyboardType: TextInputType.number,
-                      style: TextStyle(color: AdminColors.inputText, fontSize: 13),
+                      style: TextStyle(
+                        color: AdminColors.inputText,
+                        fontSize: 13,
+                      ),
                       decoration: adminInputDecoration(hintText: '(할인 없음)'),
                     ),
                   ),
@@ -455,6 +509,44 @@ class _PackSettingsPageState extends State<PackSettingsPage> {
                       _defaultBackgroundImageId = id;
                       _dirty = true;
                     }),
+                  );
+                },
+              ),
+            ),
+            const SizedBox(height: 16),
+            LabeledField(
+              label: '기본 배경음악 (노드가 배경음악을 따로 안 고르면 리딩 세션 시작 시 이 값이 재생돼요)',
+              child: StreamBuilder<List<AdminBgm>>(
+                stream: _bgmsStream,
+                builder: (context, snapshot) {
+                  final bgms = snapshot.data ?? const <AdminBgm>[];
+                  return BgmPickerField(
+                    currentId: _defaultBgmId,
+                    bgmLibrary: bgms,
+                    onChanged: (id) => setState(() {
+                      _defaultBgmId = id;
+                      _dirty = true;
+                    }),
+                  );
+                },
+              ),
+            ),
+            const SizedBox(height: 16),
+            LabeledField(
+              label: '기본 내레이터 보이스 (노드가 보이스를 따로 안 고르면 이 값이 쓰여요, Typecast)',
+              child: StreamBuilder<List<AdminTtsVoice>>(
+                stream: _ttsVoicesStream,
+                builder: (context, snapshot) {
+                  final voices = snapshot.data ?? const <AdminTtsVoice>[];
+                  return TtsVoicePickerField(
+                    currentId: _defaultTtsVoiceId,
+                    voices: voices,
+                    onChanged: (id) => setState(() {
+                      _defaultTtsVoiceId = id;
+                      _dirty = true;
+                    }),
+                    onRefresh: _handleRefreshTtsVoices,
+                    refreshing: _refreshingTtsVoices,
                   );
                 },
               ),
@@ -680,7 +772,11 @@ class _DateField extends StatelessWidget {
   final VoidCallback onTap;
   final VoidCallback onClear;
 
-  const _DateField({required this.date, required this.onTap, required this.onClear});
+  const _DateField({
+    required this.date,
+    required this.onTap,
+    required this.onClear,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -702,13 +798,22 @@ class _DateField extends StatelessWidget {
                 date == null
                     ? '(선택 안 함)'
                     : '${date.year}.${date.month.toString().padLeft(2, '0')}.${date.day.toString().padLeft(2, '0')}',
-                style: TextStyle(fontSize: 13, color: date == null ? AdminColors.muted : AdminColors.inputText),
+                style: TextStyle(
+                  fontSize: 13,
+                  color: date == null
+                      ? AdminColors.muted
+                      : AdminColors.inputText,
+                ),
               ),
             ),
             if (date != null)
               InkWell(
                 onTap: onClear,
-                child: Icon(Icons.close_rounded, size: 16, color: AdminColors.muted),
+                child: Icon(
+                  Icons.close_rounded,
+                  size: 16,
+                  color: AdminColors.muted,
+                ),
               ),
           ],
         ),

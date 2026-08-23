@@ -193,6 +193,18 @@ service cloud.firestore {
       allow write: if isAdmin();
     }
 
+    // homeEvents/{eventId} — admin이 관리하는, 홈 탭이 열릴 때 뜨는 이벤트
+    // 팝업. homeBanners와 같은 패턴(admin만 쓰고, 로그인한 누구나 읽을 수
+    // 있다) — 리더 쪽 HomeEventRepository.watchActiveEvents()가 active/기간
+    // 필터링을 클라이언트에서 하므로, 규칙은 "로그인했는지"만 본다. "오늘 이미
+    // 봤는지"/"다시 보지 않기" 여부는 Firestore가 아니라 기기 로컬
+    // SharedPreferences에만 저장되므로(HomeEventDismissalStore) 여기엔 그
+    // 상태를 위한 필드/문서가 없다.
+    match /homeEvents/{eventId} {
+      allow read: if isSignedIn();
+      allow write: if isAdmin();
+    }
+
     // pointPackages/{packageId} — admin이 관리하는 충전 화면 코인 상품.
     // genres/homeBanners와 같은 패턴(admin만 쓰고, 로그인한 누구나 읽을 수
     // 있다) — 리더 쪽 PointPackageRepository.watchWebPackages()가 active/
@@ -310,9 +322,13 @@ service cloud.firestore {
       // rejectSerialization/approveMetadataEdit/rejectMetadataEdit) — 이 네
       // 액션 전부 상태/검토/liveMetadata 필드만 바꾸고, 작가가 쓴
       // title/genres/description/coverImageId/price/salePrice/discountStartAt/
-      // discountEndAt 자체는 건드리지 않는다(반려 시 작가가 재신청 때 그대로
-      // 다시 손볼 수 있어야 한다). 전부 get(key, null)로 접근한다 — 위와 같은
-      // 이유(예전 팩은 이 필드들이 아예 없을 수 있다).
+      // discountEndAt/defaultBgmId 자체는 건드리지 않는다(반려 시 작가가
+      // 재신청 때 그대로 다시 손볼 수 있어야 한다). defaultBgmId는
+      // defaultBackgroundImage와 달리 여기 잠금 목록에 들어간다 — "지금부터
+      // 뭐가 재생될지"는 liveMetadata 승인 게이트를 그대로 거치는 콘텐츠라는
+      // 판단(admin_story_pack.dart의 AdminStoryPack.defaultBgmId doc 참고).
+      // 전부 get(key, null)로 접근한다 — 위와 같은 이유(예전 팩은 이 필드들이
+      // 아예 없을 수 있다).
       allow update: if isAdmin()
         && request.resource.data.get('title', null) == resource.data.get('title', null)
         && request.resource.data.get('genres', null) == resource.data.get('genres', null)
@@ -322,6 +338,11 @@ service cloud.firestore {
         && request.resource.data.get('salePrice', null) == resource.data.get('salePrice', null)
         && request.resource.data.get('discountStartAt', null) == resource.data.get('discountStartAt', null)
         && request.resource.data.get('discountEndAt', null) == resource.data.get('discountEndAt', null)
+        && request.resource.data.get('defaultBgmId', null) == resource.data.get('defaultBgmId', null)
+        // defaultTtsVoiceId도 defaultBgmId와 같은 대우 — liveMetadata 게이트를
+        // 타는 draft 필드라 admin의 승인/반려 액션(상태/liveMetadata/검토 필드만
+        // 바꿔야 하는 액션)에서는 절대 같이 바뀌면 안 된다.
+        && request.resource.data.get('defaultTtsVoiceId', null) == resource.data.get('defaultTtsVoiceId', null)
         && request.resource.data.get('authorId', null) == resource.data.get('authorId', null);
 
       // 리더가 리더 화면을 열 때(InteractiveReader/LinearReader, 리딩 세션당
@@ -345,12 +366,39 @@ service cloud.firestore {
           && request.resource.data.liveSnapshot == null
           && request.resource.data.pendingAction in ['create', null];
 
+        // rejectionReason은 여기서도 안 잠근다 — 작가가 반려된 노드를 고쳐
+        // 다시 제출할 때(requestApprovalForNode) 이 필드를 null로 지우는
+        // 것도 바로 이 규칙(작가 본인 update)을 통과해야 한다.
+        // ttsAudioUrl/ttsAudioGeneratedForBodyHash는 synthesizeNodeTts(Cloud
+        // Function, Admin SDK로 이 규칙 자체를 우회해 쓴다)만 채우는 서버 캐시
+        // 필드다 — 여기서 잠가 두지 않으면 악의적인 클라이언트가 이 두 필드를
+        // 임의로 바꿔 다른(공격자가 준비한) 오디오를 모든 독자에게 대신
+        // 들려줄 수 있다. 정상적인 작가 클라이언트는 항상 자기가 읽은 값을
+        // 그대로 다시 써 넣으므로(admin_story_node.dart의 toFirestoreJson()
+        // doc 참고) 이 잠금이 정상 흐름을 막지 않는다.
         allow update: if (isPackOwnedBy(packId) || isAdmin())
           && request.resource.data.status == resource.data.status
-          && request.resource.data.liveSnapshot == resource.data.liveSnapshot;
+          && request.resource.data.liveSnapshot == resource.data.liveSnapshot
+          && request.resource.data.get('ttsAudioUrl', null) == resource.data.get('ttsAudioUrl', null)
+          && request.resource.data.get('ttsAudioGeneratedForBodyHash', null) == resource.data.get('ttsAudioGeneratedForBodyHash', null)
+          // ttsPreviewAudioUrl/ttsPreviewAudioGeneratedForBodyHash도 같은
+          // 이유로 잠근다 — previewNodeTts(Admin SDK)만 쓴다. 잠그지 않으면
+          // 저자가 이 두 필드를 직접 조작해(해시를 승인될 콘텐츠의 실제
+          // 해시와 맞춰서) 임의의 오디오를 심어 둘 수 있고, 승인 시점에
+          // onNodeApprovedGenerateTts가 그 파일을 검증 없이 그대로
+          // ttsAudioUrl로 승격해 모든 독자에게 재생하게 된다.
+          && request.resource.data.get('ttsPreviewAudioUrl', null) == resource.data.get('ttsPreviewAudioUrl', null)
+          && request.resource.data.get('ttsPreviewAudioGeneratedForBodyHash', null) == resource.data.get('ttsPreviewAudioGeneratedForBodyHash', null);
 
         // admin의 승인/반려(approveNode/rejectNode) — status/liveSnapshot/
-        // pendingAction만 바뀌고 콘텐츠 필드는 그대로 둔다.
+        // pendingAction/rejectionReason만 바뀌고 콘텐츠 필드는 그대로 둔다.
+        // rejectionReason(반려 사유, 작가 쪽 사이드바/편집 화면에 그대로
+        // 보여준다 — node_editor.dart/status_tag.dart)은 아래 목록에 없는
+        // 필드라 이 규칙이 자유롭게 바뀌도록 이미 허용한다 — 이 규칙은
+        // "콘텐츠 필드는 그대로여야 한다"만 검사하지 "이 필드들 외에는 아무것도
+        // 못 바꾼다"는 화이트리스트가 아니기 때문이다. approveNode가 승인 시
+        // rejectionReason을 null로 지우는 것, rejectNode가 반려 시 admin이
+        // 입력한 사유를 써 넣는 것 둘 다 이 규칙 그대로 통과한다.
         //
         // ⚠️ 예전엔 이 규칙이 title/day/body/bgImageId라는 blocks 스키마
         // 마이그레이션 이전 필드명을 점(.) 표기로 비교했다 — 그 필드들은
@@ -369,7 +417,15 @@ service cloud.firestore {
           && request.resource.data.get('backgroundAppliesForward', null) == resource.data.get('backgroundAppliesForward', null)
           && request.resource.data.get('choices', null) == resource.data.get('choices', null)
           && request.resource.data.get('nextNodeId', null) == resource.data.get('nextNodeId', null)
-          && request.resource.data.get('effects', null) == resource.data.get('effects', null);
+          && request.resource.data.get('effects', null) == resource.data.get('effects', null)
+          // 위 update 규칙(작가 본인)과 같은 이유로 여기서도 잠근다 — approveNode/
+          // rejectNode도 이 네 필드를 절대 건드리지 않는다(ttsAudioUrl/hash는
+          // 승인 후 onNodeApprovedGenerateTts가, ttsPreviewAudioUrl/hash는
+          // previewNodeTts가 각자 Admin SDK로만 쓴다).
+          && request.resource.data.get('ttsAudioUrl', null) == resource.data.get('ttsAudioUrl', null)
+          && request.resource.data.get('ttsAudioGeneratedForBodyHash', null) == resource.data.get('ttsAudioGeneratedForBodyHash', null)
+          && request.resource.data.get('ttsPreviewAudioUrl', null) == resource.data.get('ttsPreviewAudioUrl', null)
+          && request.resource.data.get('ttsPreviewAudioGeneratedForBodyHash', null) == resource.data.get('ttsPreviewAudioGeneratedForBodyHash', null);
 
         // 삭제: 작가는 한 번도 발행된 적 없는(liveSnapshot == null) 자기 노드만
         // 즉시 지울 수 있다(deleteNodeDoc). 이미 발행된 노드의 삭제는 admin이
@@ -475,6 +531,28 @@ service cloud.firestore {
     match /sfxLibrary/{sfxId} {
       allow read: if isSignedIn();
       allow create, delete: if isAuthorOrAdmin();
+    }
+
+    // bgmLibrary/{bgmId} — sfxLibrary와 같은 패턴의 색인 문서(실제 파일은
+    // Storage admin/story_bgm/{bgmId}.mp3에 있다 — Storage 쪽 규칙은
+    // storage.rules 파일이 없어서 콘솔에서 손으로 관리한다, FIRESTORE_SCHEMA.md
+    // "Storage 규칙" 절 참고). update는 없다 — sfxLibrary와 달리 category
+    // 같은 사후 수정 가능한 필드가 아예 없어서(admin_bgm.dart), 업로드/삭제
+    // 둘로 충분하다.
+    match /bgmLibrary/{bgmId} {
+      allow read: if isSignedIn();
+      allow create, delete: if isAuthorOrAdmin();
+    }
+
+    // ttsVoiceCache/typecast — Typecast 보이스 목록을 캐시해 둔 문서 하나.
+    // sfxLibrary/bgmLibrary처럼 개별 항목마다 문서가 있는 게 아니라
+    // {voices: [...]} 배열 하나짜리 문서다(admin_tts_voice_repository.dart
+    // 참고). 클라이언트는 절대 직접 안 쓴다 — refreshTypecastVoiceCacheScheduled
+    // (매일 자동)/refreshTypecastVoices(수동 새로고침 Cloud Function) 둘 다
+    // Admin SDK로 써서 이 규칙 자체를 우회한다. write를 아예 허용하지 않는다.
+    match /ttsVoiceCache/{voiceCacheId} {
+      allow read: if isAuthorOrAdmin();
+      allow write: if false;
     }
 
     // writerNotices/{noticeId} — packId로 소유 스토리팩을 가리킨다.

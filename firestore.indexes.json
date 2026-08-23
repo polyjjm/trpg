@@ -17,6 +17,14 @@
       ]
     },
     {
+      "collectionGroup": "homeEvents",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "active", "order": "ASCENDING" },
+        { "fieldPath": "sortOrder", "order": "ASCENDING" }
+      ]
+    },
+    {
       "collectionGroup": "pointPackages",
       "queryScope": "COLLECTION",
       "fields": [

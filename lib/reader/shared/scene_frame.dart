@@ -3,6 +3,7 @@ import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:google_fonts/google_fonts.dart';
 
 import '../../core/audio/audio_service.dart';
 import '../../core/auth/auth_scope.dart';
@@ -12,7 +13,7 @@ import 'models/node_block.dart';
 import 'models/node_block_type.dart';
 import 'models/node_effects.dart';
 import 'models/reader_prefs.dart';
-import 'tts_controller.dart';
+import 'node_tts_playback_controller.dart';
 
 const Color _ivory = Color(0xFFE2D4BF);
 const Color _gold = Color(0xFFF0E68C);
@@ -60,16 +61,51 @@ const Color _bookPaperBottom = Color(0xFF100E0C);
 /// Scaffold 자체는 포함하지 않는다 — 호출부(리더 페이지)가 자기 Scaffold의
 /// body로 이 위젯을 얹어, 뒤로가기 버튼 등 페이지 단위 크롬은 호출부가 맡는다.
 class SceneFrame extends StatefulWidget {
+  /// synthesizeNodeTts 호출에 쓰는 팩 id — TTS 오디오는 서버(Cloud Function)가
+  /// liveSnapshot에서 직접 본문/연출 설정을 읽어 만들기 때문에, 클라이언트는
+  /// 텍스트 자체가 아니라 id만 넘기면 된다.
+  final String packId;
+
+  /// 이 화면에서 순서대로 이어 읽을 노드 id 목록 — 보통 원소 하나짜리
+  /// 목록(노드 하나짜리 화면)이지만, 선형 리더의 두 쪽 펼침 모드는 왼쪽/
+  /// 오른쪽 쪽이 서로 다른 노드라 두 개짜리 목록이 된다. TTS 재생 버튼은
+  /// 이 순서대로 이어 튼다(NodeTtsPlaybackController.playSequence) — 화면
+  /// 전환 없이 왼쪽 쪽 내레이션이 끝나면 곧바로 오른쪽 쪽으로 넘어간다.
+  final List<String> narrationNodeIds;
+
+  /// 이 목록의 내레이션이 (일시정지가 아니라) 끝까지 자연 재생됐을 때 한
+  /// 번 불린다 — 호출부(리더 페이지)가 자동 이어재생 여부를 판단해 다음
+  /// 노드/스프레드로 넘어갈지 정한다(요청 사양 Part 2).
+  final VoidCallback? onNarrationCompleted;
+
+  /// ReaderPrefs.ttsAutoContinueEnabled가 로드되거나 바뀔 때마다 알려준다 —
+  /// 자동 이어재생 여부 판단은 SceneFrame이 아니라 리더 페이지의
+  /// ReaderSessionController가 하므로(클래스 doc "narrationNodeIds" 참고),
+  /// 그 값을 여기서 밖으로 흘려보낸다.
+  final ValueChanged<bool>? onAutoContinuePrefsChanged;
+
+  /// 사용자가 이 화면의 TTS 버튼을 직접 눌러 켜거나(true) 껐을(false) 때
+  /// 알려준다 — 내레이션이 자연 종료돼서 [_ttsPlaying]이 false가 되는
+  /// 경우는 포함하지 않는다(그건 사용자가 끈 게 아니다). 호출부(리더
+  /// 페이지)가 이 값을 ReaderSessionController에 그대로 저장해 뒀다가,
+  /// 다음 노드의 [autoPlayNarration]을 결정하는 데 쓴다.
+  final ValueChanged<bool>? onNarrationUserToggled;
+
+  /// true면 이 화면에 들어오자마자(사용자가 TTS 버튼을 다시 누르지 않아도)
+  /// 내레이션을 자동으로 재생한다 — 호출부가 "사용자가 TTS를 켜 둔 상태"를
+  /// 그대로 넘겨준다(자동 이어재생으로 들어왔든, 선택지를 직접 탭해서
+  /// 들어왔든, "다음" 버튼을 눌러서 들어왔든 경로와 무관하다 — 리더가
+  /// 스스로 TTS를 한 번 켠 뒤로는 노드가 어떻게 바뀌든 계속 듣고 싶어한다는
+  /// 뜻이라서다). 아직 한 번도 TTS를 켜지 않은 세션(최초 진입 등)은 항상
+  /// false — 리더가 직접 TTS 버튼을 눌러야 시작된다.
+  final bool autoPlayNarration;
+
   /// 이 노드의 본문 블록(paragraph/beat/image) — 순서대로 타이핑/표시된다.
   final List<NodeBlock> blocks;
 
   /// 배경 인계 규칙까지 적용해 이미 resolve된 이미지 URL. null이면 fallback
   /// 그라디언트만 보여준다.
   final String? backgroundImageUrl;
-
-  /// storyPack.ttsEnabled — 이 팩이 TTS 재생을 허용하는지. false면 설정에
-  /// TTS 컨트롤 자체가 보이지 않는다.
-  final bool ttsAllowed;
 
   /// 모든 블록이 다 드러난 뒤 보여줄 타입별 액션 영역 — 인터랙티브는 선택지
   /// 버튼들, 선형은 "다음"/"완료" 버튼.
@@ -105,18 +141,22 @@ class SceneFrame extends StatefulWidget {
   /// readerPrefs 문서가 없어 Firestore를 통해 전달되지 않는다.
   final ValueChanged<String>? onPageModeChanged;
 
-  /// true면 설정에서 글꼴·글자 크기·쪽 보기만 보여준다(선형 리더). false면
-  /// TTS·BGM·글자 애니메이션까지 전부 보여준다(인터랙티브). 선형은 책 모드에서
-  /// 타이핑을 쓰지 않으니 애니메이션 토글이 아무것도 하지 않고, 음향 컨트롤도
-  /// 읽는 데 방해가 된다는 판단이다.
+  /// true면 설정에서 TTS·BGM·글자 애니메이션을 감춘다(선형 리더) — 선형은
+  /// 책 모드에서 타이핑을 쓰지 않아 애니메이션 토글이 아무것도 하지 않는다.
+  /// 글꼴·글자 크기·글자 색은 두 리더 모두 보여준다.
   final bool simplifiedSettings;
 
   const SceneFrame({
     super.key,
+    required this.packId,
+    required this.narrationNodeIds,
+    this.onNarrationCompleted,
+    this.onAutoContinuePrefsChanged,
+    this.onNarrationUserToggled,
+    this.autoPlayNarration = false,
     required this.blocks,
     required this.actionAreaBuilder,
     this.backgroundImageUrl,
-    this.ttsAllowed = false,
     this.effects = const NodeEffects(),
     this.sfxUrl,
     this.chapterLabel,
@@ -136,15 +176,24 @@ class SceneFrame extends StatefulWidget {
 class _SceneFrameState extends State<SceneFrame>
     with SingleTickerProviderStateMixin {
   final ReaderPrefsRepository _prefsRepository = ReaderPrefsRepository();
-  final TtsController _tts = TtsController();
+  final NodeTtsPlaybackController _tts = NodeTtsPlaybackController();
 
   StreamSubscription<ReaderPrefs>? _prefsSub;
   StreamSubscription<bool>? _ttsPlayingSub;
+  StreamSubscription<bool>? _ttsLoadingSub;
+  StreamSubscription<void>? _ttsAllCompletedSub;
   String? _uid;
   bool _resolvedUid = false;
 
   ReaderPrefs _prefs = ReaderPrefs.defaults;
+
+  /// 이 화면에서 설정을 한 번이라도 직접 바꿨는지 — 그 뒤로는 readerPrefs
+  /// 스냅샷으로 값을 덮지 않는다. 저장이 실패하는 환경(보안 규칙이 새 필드를
+  /// 막는 등)에서 스냅샷이 예전 값을 다시 흘려보내면, 방금 고른 글꼴·크기가
+  /// 조용히 되돌아가 "설정이 안 먹는다"처럼 보였다.
+  bool _prefsTouchedLocally = false;
   bool _ttsPlaying = false;
+  bool _ttsLoading = false;
 
   int _blockIndex = 0;
   int? _autoAdvancedIndex;
@@ -182,6 +231,12 @@ class _SceneFrameState extends State<SceneFrame>
     _ttsPlayingSub = _tts.playingStream.listen((playing) {
       if (mounted) setState(() => _ttsPlaying = playing);
     });
+    _ttsLoadingSub = _tts.loadingStream.listen((loading) {
+      if (mounted) setState(() => _ttsLoading = loading);
+    });
+    _ttsAllCompletedSub = _tts.allCompletedStream.listen((_) {
+      widget.onNarrationCompleted?.call();
+    });
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
       setState(() => _bgVisible = true);
@@ -189,6 +244,24 @@ class _SceneFrameState extends State<SceneFrame>
       // 없어서 _typingDone이 시작부터 true다 — 여기서도 한 번 확인해 둔다.
       _maybePlayEffects();
     });
+    if (widget.autoPlayNarration) {
+      // 사용자가 TTS를 켜 둔 채로 들어온 노드 — 손대지 않아도 바로 이어
+      // 낭독을 시작한다. 텍스트 타이핑 애니메이션과는 무관하게 독립적으로
+      // 재생한다(둘의 동기화는 나중 개선 과제 — TTS 기능 자체의 기존 설계
+      // 그대로). 이 노드에 TTS가 아예 없으면(요청 사양: "If a node has no
+      // TTS configured/cached, auto-advance simply doesn't trigger... —
+      // silent, no error") synthesize가 실패하는데, 수동 탭(_toggleTtsPlayback)
+      // 과 달리 여기는 스낵바를 띄우지 않는다 — 매번 자동으로 시도하는
+      // 자리에서 실패할 때마다 알림을 띄우면 오히려 방해가 된다.
+      unawaited(
+        _tts
+            .playSequence(
+              packId: widget.packId,
+              nodeIds: widget.narrationNodeIds,
+            )
+            .catchError((Object _) {}),
+      );
+    }
   }
 
   @override
@@ -200,7 +273,10 @@ class _SceneFrameState extends State<SceneFrame>
       final uid = _uid;
       if (uid != null) {
         _prefsSub = _prefsRepository.watch(uid).listen((prefs) {
-          if (mounted) setState(() => _prefs = prefs);
+          if (!mounted || _prefsTouchedLocally) return;
+          setState(() => _prefs = prefs);
+          AudioService.instance.setBgmMasterVolume(prefs.bgmMasterVolume);
+          widget.onAutoContinuePrefsChanged?.call(prefs.ttsAutoContinueEnabled);
         });
       }
     }
@@ -210,13 +286,17 @@ class _SceneFrameState extends State<SceneFrame>
   void dispose() {
     _prefsSub?.cancel();
     _ttsPlayingSub?.cancel();
+    _ttsLoadingSub?.cancel();
+    _ttsAllCompletedSub?.cancel();
     _tts.dispose();
     _shakeController.dispose();
     super.dispose();
   }
 
   void _updatePrefs(ReaderPrefs next) {
+    _prefsTouchedLocally = true;
     setState(() => _prefs = next);
+    widget.onAutoContinuePrefsChanged?.call(next.ttsAutoContinueEnabled);
     final uid = _uid;
     if (uid != null) _prefsRepository.save(uid, next);
   }
@@ -278,7 +358,9 @@ class _SceneFrameState extends State<SceneFrame>
   /// 걸쳐 천천히 빠진다.
   void _triggerFlash(Color color, Duration total) {
     const fadeIn = Duration(milliseconds: 40);
-    final fadeOut = total > fadeIn ? total - fadeIn : const Duration(milliseconds: 10);
+    final fadeOut = total > fadeIn
+        ? total - fadeIn
+        : const Duration(milliseconds: 10);
     setState(() {
       _flashColor = color;
       _flashFadeDuration = fadeIn;
@@ -332,27 +414,51 @@ class _SceneFrameState extends State<SceneFrame>
     });
   }
 
-  String get _combinedTtsText {
-    return widget.blocks
-        .map((b) => b.type == NodeBlockType.image ? (b.caption ?? '') : (b.ttsText ?? ''))
-        .where((s) => s.trim().isNotEmpty)
-        .join('. ');
-  }
-
-  void _toggleTtsPlayback() {
+  /// 본문 텍스트를 직접 읽어주던 기기 TTS와 달리, 실제 오디오는
+  /// synthesizeNodeTts(Cloud Function)가 liveSnapshot에서 직접 만든다 — 여기선
+  /// packId/narrationNodeIds만 넘긴다(클래스 doc 참고). 생성 중엔
+  /// [_ttsLoading]이 true라 중복 탭이 걸러진다
+  /// (NodeTtsPlaybackController.playSequence 참고).
+  Future<void> _toggleTtsPlayback() async {
+    if (_ttsLoading) return;
     if (_ttsPlaying) {
-      _tts.pause();
-      _updatePrefs(_prefs.copyWith(ttsEnabled: false));
-    } else {
-      _tts.play(_combinedTtsText);
-      _updatePrefs(_prefs.copyWith(ttsEnabled: true));
+      await _tts.pause();
+      widget.onNarrationUserToggled?.call(false);
+      return;
+    }
+    try {
+      await _tts.playSequence(
+        packId: widget.packId,
+        nodeIds: widget.narrationNodeIds,
+      );
+      widget.onNarrationUserToggled?.call(true);
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('내레이션을 불러오지 못했어요: $e')));
     }
   }
 
-  void _toggleBgm() {
-    final next = !_prefs.bgmEnabled;
-    AudioService.instance.setBgmMuted(!next);
-    _updatePrefs(_prefs.copyWith(bgmEnabled: next));
+  /// BGM 볼륨 슬라이더가 드래그하는 동안 매번 부른다 — [_updatePrefs]와 달리
+  /// Firestore에는 아직 안 쓴다(드래그 중 매 프레임 쓰기는 낭비다). 대신
+  /// AudioService에는 즉시 반영해서 드래그하는 동안 소리가 실시간으로
+  /// 바뀌게 한다. 손을 떼면([_commitBgmVolume]) 그제서야 저장한다.
+  void _handleBgmVolumeChanged(double volume) {
+    _prefsTouchedLocally = true;
+    setState(() => _prefs = _prefs.copyWith(bgmMasterVolume: volume));
+    AudioService.instance.setBgmMasterVolume(volume);
+  }
+
+  /// 슬라이더에서 손을 뗀 시점(Slider.onChangeEnd) — 그 시점의 값을 저장한다.
+  /// 음소거 아이콘 버튼(0%/100% 토글)도 드래그가 아니라 즉시 확정이라
+  /// [_handleBgmVolumeChanged] 다음에 곧바로 이걸 부른다. 인자로 받는 값은
+  /// 안 쓴다 — [_handleBgmVolumeChanged]가 이미 [_prefs]에 반영해 뒀으므로
+  /// 그 상태를 그대로 저장하면 된다(Slider.onChangeEnd/[_BgmVolumeRow]의
+  /// 콜백 타입을 맞추려고만 받는다).
+  void _commitBgmVolume(double _) {
+    final uid = _uid;
+    if (uid != null) _prefsRepository.save(uid, _prefs);
   }
 
   @override
@@ -381,7 +487,9 @@ class _SceneFrameState extends State<SceneFrame>
               Positioned(
                 right: 20,
                 top: 16,
-                child: SafeArea(child: _SettingsTriggerButton(onTap: _openSettings)),
+                child: SafeArea(
+                  child: _SettingsTriggerButton(onTap: _openSettings),
+                ),
               ),
             if (_settingsOpen)
               Positioned(
@@ -393,18 +501,25 @@ class _SceneFrameState extends State<SceneFrame>
                   simplified: widget.simplifiedSettings,
                   onFontScaleSelected: (scale) =>
                       _updatePrefs(_prefs.copyWith(fontScale: scale)),
-                  ttsAllowed: widget.ttsAllowed,
+                  onTextColorSelected: (id) =>
+                      _updatePrefs(_prefs.copyWith(textColorId: id)),
                   ttsPlaying: _ttsPlaying,
+                  ttsLoading: _ttsLoading,
                   onClose: _closeSettings,
                   onToggleTts: _toggleTtsPlayback,
-                  onToggleBgm: _toggleBgm,
-                  onFontSelected: (fontId) => _updatePrefs(_prefs.copyWith(fontId: fontId)),
+                  onBgmVolumeChanged: _handleBgmVolumeChanged,
+                  onBgmVolumeCommitted: _commitBgmVolume,
+                  onFontSelected: (fontId) =>
+                      _updatePrefs(_prefs.copyWith(fontId: fontId)),
                   onPageModeSelected: (mode) {
                     _updatePrefs(_prefs.copyWith(pageMode: mode));
                     widget.onPageModeChanged?.call(mode);
                   },
                   onAnimationToggled: (enabled) =>
                       _updatePrefs(_prefs.copyWith(animationEnabled: enabled)),
+                  onAutoContinueToggled: (enabled) => _updatePrefs(
+                    _prefs.copyWith(ttsAutoContinueEnabled: enabled),
+                  ),
                 ),
               ),
           ],
@@ -456,7 +571,8 @@ class _SceneFrameState extends State<SceneFrame>
     // _prefs는 문서 스냅샷이 다시 오기 전까지 기본값(한 쪽)이라 두 페이지를
     // 받아 놓고도 한 쪽으로 그리게 된다(게스트는 스냅샷이 아예 안 온다).
     final spread =
-        (widget.spreadSplitIndex != null || _prefs.isSpread) && blocks.length >= 2;
+        (widget.spreadSplitIndex != null || _prefs.isSpread) &&
+        blocks.length >= 2;
     final rightInset = _settingsOpen ? _settingsPanelWidth : 0.0;
 
     return Padding(
@@ -513,8 +629,10 @@ class _SceneFrameState extends State<SceneFrame>
   Widget _buildSpread(List<Widget> blocks) {
     // 호출부가 노드 경계를 알려줬으면 그 지점에서 자른다(왼쪽 1페이지 /
     // 오른쪽 2페이지). 안 알려줬으면 바록 개수 절반으로 나눐다.
-    final split =
-        (widget.spreadSplitIndex ?? (blocks.length / 2).ceil()).clamp(0, blocks.length);
+    final split = (widget.spreadSplitIndex ?? (blocks.length / 2).ceil()).clamp(
+      0,
+      blocks.length,
+    );
     final left = blocks.take(split).toList();
     final right = blocks.skip(split).toList();
     final rightIsOtherNode = widget.spreadSplitIndex != null;
@@ -683,7 +801,11 @@ class _SceneFrameState extends State<SceneFrame>
             gradient: LinearGradient(
               begin: Alignment.bottomCenter,
               end: Alignment.topCenter,
-              colors: [Color(0xF0000000), Color(0x8C000000), Colors.transparent],
+              colors: [
+                Color(0xF0000000),
+                Color(0x8C000000),
+                Colors.transparent,
+              ],
               stops: [0.0, 0.34, 0.62],
             ),
           ),
@@ -695,18 +817,28 @@ class _SceneFrameState extends State<SceneFrame>
         // (선택지가 보이는데 눌리지 않는 문제의 원인이었다).
         SafeArea(
           child: Padding(
-            padding: EdgeInsets.only(left: 60, right: rightInset, bottom: 40, top: 16),
+            padding: EdgeInsets.only(
+              left: 60,
+              right: rightInset,
+              bottom: 40,
+              top: 16,
+            ),
             child: Column(
               mainAxisAlignment: MainAxisAlignment.end,
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 SizedBox(
                   width: _desktopReadingWidth,
-                  child: Align(alignment: Alignment.centerRight, child: _buildSkipButton()),
+                  child: Align(
+                    alignment: Alignment.centerRight,
+                    child: _buildSkipButton(),
+                  ),
                 ),
                 Flexible(
                   child: ConstrainedBox(
-                    constraints: const BoxConstraints(maxWidth: _desktopReadingWidth),
+                    constraints: const BoxConstraints(
+                      maxWidth: _desktopReadingWidth,
+                    ),
                     child: SingleChildScrollView(
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
@@ -812,10 +944,22 @@ class _SceneFrameState extends State<SceneFrame>
       fontSize: 16 * _prefs.fontScale,
       // 배경 이미지가 없는 책 모드에서는 줄간격을 넓혀 읽는 밀도를 낮춘다.
       height: _isBookMode ? _bookLineHeight : 1.75,
-      color: _isBookMode ? _ivory : Colors.white,
+      color: _bodyColor,
       fontFamily: fontFamily,
       fontFamilyFallback: const ['NotoSansKR'],
     );
+  }
+
+  /// 설정에서 고른 본문 글자 색 — 사진 위(시네마틱)에서는 대비가 필요해서
+  /// 기본값일 때만 흰색으로 올린다. 사용자가 색을 직접 골랐으면 그 색을 쓴다.
+  Color get _bodyColor {
+    final option = ReaderPrefs.textColorOptions
+        .where((o) => o.id == _prefs.textColorId)
+        .firstOrNull;
+    if (option == null || option.id == 'ivory') {
+      return _isBookMode ? _ivory : Colors.white;
+    }
+    return Color(option.argb);
   }
 
   /// 데스크톱 폭 + 배경 이미지 없음 = 책 읽기 모드.
@@ -825,14 +969,18 @@ class _SceneFrameState extends State<SceneFrame>
         (url == null || url.isEmpty);
   }
 
-  /// null을 반환하면 테마 기본값(NotoSansKR)을 그대로 쓴다. 'serif'/'mono'는
-  /// 아직 번들하지 않은 폰트라 플랫폼 기본 대체 글꼴로 떨어진다.
+  /// null을 반환하면 테마 기본값(번들된 NotoSansKR)을 그대로 쓴다.
+  ///
+  /// GoogleFonts.xxx()가 폰트를 등록하고 그 TextStyle의 fontFamily를 돌려준다 —
+  /// 웹에서는 첫 진입에 잠깐 기본 폰트로 보이다 로딩이 끝나면 바뀐다.
   String? _fontFamilyFor(String fontId) {
     switch (fontId) {
-      case 'serif':
-        return 'Georgia';
-      case 'mono':
-        return 'Courier';
+      case 'nanum_gothic':
+        return GoogleFonts.nanumGothic().fontFamily;
+      case 'nanum_myeongjo':
+        return GoogleFonts.nanumMyeongjo().fontFamily;
+      case 'noto_serif':
+        return GoogleFonts.notoSerifKr().fontFamily;
       default:
         return null;
     }
@@ -843,13 +991,16 @@ class _SceneFrameState extends State<SceneFrame>
       expanded: _sheetExpanded,
       onToggleExpanded: () => setState(() => _sheetExpanded = !_sheetExpanded),
       prefs: _prefs,
-      ttsAllowed: widget.ttsAllowed,
       ttsPlaying: _ttsPlaying,
+      ttsLoading: _ttsLoading,
       onToggleTts: _toggleTtsPlayback,
-      onToggleBgm: _toggleBgm,
+      onBgmVolumeChanged: _handleBgmVolumeChanged,
+      onBgmVolumeCommitted: _commitBgmVolume,
       onFontSelected: (fontId) => _updatePrefs(_prefs.copyWith(fontId: fontId)),
       onAnimationToggled: (enabled) =>
           _updatePrefs(_prefs.copyWith(animationEnabled: enabled)),
+      onAutoContinueToggled: (enabled) =>
+          _updatePrefs(_prefs.copyWith(ttsAutoContinueEnabled: enabled)),
     );
   }
 }
@@ -874,7 +1025,11 @@ class _SettingsTriggerButton extends StatelessWidget {
           shape: BoxShape.circle,
           color: Colors.black.withOpacity(0.42),
         ),
-        child: Icon(Icons.tune_rounded, color: _ivory.withOpacity(0.85), size: 21),
+        child: Icon(
+          Icons.tune_rounded,
+          color: _ivory.withOpacity(0.85),
+          size: 21,
+        ),
       ),
     );
   }
@@ -887,27 +1042,33 @@ class _ReaderSettingsPanel extends StatelessWidget {
   final ReaderPrefs prefs;
   final bool simplified;
   final ValueChanged<double> onFontScaleSelected;
-  final bool ttsAllowed;
+  final ValueChanged<String> onTextColorSelected;
   final bool ttsPlaying;
+  final bool ttsLoading;
   final VoidCallback onClose;
   final VoidCallback onToggleTts;
-  final VoidCallback onToggleBgm;
+  final ValueChanged<double> onBgmVolumeChanged;
+  final ValueChanged<double> onBgmVolumeCommitted;
   final ValueChanged<String> onFontSelected;
   final ValueChanged<String> onPageModeSelected;
   final ValueChanged<bool> onAnimationToggled;
+  final ValueChanged<bool> onAutoContinueToggled;
 
   const _ReaderSettingsPanel({
     required this.prefs,
     required this.simplified,
     required this.onFontScaleSelected,
-    required this.ttsAllowed,
+    required this.onTextColorSelected,
     required this.ttsPlaying,
+    required this.ttsLoading,
     required this.onClose,
     required this.onToggleTts,
-    required this.onToggleBgm,
+    required this.onBgmVolumeChanged,
+    required this.onBgmVolumeCommitted,
     required this.onFontSelected,
     required this.onPageModeSelected,
     required this.onAnimationToggled,
+    required this.onAutoContinueToggled,
   });
 
   @override
@@ -928,7 +1089,11 @@ class _ReaderSettingsPanel extends StatelessWidget {
                 children: [
                   const Text(
                     '설정',
-                    style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700, color: _ivory),
+                    style: TextStyle(
+                      fontSize: 15,
+                      fontWeight: FontWeight.w700,
+                      color: _ivory,
+                    ),
                   ),
                   const Spacer(),
                   InkWell(
@@ -936,7 +1101,11 @@ class _ReaderSettingsPanel extends StatelessWidget {
                     onTap: onClose,
                     child: Padding(
                       padding: const EdgeInsets.all(4),
-                      child: Icon(Icons.close_rounded, size: 20, color: _ivory.withOpacity(0.55)),
+                      child: Icon(
+                        Icons.close_rounded,
+                        size: 20,
+                        color: _ivory.withOpacity(0.55),
+                      ),
                     ),
                   ),
                 ],
@@ -946,43 +1115,66 @@ class _ReaderSettingsPanel extends StatelessWidget {
               if (!simplified) ...[
                 Row(
                   children: [
-                    if (ttsAllowed) ...[
-                      _SheetIconToggle(
-                        icon: ttsPlaying ? Icons.pause_circle_rounded : Icons.play_circle_rounded,
-                        label: 'TTS',
-                        active: ttsPlaying,
-                        onTap: onToggleTts,
-                      ),
-                      const SizedBox(width: 14),
-                    ],
                     _SheetIconToggle(
-                      icon: prefs.bgmEnabled ? Icons.music_note_rounded : Icons.music_off_rounded,
-                      label: 'BGM',
-                      active: prefs.bgmEnabled,
-                      onTap: onToggleBgm,
+                      icon: ttsLoading
+                          ? Icons.hourglass_top_rounded
+                          : (ttsPlaying
+                                ? Icons.pause_circle_rounded
+                                : Icons.play_circle_rounded),
+                      label: ttsLoading
+                          ? 'TTS 준비 중'
+                          : (ttsPlaying ? 'TTS 켜짐' : 'TTS'),
+                      active: ttsPlaying,
+                      onTap: ttsLoading ? null : onToggleTts,
                     ),
                   ],
                 ),
+                const SizedBox(height: 16),
+                Text(
+                  '배경음악 볼륨',
+                  style: TextStyle(
+                    fontSize: 13,
+                    color: _ivory.withOpacity(0.8),
+                  ),
+                ),
+                const SizedBox(height: 8),
+                _BgmVolumeRow(
+                  volume: prefs.bgmMasterVolume,
+                  onChanged: onBgmVolumeChanged,
+                  onChangeEnd: onBgmVolumeCommitted,
+                ),
                 const SizedBox(height: 20),
-                Divider(height: 1, thickness: 1, color: Colors.white.withOpacity(0.08)),
+                Divider(
+                  height: 1,
+                  thickness: 1,
+                  color: Colors.white.withOpacity(0.08),
+                ),
                 const SizedBox(height: 20),
               ],
-              Text('글꼴', style: TextStyle(fontSize: 13, color: _ivory.withOpacity(0.8))),
+              Text(
+                '글꼴',
+                style: TextStyle(fontSize: 13, color: _ivory.withOpacity(0.8)),
+              ),
               const SizedBox(height: 10),
-              Row(
+              // 글꼴이 네 개라 320px 패널에서 한 줄로는 넘친다 — Wrap으로
+              // 두 줄로 흘린다(칩 자체는 다른 설정과 같은 모양을 유지).
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
                 children: [
-                  for (final option in _fontOptions) ...[
+                  for (final option in _fontOptions)
                     _FontChip(
                       label: option.label,
                       selected: prefs.fontId == option.id,
                       onTap: () => onFontSelected(option.id),
                     ),
-                    const SizedBox(width: 8),
-                  ],
                 ],
               ),
               const SizedBox(height: 16),
-              Text('글자 크기', style: TextStyle(fontSize: 13, color: _ivory.withOpacity(0.8))),
+              Text(
+                '글자 크기',
+                style: TextStyle(fontSize: 13, color: _ivory.withOpacity(0.8)),
+              ),
               const SizedBox(height: 10),
               Row(
                 children: [
@@ -997,44 +1189,99 @@ class _ReaderSettingsPanel extends StatelessWidget {
                 ],
               ),
               const SizedBox(height: 16),
-              // 쪽 보기 — 배경 이미지가 없는 노드(책 모드)에서만 의미가 있다.
               Text(
-                '쪽 보기',
+                '글자 색',
                 style: TextStyle(fontSize: 13, color: _ivory.withOpacity(0.8)),
               ),
               const SizedBox(height: 10),
               Row(
                 children: [
-                  for (final option in _pageModeOptions) ...[
-                    _FontChip(
+                  for (final option in ReaderPrefs.textColorOptions) ...[
+                    _ColorSwatch(
+                      color: Color(option.argb),
                       label: option.label,
-                      selected: prefs.pageMode == option.id,
-                      onTap: () => onPageModeSelected(option.id),
+                      selected: prefs.textColorId == option.id,
+                      onTap: () => onTextColorSelected(option.id),
                     ),
                     const SizedBox(width: 8),
                   ],
                 ],
               ),
-              const SizedBox(height: 8),
-              Text(
-                '배경 이미지가 없는 노드에서만 두 쪽으로 펼칩니다',
-                style: TextStyle(fontSize: 11.5, height: 1.6, color: _ivory.withOpacity(0.45)),
-              ),
+              // 쪽 보기는 선형에만 — 인터랙티브는 배경 사진 위에 본문이 얹히는
+              // 시네마틱 레이아웃이라 두 쪽으로 펼칠 지면 자체가 없다.
+              if (simplified) ...[
+                const SizedBox(height: 16),
+                Text(
+                  '쪽 보기',
+                  style: TextStyle(
+                    fontSize: 13,
+                    color: _ivory.withOpacity(0.8),
+                  ),
+                ),
+                const SizedBox(height: 10),
+                Row(
+                  children: [
+                    for (final option in _pageModeOptions) ...[
+                      _FontChip(
+                        label: option.label,
+                        selected: prefs.pageMode == option.id,
+                        onTap: () => onPageModeSelected(option.id),
+                      ),
+                      const SizedBox(width: 8),
+                    ],
+                  ],
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  '배경 이미지가 없는 페이지에서만 두 쪽으로 펼칩니다',
+                  style: TextStyle(
+                    fontSize: 11.5,
+                    height: 1.6,
+                    color: _ivory.withOpacity(0.45),
+                  ),
+                ),
+              ],
               const SizedBox(height: 16),
-              if (!simplified) Row(
-                children: [
-                  const Text(
-                    '글자 애니메이션',
-                    style: TextStyle(color: _ivory, fontSize: 12.5),
+              if (!simplified) ...[
+                Row(
+                  children: [
+                    const Text(
+                      '글자 애니메이션',
+                      style: TextStyle(color: _ivory, fontSize: 12.5),
+                    ),
+                    const Spacer(),
+                    Switch(
+                      value: prefs.animationEnabled,
+                      activeThumbColor: _gold,
+                      onChanged: onAnimationToggled,
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 12),
+                Row(
+                  children: [
+                    const Expanded(
+                      child: Text(
+                        'TTS 자동 이어재생',
+                        style: TextStyle(color: _ivory, fontSize: 12.5),
+                      ),
+                    ),
+                    Switch(
+                      value: prefs.ttsAutoContinueEnabled,
+                      activeThumbColor: _gold,
+                      onChanged: onAutoContinueToggled,
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  '켜면 내레이션이 끝날 때마다 다음 노드로 자동으로 넘어가요',
+                  style: TextStyle(
+                    fontSize: 11,
+                    color: _ivory.withOpacity(0.45),
                   ),
-                  const Spacer(),
-                  Switch(
-                    value: prefs.animationEnabled,
-                    activeThumbColor: _gold,
-                    onChanged: onAnimationToggled,
-                  ),
-                ],
-              ),
+                ),
+              ],
             ],
           ),
         ),
@@ -1146,10 +1393,17 @@ class _ImageBlockView extends StatelessWidget {
   }
 }
 
+/// 글꼴 선택지 — 'default'는 번들된 NotoSansKR, 나머지는 google_fonts가
+/// 런타임에 받아 등록한다.
+///
+/// ⚠️ 예전엔 'serif'/'mono'가 'Georgia'/'Courier' 같은 시스템 폰트 이름을
+/// 가리켰는데, Flutter 웹(CanvasKit)은 앱에 등록된 폰트만 그리기 때문에
+/// 이름만 바뀌고 화면은 그대로였다(맑은 고딕처럼 OS에 깔린 폰트도 못 쓴다).
 const List<({String id, String label})> _fontOptions = [
-  (id: 'default', label: '기본'),
-  (id: 'serif', label: '세리프'),
-  (id: 'mono', label: '모노'),
+  (id: 'default', label: '본고딕'),
+  (id: 'nanum_gothic', label: '나눔고딕'),
+  (id: 'nanum_myeongjo', label: '나눔명조'),
+  (id: 'noto_serif', label: '본명조'),
 ];
 
 const List<({String id, String label})> _pageModeOptions = [
@@ -1207,7 +1461,10 @@ class _BookPageHeader extends StatelessWidget {
                 hidden: hideText,
                 child: Text(
                   progressLabel!,
-                  style: TextStyle(fontSize: 11, color: _ivory.withOpacity(0.4)),
+                  style: TextStyle(
+                    fontSize: 11,
+                    color: _ivory.withOpacity(0.4),
+                  ),
                 ),
               ),
           ],
@@ -1218,7 +1475,11 @@ class _BookPageHeader extends StatelessWidget {
             hidden: hideText,
             child: Text(
               title,
-              style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w700, color: _ivory),
+              style: const TextStyle(
+                fontSize: 18,
+                fontWeight: FontWeight.w700,
+                color: _ivory,
+              ),
             ),
           ),
           const SizedBox(height: 16),
@@ -1255,23 +1516,27 @@ class _ReaderSettingsSheet extends StatelessWidget {
   final bool expanded;
   final VoidCallback onToggleExpanded;
   final ReaderPrefs prefs;
-  final bool ttsAllowed;
   final bool ttsPlaying;
+  final bool ttsLoading;
   final VoidCallback onToggleTts;
-  final VoidCallback onToggleBgm;
+  final ValueChanged<double> onBgmVolumeChanged;
+  final ValueChanged<double> onBgmVolumeCommitted;
   final ValueChanged<String> onFontSelected;
   final ValueChanged<bool> onAnimationToggled;
+  final ValueChanged<bool> onAutoContinueToggled;
 
   const _ReaderSettingsSheet({
     required this.expanded,
     required this.onToggleExpanded,
     required this.prefs,
-    required this.ttsAllowed,
     required this.ttsPlaying,
+    required this.ttsLoading,
     required this.onToggleTts,
-    required this.onToggleBgm,
+    required this.onBgmVolumeChanged,
+    required this.onBgmVolumeCommitted,
     required this.onFontSelected,
     required this.onAnimationToggled,
+    required this.onAutoContinueToggled,
   });
 
   @override
@@ -1286,7 +1551,7 @@ class _ReaderSettingsSheet extends StatelessWidget {
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 260),
         curve: Curves.easeOut,
-        height: expanded ? 210 : 26,
+        height: expanded ? 292 : 26,
         width: double.infinity,
         decoration: const BoxDecoration(
           color: Color(0xF0151515),
@@ -1303,23 +1568,17 @@ class _ReaderSettingsSheet extends StatelessWidget {
                     const SizedBox(height: 14),
                     Row(
                       children: [
-                        if (ttsAllowed)
-                          _SheetIconToggle(
-                            icon: ttsPlaying
-                                ? Icons.pause_circle_rounded
-                                : Icons.play_circle_rounded,
-                            label: 'TTS',
-                            active: ttsPlaying,
-                            onTap: onToggleTts,
-                          ),
-                        if (ttsAllowed) const SizedBox(width: 14),
                         _SheetIconToggle(
-                          icon: prefs.bgmEnabled
-                              ? Icons.music_note_rounded
-                              : Icons.music_off_rounded,
-                          label: 'BGM',
-                          active: prefs.bgmEnabled,
-                          onTap: onToggleBgm,
+                          icon: ttsLoading
+                              ? Icons.hourglass_top_rounded
+                              : (ttsPlaying
+                                    ? Icons.pause_circle_rounded
+                                    : Icons.play_circle_rounded),
+                          label: ttsLoading
+                              ? 'TTS 준비 중'
+                              : (ttsPlaying ? 'TTS 켜짐' : 'TTS'),
+                          active: ttsPlaying,
+                          onTap: ttsLoading ? null : onToggleTts,
                         ),
                         const Spacer(),
                         const Text(
@@ -1332,6 +1591,27 @@ class _ReaderSettingsSheet extends StatelessWidget {
                           onChanged: onAnimationToggled,
                         ),
                       ],
+                    ),
+                    const SizedBox(height: 8),
+                    Row(
+                      children: [
+                        const Text(
+                          'TTS 자동 이어재생',
+                          style: TextStyle(color: _ivory, fontSize: 12.5),
+                        ),
+                        const Spacer(),
+                        Switch(
+                          value: prefs.ttsAutoContinueEnabled,
+                          activeThumbColor: _gold,
+                          onChanged: onAutoContinueToggled,
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 8),
+                    _BgmVolumeRow(
+                      volume: prefs.bgmMasterVolume,
+                      onChanged: onBgmVolumeChanged,
+                      onChangeEnd: onBgmVolumeCommitted,
                     ),
                     const SizedBox(height: 10),
                     Row(
@@ -1370,7 +1650,7 @@ class _SheetIconToggle extends StatelessWidget {
   final IconData icon;
   final String label;
   final bool active;
-  final VoidCallback onTap;
+  final VoidCallback? onTap;
 
   const _SheetIconToggle({
     required this.icon,
@@ -1388,7 +1668,11 @@ class _SheetIconToggle extends StatelessWidget {
         padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
         child: Row(
           children: [
-            Icon(icon, color: active ? _gold : _ivory.withOpacity(0.5), size: 26),
+            Icon(
+              icon,
+              color: active ? _gold : _ivory.withOpacity(0.5),
+              size: 26,
+            ),
             const SizedBox(width: 6),
             Text(
               label,
@@ -1405,12 +1689,140 @@ class _SheetIconToggle extends StatelessWidget {
   }
 }
 
+/// BGM 볼륨 슬라이더 — 데스크톱 사이드바/모바일 하단 시트가 같은 위젯을
+/// 공유한다(다른 설정들이 [_SheetIconToggle]/[_FontChip]을 공유하는 것과
+/// 같은 이유). 왼쪽 스피커 아이콘은 탭하면 0%/100%를 오가는 빠른 음소거
+/// 토글이다("다시 보지 않기" 같은 정밀한 이전 값 기억은 없다 — 이 화면
+/// 인스턴스는 노드가 바뀔 때마다 다시 만들어져서 그 사이의 로컬 상태를
+/// 유지할 수 없으므로, 값을 "기억"하는 대신 그냥 0 또는 1로 단순하게
+/// 오간다). [onChanged]는 드래그하는 동안(그리고 음소거 토글 탭 시) 매번
+/// 불려 [AudioService]에 즉시 반영되고, [onChangeEnd]는 손을 뗀 시점(또는
+/// 토글 탭 직후)에 한 번만 불려 Firestore에 저장된다.
+class _BgmVolumeRow extends StatelessWidget {
+  final double volume;
+  final ValueChanged<double> onChanged;
+  final ValueChanged<double> onChangeEnd;
+
+  const _BgmVolumeRow({
+    required this.volume,
+    required this.onChanged,
+    required this.onChangeEnd,
+  });
+
+  void _toggleMute() {
+    final next = volume > 0 ? 0.0 : 1.0;
+    onChanged(next);
+    onChangeEnd(next);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final muted = volume <= 0;
+    return Row(
+      children: [
+        InkWell(
+          customBorder: const CircleBorder(),
+          onTap: _toggleMute,
+          child: Padding(
+            padding: const EdgeInsets.all(4),
+            child: Icon(
+              muted ? Icons.music_off_rounded : Icons.music_note_rounded,
+              color: muted ? _ivory.withOpacity(0.45) : _gold,
+              size: 22,
+            ),
+          ),
+        ),
+        Expanded(
+          child: SliderTheme(
+            data: SliderTheme.of(context).copyWith(
+              activeTrackColor: _gold,
+              thumbColor: _gold,
+              inactiveTrackColor: Colors.white.withOpacity(0.14),
+              trackHeight: 3,
+              overlayColor: _gold.withOpacity(0.15),
+            ),
+            child: Slider(
+              value: volume.clamp(0.0, 1.0),
+              onChanged: onChanged,
+              onChangeEnd: onChangeEnd,
+            ),
+          ),
+        ),
+        SizedBox(
+          width: 34,
+          child: Text(
+            '${(volume * 100).round()}%',
+            textAlign: TextAlign.right,
+            style: TextStyle(fontSize: 12, color: _ivory.withOpacity(0.85)),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+/// 글자 색 선택 — 색 자체가 보기여야 하므로 칩 대신 색 원이다.
+class _ColorSwatch extends StatelessWidget {
+  final Color color;
+  final String label;
+  final bool selected;
+  final VoidCallback onTap;
+
+  const _ColorSwatch({
+    required this.color,
+    required this.label,
+    required this.selected,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      borderRadius: BorderRadius.circular(10),
+      onTap: onTap,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 2, vertical: 2),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              width: 28,
+              height: 28,
+              decoration: BoxDecoration(
+                color: color,
+                shape: BoxShape.circle,
+                border: Border.all(
+                  color: selected ? _gold : Colors.white.withOpacity(0.18),
+                  width: selected ? 2 : 1,
+                ),
+              ),
+            ),
+            const SizedBox(height: 4),
+            Text(
+              label,
+              style: TextStyle(
+                fontSize: 10.5,
+                fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
+                color: selected ? _gold : _ivory.withOpacity(0.6),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
 class _FontChip extends StatelessWidget {
   final String label;
   final bool selected;
   final VoidCallback onTap;
 
-  const _FontChip({required this.label, required this.selected, required this.onTap});
+  const _FontChip({
+    required this.label,
+    required this.selected,
+    required this.onTap,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -1420,10 +1832,14 @@ class _FontChip extends StatelessWidget {
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
         decoration: BoxDecoration(
-          color: selected ? _gold.withOpacity(0.18) : Colors.white.withOpacity(0.05),
+          color: selected
+              ? _gold.withOpacity(0.18)
+              : Colors.white.withOpacity(0.05),
           borderRadius: BorderRadius.circular(999),
           border: Border.all(
-            color: selected ? _gold.withOpacity(0.6) : Colors.white.withOpacity(0.12),
+            color: selected
+                ? _gold.withOpacity(0.6)
+                : Colors.white.withOpacity(0.12),
           ),
         ),
         child: Text(

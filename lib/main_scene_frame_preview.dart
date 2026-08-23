@@ -48,10 +48,7 @@ const List<NodeBlock> _sampleBlocks = [
     type: NodeBlockType.paragraph,
     text: '문을 열자 차가운 바람이 얼굴을 스쳤다. 복도 끝에서 희미한 불빛이 흔들리고 있었다.',
   ),
-  NodeBlock(
-    type: NodeBlockType.beat,
-    text: '— 그때, 등 뒤에서 발소리가 들렸다.',
-  ),
+  NodeBlock(type: NodeBlockType.beat, text: '— 그때, 등 뒤에서 발소리가 들렸다.'),
   NodeBlock(
     type: NodeBlockType.paragraph,
     text: '돌아볼 용기가 나지 않았지만, 여기서 멈춰 있을 수도 없었다. 한 걸음, 또 한 걸음.',
@@ -82,15 +79,22 @@ class _ScenePreviewPageState extends State<_ScenePreviewPage> {
     return Scaffold(
       body: SceneFrame(
         key: const ValueKey('preview-node-1'),
+        packId: 'preview-pack',
+        narrationNodeIds: const ['preview-node-1'],
         blocks: _sampleBlocks,
         backgroundImageUrl: null,
-        ttsAllowed: true,
         actionAreaBuilder: (context) => Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            _PreviewChoiceButton(label: '조용히 다가간다', onTap: () => _showSnack(context, '조용히 다가간다')),
+            _PreviewChoiceButton(
+              label: '조용히 다가간다',
+              onTap: () => _showSnack(context, '조용히 다가간다'),
+            ),
             const SizedBox(height: 10),
-            _PreviewChoiceButton(label: '큰 소리로 외친다', onTap: () => _showSnack(context, '큰 소리로 외친다')),
+            _PreviewChoiceButton(
+              label: '큰 소리로 외친다',
+              onTap: () => _showSnack(context, '큰 소리로 외친다'),
+            ),
           ],
         ),
       ),
@@ -98,7 +102,9 @@ class _ScenePreviewPageState extends State<_ScenePreviewPage> {
   }
 
   void _showSnack(BuildContext context, String label) {
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('선택: $label')));
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(SnackBar(content: Text('선택: $label')));
   }
 }
 
@@ -115,7 +121,9 @@ class _PreviewChoiceButton extends StatelessWidget {
       height: 52,
       child: DecoratedBox(
         decoration: BoxDecoration(
-          gradient: const LinearGradient(colors: [Color(0xFFFF6B4A), Color(0xFFFFB648)]),
+          gradient: const LinearGradient(
+            colors: [Color(0xFFFF6B4A), Color(0xFFFFB648)],
+          ),
           borderRadius: BorderRadius.circular(14),
         ),
         child: Material(
@@ -124,7 +132,14 @@ class _PreviewChoiceButton extends StatelessWidget {
             borderRadius: BorderRadius.circular(14),
             onTap: onTap,
             child: Center(
-              child: Text(label, style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w800, color: Colors.white)),
+              child: Text(
+                label,
+                style: const TextStyle(
+                  fontSize: 15,
+                  fontWeight: FontWeight.w800,
+                  color: Colors.white,
+                ),
+              ),
             ),
           ),
         ),

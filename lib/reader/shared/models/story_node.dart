@@ -1,4 +1,3 @@
-import 'bgm_override.dart';
 import 'choice.dart';
 import 'node_block.dart';
 import 'node_effects.dart';
@@ -23,10 +22,6 @@ class StoryNode {
   /// lib/core/story/background_image_inheritance.dart).
   final bool backgroundAppliesForward;
 
-  /// 이 노드에서만 storyPack.ambientBgm 대신 재생할 트랙. null이면 팩의
-  /// 기본 ambientBgm을 그대로 이어서 쓴다.
-  final BgmOverride? bgmOverride;
-
   /// 연출 효과(암전/화면 흔들림/효과음/진동) — SceneFrame이 타이핑 완료
   /// 시점에 재생한다. sfx.sfxId는 URL이 아니라 sfxLibrary/{sfxId} 참조라,
   /// [backgroundImage]와 같은 이유로 데이터 레이어(StoryReaderRepository)가
@@ -48,7 +43,6 @@ class StoryNode {
     required this.order,
     this.backgroundImage,
     this.backgroundAppliesForward = true,
-    this.bgmOverride,
     this.effects = const NodeEffects(),
     required this.blocks,
     this.choices,
@@ -56,7 +50,6 @@ class StoryNode {
   });
 
   factory StoryNode.fromFirestore(String id, Map<String, dynamic> json) {
-    final bgmOverrideJson = json['bgmOverride'] as Map<String, dynamic>?;
     final choicesJson = json['choices'] as List<dynamic>?;
 
     return StoryNode(
@@ -65,9 +58,6 @@ class StoryNode {
       backgroundImage: json['backgroundImage'] as String?,
       backgroundAppliesForward:
           json['backgroundAppliesForward'] as bool? ?? true,
-      bgmOverride: bgmOverrideJson != null
-          ? BgmOverride.fromJson(bgmOverrideJson)
-          : null,
       effects: NodeEffects.fromJson(json['effects'] as Map<String, dynamic>?),
       blocks:
           (json['blocks'] as List<dynamic>?)
@@ -85,7 +75,6 @@ class StoryNode {
     'order': order,
     'backgroundImage': backgroundImage,
     'backgroundAppliesForward': backgroundAppliesForward,
-    'bgmOverride': bgmOverride?.toJson(),
     'blocks': blocks.map((b) => b.toJson()).toList(),
     'choices': choices?.map((c) => c.toJson()).toList(),
     'nextNodeId': nextNodeId,
