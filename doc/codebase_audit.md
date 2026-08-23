@@ -5,6 +5,11 @@
 
 각 항목은 심각도 순으로 정렬돼 있다(파일 위치 순서가 아니다).
 
+> **2026-08-24 갱신** — Critical 3건(#1/#2/#3)에 대한 서버 측 수정이
+> 들어갔다. 각 항목 제목에 `[해결됨]` / `[부분 해결]` 표시를 달고, 무엇이
+> 닫혔고 무엇이 남았는지 항목 안에 덧붙였다. **기록 보존을 위해 원래 내용은
+> 지우지 않았다.** 새로 발견된 항목은 맨 아래 "2026-08-24 추가 발견"에 있다.
+
 > **firestore.rules 관련 주의**: CLAUDE.md에 적힌 대로, 저장소의
 > `firestore.rules`는 **실제 배포된 규칙과 이미 어긋나 있다**(콘솔에서 손으로
 > 관리 중). 아래 규칙 관련 지적은 전부 *저장소 파일 기준*이다 — 손대기 전에
@@ -17,7 +22,19 @@
 
 ### 🔴 Critical
 
-#### 1. 유료 팩 소유권(`ownedPackIds`)을 클라이언트가 직접 쓸 수 있다
+#### 1. 유료 팩 소유권(`ownedPackIds`)을 클라이언트가 직접 쓸 수 있다 — ✅ **[해결됨 2026-08-24]**
+
+> **해결**: `firestore.rules`의 `users/{userId}/save/{saveDocId}`를
+> `allow read, write` 하나에서 read/create/update/delete 네 갈래로 쪼개고,
+> update는 `affectedKeys().hasAny(['ownedPackIds'])`가 거짓일 때만,
+> create는 `ownedPackIds`가 빈 배열로 도착할 때만 허용한다. delete는 금지.
+> 나머지 게임 상태 저장은 그대로 동작한다(전체 `.set()`이라도 값이 같으면
+> diff에 안 잡힌다). `purchasePack`/`purchaseBundle`은 Admin SDK로 쓰므로
+> 영향 없음 — 코드에서 확인함.
+> 부작용: 로컬 상태가 서버보다 뒤처진 채 저장을 시도하면 이제 거부된다
+> (예전엔 조용히 구매를 되돌렸다). `CloudSyncController`가 저장 실패를
+> `debugPrint`로만 삼키므로 사용자에게 표시가 없다 — 아래 신규 항목 #16.
+
 
 - **위치**: `firestore.rules:82-84`, `lib/core/state/game_state.dart:93`
   (`ownsPack`), `functions/src/index.ts:391` (`purchasePack`)
@@ -46,7 +63,39 @@
   조건을 건다(`diff().affectedKeys()` 패턴, `firestore.rules:354`에 이미 있는
   방식).
 
-#### 2. 모든 노드 본문이 로그인만 하면 읽힌다 — 페이월이 클라이언트 전용
+#### 2. 모든 노드 본문이 로그인만 하면 읽힌다 — 페이월이 클라이언트 전용 — 🟡 **[부분 해결 2026-08-24]**
+
+> **닫힌 것**: 한 번도 발행된 적 없는 **순수 초안**(`status == 'draft'`)이
+> 독자에게 새던 경로. 직접 접근(`/storyPacks/{packId}/nodes/{nodeId}`)과
+> collection-group(`{path=**}/nodes`) **양쪽** 모두 이제 작가 본인/admin이
+> 아니면 `status == 'published'` 문서만 읽는다. 리더의 두 쿼리가 이미
+> `status`를 제약하고 있어 그대로 통과하고, admin의 `pendingAction` 쿼리는
+> `isAdmin()` 갈래로 유지된다(author까지 열지 않았다 — 남의 팩 초안을
+> collectionGroup으로 훑을 수 있게 되므로).
+>
+> **여전히 열려 있는 것 (두 가지, 구조적)**:
+> 1. **유료 팩의 발행 본문.** 홈 탭의
+>    `StoryPackRepository._fetchPublishedNodeCounts()`가 모든 팩의 발행 노드를
+>    collectionGroup으로 긁어 개수를 센다(`publishedNodeCount`가 `storyPacks`
+>    문서에 비정규화돼 있지 않아서). 그래서 `{path=**}/nodes`는 구매 여부와
+>    무관하게 열려 있어야 하고, `{path=**}`는 `packId`를 캡처할 수 없어
+>    `isPackFree`/`readerOwnsPack`을 애초에 걸 수 없다.
+>    **닫는 법**(클라이언트 변경 필요, 별도 작업):
+>    (1) 노드 쓰기 트리거 CF로 `storyPacks.publishedNodeCount` 유지 + 기존 팩
+>    백필 → (2) `_fetchPublishedNodeCounts()` 제거하고 그 필드를 읽게 변경 →
+>    (3) `{path=**}/nodes`를 `isAdmin()`으로 좁힘 → (4) 미리보기는 승인 시점에
+>    `previewEligible` 플래그를 찍고 리더가 2단계로(미리보기분 → 구매 후 전체)
+>    나눠 읽게 함.
+> 2. **이미 발행된 노드를 수정 중인 미승인 초안.** `saveNode()`가 문서 전체를
+>    `.set()`하므로 초안이 같은 문서 top-level에 들어가는데 `status`는
+>    `published`로 남는다. Firestore 규칙은 문서 단위 전부-아니면-전무라 필드
+>    단위 투영이 불가능하다 — draft/live를 별도 문서로 쪼개야 진짜로 닫힌다.
+>
+> **`visitedNodeCount` 초기화로 무제한 미리보기**: 규칙에서는 손대지 않았다.
+> `resetPackProgress()`가 "처음부터" 기능에서 정당하게 이 값을 0으로 만들기
+> 때문에 단조 증가 제약(옵션 b)은 그 기능을 깨뜨린다. 대신 **서버가 판정을
+> 내리는 곳**(TTS, #3)에서는 이 값을 아예 안 쓰도록 했다.
+
 
 - **위치**: `firestore.rules:374` (`match /nodes/{nodeId}`),
   `firestore.rules:528-530` (collection group), `lib/reader/shared/paywall.dart`,
@@ -62,7 +111,24 @@
   헬퍼가 있고 리뷰/댓글에는 적용돼 있다. 노드 읽기에만 안 걸려 있다.
   (다만 #1을 먼저 고치지 않으면 이 헬퍼를 붙여도 우회된다.)
 
-#### 3. `synthesizeNodeTts`에 소유권 검사가 없다
+#### 3. `synthesizeNodeTts`에 소유권 검사가 없다 — ✅ **[해결됨 2026-08-24]**
+
+> **해결**: `canListenToNodeTts()` 헬퍼를 추가하고 Typecast 호출 **앞**에
+> 게이트를 걸었다(캐시 미스 때 비용이 실제로 발생하므로 자격 없는 호출이
+> 거기까지 내려오면 안 된다). 판정: 작가 본인/admin → 무료 팩 → 구매자
+> (`save/current.ownedPackIds`) → 작가가 정한 `order` 기준 하위 N개 미리보기.
+> 실패 시 `permission-denied`.
+>
+> 분기형 인터랙티브 스토리에는 단일 진행 순서가 없으므로 "앞 N개"를 **작가가
+> 정한 `order`**로 정의했다 — 이미 모든 노드에 있고 admin 사이드바 드래그
+> 정렬로 작가가 직접 정하는 값이라, 결과적으로 "어느 노드가 무료인가"를
+> 작가가 결정하게 된다. `liveSnapshot.order`를 보고(top-level은 미승인 초안의
+> 순서일 수 있다), 새 색인을 요구하지 않으려고 `status == 'published'`만
+> 걸러 온 뒤 메모리에서 정렬한다.
+>
+> **`readingProgress.visitedNodeCount`는 판정에 쓰지 않는다** — 사용자가 직접
+> 쓸 수 있는 값이라 초기화하면 무제한이 되기 때문이다.
+
 
 - **위치**: `functions/src/index.ts:1271-1387`
 - **문제**: `request.auth?.uid` 존재만 확인하고 끝이다. `packId`/`nodeId`를
@@ -262,6 +328,93 @@
 - **위치**: `firestore.rules:580-586`
 - `writerNotices` 블록 안에 중첩된 것처럼 들여쓰기돼 있지만 실제로는
   최상위 match다. 동작은 정상, 읽는 사람만 헷갈린다.
+
+---
+
+---
+
+### 2026-08-24 추가 발견
+
+Part 1(페이월 구멍 수정) + Part 2(문서화 패스) 작업 중 새로 나온 것들.
+**전부 고치지 않고 남겼다** — 문서화 패스에 동작 변경을 섞지 않기 위해서다.
+
+#### 16. 🔴 Storage 다운로드 토큰 URL이 보안 규칙을 우회한다 — 유료 콘텐츠 유출
+
+- **위치**: `functions/src/index.ts`의 `uploadAndGetDownloadUrl()`,
+  `lib/admin/data/admin_image_repository.dart`(및 sfx/bgm의 같은 패턴)
+- **문제**: 두 업로드 경로 모두 **다운로드 토큰 URL**을 만들어 Firestore
+  문서에 저장한다 — CF는 `firebaseStorageDownloadTokens` 메타데이터를 직접
+  심고, Flutter admin은 `ref.getDownloadURL()`을 쓴다. 이런 URL은
+  **Storage 보안 규칙을 통째로 우회한다**: 토큰을 아는 사람은 로그인조차
+  없이 파일을 받을 수 있다.
+- **왜 심각한가**: 표지 이미지가 공개인 건 정상이다. 그런데 **유료 팩의 노드
+  배경 이미지와 TTS 내레이션 오디오도 같은 방식으로 공개**다. 게다가 그 URL은
+  노드 문서 안에 들어 있으므로, 위 #2에 남아 있는 collection-group 구멍으로
+  노드를 읽을 수 있는 사람은 URL을 수집해 인증 없이 파일을 받을 수 있다 —
+  #2와 같은 급의 유료 콘텐츠 유출 경로가 하나 더 있다는 뜻이다.
+- **덤으로**: `uploadAndGetDownloadUrl()`의 주석은 "Storage 보안 규칙
+  (`request.auth != null`)만으로 읽기가 통제된다"고 적고 있는데 **사실과
+  다르다**. 이 잘못된 주석이 문제를 오래 안 보이게 했을 가능성이 높다.
+- **손볼 방향**: 토큰 URL 대신 수명이 짧은 signed URL을 요청 시점에 발급하는
+  Cloud Function 경유로 바꾼다(그리고 그 함수에 #3과 같은 소유권 게이트를 건다).
+
+#### 17. 🟠 `storage.rules` 파일이 저장소에 아예 없다
+
+- **위치**: 저장소 루트(없음), `firebase.json`(`storage` 항목 없음)
+- **문제**: Storage 규칙을 저장소에서 배포할 수도, diff를 볼 수도, 리뷰할 수도
+  없다 — 콘솔에서만 손으로 관리된다. `firestore.rules`가 이미 배포본과
+  어긋난 전례가 있는 프로젝트에서 같은 사고가 더 조용히 날 수 있는 구조다.
+  (#16 때문에 지금은 Storage 규칙 자체의 실효성도 낮다.)
+
+#### 18. 🟠 `images` / `sfxLibrary` 카테고리 변경 권한이 규칙에 없다
+
+- **위치**: `firestore.rules`의 `images`/`sfxLibrary` match vs
+  `AdminImageRepository.updateCategory()` / `AdminSfxRepository.updateCategory()`
+- **문제**: 두 저장소 모두 `.update({'category': ...})`를 호출하는데, 규칙에는
+  `create, delete`만 있고 `update`가 없다. 둘 중 하나다 — (a) 배포본에는
+  `update`가 있고 이 파일만 뒤처졌거나, (b) 두 라이브러리의 "카테고리 변경"이
+  프로덕션에서 permission-denied로 실패하고 있다. **콘솔 확인 필요.**
+
+#### 19. 🟡 `rejectNode`가 이미 발행된 노드를 살아 있는 이야기에서 떨어뜨린다
+
+- **위치**: `lib/admin/data/admin_story_repository.dart`의 `rejectNode()`
+- **문제**: 수정 요청이 반려되면 `status: 'draft'`로 되돌린다 — 이미 연재
+  중이던 노드도 마찬가지다(`liveSnapshot`은 보존한다). 그런데 리더의
+  `fetchPublishedNodes()`는 `status == 'published'`만 읽으므로, **그 노드는
+  독자에게 보이던 이야기에서 사라진다**. 작가의 수정을 반려했을 뿐인데
+  기존에 승인된 화가 통째로 빠지는 건 의도된 동작으로 보기 어렵다.
+- **주의**: 이번 Part 1의 새 읽기 규칙과는 무관하다 — 규칙 이전부터 그랬다.
+
+#### 20. 🟡 `previewNodeLimit`이 어디에도 저장되지 않는다
+
+- **위치**: `lib/features/catalog/models/story_pack.dart`(기본값 `3`),
+  `story_pack_detail_page.dart:434`, 두 리더의 페이월 조건
+- **문제**: 팩 상세는 "구매 전 N개 노드까지 무료로 미리볼 수 있어요"라고
+  안내하고 리더가 이 값으로 페이월을 거는데, 이 값은 Firestore 어디에도
+  저장되지 않고 admin에서 편집할 수도 없다 — Dart 기본값 `3`이 사실상 유일한
+  값이다. 작가/팩마다 다르게 정할 수 있어야 하는 값이라면 `liveMetadata`에
+  넣고 편집 UI를 붙여야 한다.
+- **참고**: `canListenToNodeTts()`는 이미 `liveMetadata.previewNodeLimit`을
+  먼저 읽고 없으면 3으로 떨어지게 해 뒀다 — 나중에 필드가 생겨도 그대로 동작한다.
+
+#### 21. 🟡 세이브 저장 실패가 사용자에게 안 보인다 (#1의 부작용으로 노출됨)
+
+- **위치**: `lib/core/state/cloud_sync_controller.dart`의 `_onGameStateChanged`
+- **문제**: `catchError`로 `debugPrint`만 하고 끝난다. #1을 고치면서
+  "로컬이 서버보다 뒤처졌을 때 저장이 거부되는" 경로가 새로 생겼는데, 그때
+  사용자는 아무 것도 못 본다(예전엔 조용히 구매가 되돌아갔으므로 거부가 더
+  안전하긴 하다). 스트림 에러를 삼키지 않는다는 이 프로젝트의 관례(#7)와
+  같은 문제다.
+
+#### 22. 🟢 안 쓰이는 복합 색인 하나
+
+- **위치**: `firestore.indexes.json`의 `comments` (isDeleted, createdAt↓)
+- **문제**: 댓글 쿼리 두 개(`fetchPage`/`fetchReplies`)는 둘 다
+  `parentCommentId`까지 함께 걸러 3필드 색인을 쓴다. 그리고
+  `(isDeleted, createdAt)`은 `(isDeleted, parentCommentId, createdAt)`의
+  접두(prefix)가 아니라 그쪽으로 대체되지도 않는다 — 정말로 아무도 안 쓴다.
+  답글을 구분하지 않던 예전 쿼리의 잔재로 보인다. **삭제 후보**(지우지 않음) —
+  콘솔의 색인 사용 통계로 한 번 확인한 뒤 지울 것.
 
 ---
 

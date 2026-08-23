@@ -8,6 +8,55 @@ import {getStorage} from "firebase-admin/storage";
 import {getAuth} from "firebase-admin/auth";
 import {createHash, randomUUID} from "crypto";
 
+// =============================================================================
+// ⚠️ 이 파일의 모든 함수는 firestore.rules를 **우회한다**.
+// =============================================================================
+//
+// Admin SDK(getFirestore()/getAuth()/getStorage())로 실행되므로 보안 규칙
+// 검사를 전혀 받지 않는다. 즉 "규칙에서 막아 뒀으니 안전하다"는 여기서는
+// 성립하지 않는다 — **함수마다 자기 인가를 직접 해야 한다.**
+//
+// synthesizeNodeTts가 정확히 이 함정에 빠졌던 함수다: 로그인 여부만 확인하고
+// 구매 여부를 확인하지 않아서, 구매하지 않은 유료 팩의 내레이션 오디오를
+// 누구나 받아갈 수 있었고 캐시 미스 때는 유료 Typecast 호출까지 발생했다.
+// 새 onCall 함수를 추가할 때는 아래 표에 한 줄을 추가하면서 "이 함수는 누가
+// 부를 수 있는가"를 명시적으로 답하고 넘어갈 것.
+//
+// 인가 요약 — 호출자 검증은 전부 서버가 users/{uid}.role을 직접 다시 읽어서
+// 한다(isCallerAdmin/isCallerAuthorOrAdmin). 클라이언트가 보낸 role 주장은
+// 어떤 경우에도 신뢰하지 않는다.
+//
+//  함수                              | 종류      | 호출 자격
+//  ----------------------------------|-----------|--------------------------
+//  onReviewWritten                   | 트리거    | (사용자 호출 불가)
+//  onCommentLikeWritten              | 트리거    | (사용자 호출 불가)
+//  onNodeApprovedGenerateTts         | 트리거    | (사용자 호출 불가)
+//  computeDailyRankingSnapshot       | 예약      | (사용자 호출 불가)
+//  computeDailyRevenueSnapshot       | 예약      | (사용자 호출 불가)
+//  refreshTypecastVoiceCacheScheduled| 예약      | (사용자 호출 불가)
+//  kakaoSignIn                       | onCall    | 비로그인 허용(로그인 자체)
+//  confirmCoinCharge                 | onCall    | 로그인 + 본인 결제만
+//  purchasePack                      | onCall    | 로그인
+//  purchaseBundle                    | onCall    | 로그인
+//  synthesizeNodeTts                 | onCall    | 로그인 + 구매/무료/미리보기
+//  previewNodeTts                    | onCall    | author 또는 admin
+//  refreshTypecastVoices             | onCall    | author 또는 admin
+//  refundCoinCharge                  | onCall    | admin
+//  setAuthorAccountDisabled          | onCall    | admin
+//
+// 시크릿(defineSecret) 의존:
+//  TOSS_SECRET_KEY    → confirmCoinCharge, refundCoinCharge
+//  TYPECAST_API_KEY   → synthesizeNodeTts, previewNodeTts,
+//                       onNodeApprovedGenerateTts,
+//                       refreshTypecastVoiceCacheScheduled, refreshTypecastVoices
+//  KAKAO_REST_API_KEY / KAKAO_CLIENT_SECRET → kakaoSignIn
+//
+// 규칙을 우회해서 쓰기 때문에 **클라이언트가 절대 못 쓰는 필드**를 여기서만
+// 채운다: wallet.balance, save.ownedPackIds, storyPacks.avgRating/reviewCount,
+// comments.likeCount, nodes.ttsAudioUrl 계열, users.accountDisabled,
+// rankingSnapshots/revenueSnapshots/ttsVoiceCache 전체.
+// =============================================================================
+
 initializeApp();
 const db = getFirestore();
 
@@ -28,6 +77,96 @@ async function isCallerAuthorOrAdmin(uid: string): Promise<boolean> {
   const snap = await db.collection("users").doc(uid).get();
   const role = snap.data()?.role;
   return role === "author" || role === "admin";
+}
+
+/**
+ * 이 호출자가 이 노드의 내레이션 오디오를 받을 자격이 있는가 —
+ * synthesizeNodeTts의 인가 게이트다.
+ *
+ * synthesizeNodeTts는 role 게이트가 맞지 않는 함수다(독자가 직접 부른다).
+ * 대신 **구매 여부**를 서버가 직접 확인한다 — 예전엔 로그인 여부만 보고
+ * 통과시켜서, 구매하지 않은 유료 팩의 내레이션을 누구나 받아갈 수 있었고
+ * 캐시 미스 때는 유료 Typecast 호출까지 발생했다.
+ *
+ * 판정 순서(하나라도 참이면 허용):
+ *  1. 팩 작가 본인 / admin — 자기 작품, 또는 운영 권한.
+ *  2. 무료 팩 — computeEffectivePrice(liveMetadata) <= 0.
+ *  3. 구매자 — users/{uid}/save/current.ownedPackIds에 packId가 있다.
+ *  4. 무료 미리보기 분량 안의 노드.
+ *
+ * 4번의 "미리보기 분량"은 **작가가 정한 order 기준 하위 N개**로 정의한다.
+ * 클라이언트가 들고 있는 readingProgress.visitedNodeCount는 사용자가 직접
+ * 쓸 수 있는 값이라(초기화하면 무제한 미리보기가 된다) 인가 판정에 절대
+ * 쓰지 않는다. order는 이미 모든 노드에 있고 admin 사이드바의 드래그
+ * 정렬로 작가가 직접 정하는 값이라, 분기형 인터랙티브 스토리처럼 단일
+ * 진행 순서가 없는 경우에도 "어느 노드가 무료인가"를 작가가 결정한다는
+ * 뜻이 된다.
+ *
+ * 리더가 실제로 보는 것과 어긋나지 않도록 top-level order가 아니라
+ * liveSnapshot.order를 본다(top-level은 아직 승인 안 된 초안의 순서일 수
+ * 있다). 정렬용 색인을 새로 요구하지 않으려고 status == 'published'만
+ * 걸러 온 뒤 메모리에서 정렬한다 — StoryReaderRepository.
+ * fetchPublishedNodes()가 하는 것과 같은 방식이다.
+ */
+async function canListenToNodeTts(opts: {
+  uid: string;
+  packId: string;
+  packData: Record<string, unknown> | undefined;
+  nodeId: string;
+  nodeOrder: number | null;
+}): Promise<boolean> {
+  const {uid, packId, packData, nodeId, nodeOrder} = opts;
+
+  // 1. 작가 본인 / admin.
+  if (packData?.authorId === uid) return true;
+  if (await isCallerAdmin(uid)) return true;
+
+  const liveMetadata = packData?.liveMetadata as
+    | Record<string, unknown>
+    | undefined;
+
+  // 2. 무료 팩.
+  if (computeEffectivePrice(liveMetadata) <= 0) return true;
+
+  // 3. 구매자 — firestore.rules의 readerOwnsPack()과 같은 원천을 본다.
+  const saveSnap = await db.doc(`users/${uid}/save/current`).get();
+  const ownedPackIds =
+    (saveSnap.data()?.ownedPackIds as string[] | undefined) ?? [];
+  if (ownedPackIds.includes(packId)) return true;
+
+  // 4. 무료 미리보기 분량.
+  if (nodeOrder === null) return false;
+  // previewNodeLimit은 아직 어디에도 저장되지 않는다 — Flutter 쪽
+  // StoryPack.previewNodeLimit의 기본값 3이 사실상의 값이다. 나중에 작가가
+  // 팩마다 정할 수 있게 되면 liveMetadata에 들어올 것을 대비해 먼저 읽어 본다.
+  const previewLimit =
+    typeof liveMetadata?.previewNodeLimit === "number" ?
+      liveMetadata.previewNodeLimit :
+      3;
+  if (previewLimit <= 0) return false;
+
+  const publishedSnap = await db
+    .collection("storyPacks")
+    .doc(packId)
+    .collection("nodes")
+    .where("status", "==", "published")
+    .get();
+
+  const ordered = publishedSnap.docs
+    .map((doc) => {
+      const live = doc.data().liveSnapshot as
+        | Record<string, unknown>
+        | undefined;
+      return {
+        id: doc.id,
+        order: typeof live?.order === "number" ? live.order : null,
+      };
+    })
+    .filter((n): n is {id: string; order: number} => n.order !== null)
+    .sort((a, b) => a.order - b.order)
+    .slice(0, previewLimit);
+
+  return ordered.some((n) => n.id === nodeId);
 }
 
 /** users/{uid}.displayName/email — 거래 문서에 그대로 박아 두기 위한 조회. */
@@ -1267,6 +1406,13 @@ async function synthesizeOrReuseTts(params: {
  * 항상 **liveSnapshot**(마지막으로 승인된 콘텐츠)만 읽는다 — 아직 승인 안
  * 된 draft 본문으로 내레이션을 만들면 독자가 실제로 보는 글과 다른 오디오가
  * 나온다(요청 사양: "TTS should always match what readers actually see").
+ *
+ * 호출 자격: 로그인 + (작가 본인/admin | 무료 팩 | 구매자 | 무료 미리보기
+ * 분량 안의 노드). 판정은 전부 canListenToNodeTts()가 서버에서 하고,
+ * 클라이언트가 보내는 값은 packId/nodeId 두 개뿐이다 — readingProgress처럼
+ * 사용자가 직접 쓸 수 있는 값은 인가에 절대 쓰지 않는다.
+ *
+ * 시크릿: TYPECAST_API_KEY.
  */
 export const synthesizeNodeTts = onCall(
   {secrets: [typecastApiKey]},
@@ -1312,6 +1458,28 @@ export const synthesizeNodeTts = onCall(
       throw new HttpsError(
         "failed-precondition",
         "아직 발행되지 않은 노드는 내레이션을 만들 수 없어요."
+      );
+    }
+
+    // 인가 — 로그인 여부만으로는 부족하다. 구매/무료/미리보기 분량을 서버가
+    // 직접 확인한다(canListenToNodeTts 문서 참고). 이 검사가 Typecast 호출
+    // **앞**에 있어야 하는 이유: 캐시 미스일 때 유료 API 비용이 실제로
+    // 발생하므로, 자격 없는 호출이 여기까지 내려오면 안 된다.
+    const allowed = await canListenToNodeTts({
+      uid,
+      packId,
+      packData: packSnap.data(),
+      nodeId,
+      nodeOrder:
+        typeof liveSnapshot.order === "number" ? liveSnapshot.order : null,
+    });
+    if (!allowed) {
+      console.warn(
+        `synthesizeNodeTts: 권한 없음 (uid=${uid}, packId=${packId}, nodeId=${nodeId}).`
+      );
+      throw new HttpsError(
+        "permission-denied",
+        "이 이야기를 먼저 구매해야 내레이션을 들을 수 있어요."
       );
     }
 

@@ -17,6 +17,92 @@ Firestore 문서 모양은 같아도 서로 import하지 않는 별개 Dart 클�
 옮겨 적지 않고 `firestore.rules`를 직접 열어 보라고 안내한다). 필드/규칙이 바뀔 때
 이 문서도 같이 고치되, 둘이 어긋났다면 항상 코드와 `firestore.rules`가 맞다.
 
+---
+
+## 목차
+
+문서 안의 절 순서는 이 컬렉션들이 하나씩 추가돼 온 시간 순서라 주제별로
+흩어져 있다. 아래 목차는 **주제별로 묶어** 다시 정렬한 것이다 — 실제 본문
+위치로 바로 이동할 수 있다. (절을 물리적으로 옮기지 않은 이유는 맨 아래
+"이 문서를 고칠 때" 참고.)
+
+**스토리 콘텐츠**
+- [storyPacks/{packId}](#storypackspackid) — 작품 한 편 · [effectivePrice](#effectiveprice--지금-실제로-적용되는-가격)
+- [storyPacks/{packId}/nodes/{nodeId}](#storypackspackidnodesnodeid) — 노드(본문 한 장면)
+  · [effects](#effects-노드-연출-효과) · [bgm](#bgm--배경음악-전환-상속트랙-선택무음-전환) · [tts](#tts--typecast-내레이션)
+- [storyPacks/{packId}/reviews/{uid}](#storypackspackidreviewsuid) — 별점 리뷰
+- [storyPacks/{packId}/comments/{commentId}](#storypackspackidcommentscommentid) — 댓글
+  · [likes/{uid}](#storypackspackidcommentscommentidlikesuid)
+- [승인 대기함 조회 (collection group)](#승인-대기함-조회-collection-group)
+
+**공유 미디어 라이브러리**
+- [images/{imageId}](#imagesimageid) · [sfxLibrary/{sfxId}](#sfxlibrarysfxid) · [bgmLibrary/{bgmId}](#bgmlibrarybgmid)
+
+**사용자별 문서**
+- [users/{uid}](#usersuid--프로필역할-문서) — 프로필/역할
+- [users/{uid}/save/current](#usersuidsavecurrent--gamestate-세이브-전체-schema-v7) — 게임 세이브(⚠️ `ownedPackIds`)
+- [users/{uid}/readingProgress/{packId}](#usersuidreadingprogresspackid--팩별-읽기-진행-상황)
+- [users/{uid}/readerPrefs/settings](#usersuidreaderprefssettings--리더-표시재생-환경설정)
+- [users/{uid}/wallet/current](#usersuidwalletcurrent--코인-지갑) · [transactions/{txId}](#usersuidwalletcurrenttransactionstxid)
+
+**운영 · 관리 데이터**
+- [authorApplications/{uid}](#authorapplicationsuid--작가-신청서) · [회원 관리](#회원-관리-user_management_pagedart)
+- [genres/{genreId}](#genresgenreid--장르-태그-관리-데이터-dart-하드코딩-아님)
+- [homeBanners/{bannerId}](#homebannersbannerid--홈-화면-히어로-배너) · [homeEvents/{eventId}](#homeeventseventid--홈-탭-진입-이벤트-팝업)
+- [pointPackages/{packageId}](#pointpackagespackageid--충전-화면-코인-상품) · [packBundles/{bundleId}](#packbundlesbundleid--스토리팩-여러-개를-묶은-코인-할인-번들)
+- [notices/{noticeId}](#noticesnoticeid--앱-전체-공지사항-하단-탭-공지사항) · [writerNotices/{noticeId}](#writernoticesnoticeid)
+- [activityLog/{autoId}](#activitylogautoid--관리자-활동-타임라인)
+- [revenueSnapshots/{date}](#revenuesnapshotsdate--일별-매출코인-지급사용환불-집계-yyyy-mm-dd-kst)
+
+**Cloud Functions · 인프라**
+- [Cloud Functions 인가 요약](#cloud-functions-인가-요약) ← 새 함수를 추가할 때 반드시 볼 것
+- [카카오 로그인](#카카오-로그인-kakaosignin-cloud-function) · [계정 정지](#계정-정지-setauthoraccountdisabled-cloud-function) · [결제 환불](#결제-환불-refundcoincharge-cloud-function)
+- [복합 색인](#복합-색인이-필요한-쿼리-firestoreindexesjson) · [보안 규칙](#보안-규칙--원본은-저장소-루트의-firestorerules)
+- [Storage 규칙](#storage-규칙--이-저장소에-파일이-없다)
+
+**읽기 전에 알아둘 것**
+- [옛 문서에 없는 필드 (레거시 문서 주의)](#옛-문서에-없는-필드-레거시-문서-주의) ← 쿼리/규칙 짤 때 필수
+- [이 문서와 코드가 어긋나는 지점](#이-문서와-코드가-어긋나는-지점)
+- [이 문서를 고칠 때](#이-문서를-고칠-때)
+
+---
+
+## 옛 문서에 없는 필드 (레거시 문서 주의)
+
+아래 필드들은 **프로젝트 중간에 추가됐고 기존 문서에 백필하지 않았다.**
+그래서 오래된 문서에는 그 필드가 **아예 존재하지 않는다** — null이 아니라
+키 자체가 없다. 이게 실무에서 세 가지로 터진다:
+
+1. **보안 규칙** — `resource.data.그필드`처럼 점(`.`) 표기로 읽으면 "속성을
+   찾을 수 없음" 에러로 **요청 전체**가 permission-denied가 된다. 반드시
+   `resource.data.get('그필드', 기본값)`으로 읽는다. (이 프로젝트에서만 세 번
+   장애를 냈다 — 아래 "보안 규칙" 절 참고.)
+2. **쿼리** — `where('그필드', isEqualTo: ...)`는 필드가 없는 문서를 **결과에서
+   빼 버린다**. "false인 문서"를 찾으려던 쿼리가 "필드가 없는 옛 문서"를 조용히
+   누락한다. 정렬(`orderBy`)도 마찬가지로 그 필드가 없는 문서를 전부 뺀다.
+3. **Dart 모델** — 전부 nullable-safe하게 읽고 있다(아래 표의 "모델 기본값").
+   이쪽은 현재 문제없다.
+
+| 필드 | 어디에 | 언제 추가 | 없을 때 모델 기본값 |
+|---|---|---|---|
+| `createdAt` | `storyPacks/{packId}` | 팩 목록 정렬/가입일 표시가 생기면서 | `null` (`AdminStoryPack.createdAt`) |
+| `createdAt` | `users/{uid}` | "회원 관리" 화면이 생기면서 | `null` (`UserProfile.createdAt`) |
+| `accountDisabled` | `users/{uid}` | `setAuthorAccountDisabled`가 생기면서 | `false` (`UserProfile.accountDisabled`) |
+| `suspended` | `storyPacks/{packId}` | 강제 내리기가 생기면서 | `false` (`AdminStoryPack.suspended`) |
+| `suspendedReason` / `suspendedAt` / `suspendedBy` | `storyPacks/{packId}` | 위와 같이 | `null` |
+| `authorId` / `type` / `genres` | `storyPacks/{packId}` | 초창기 팩(예: 좀비 이야기 팩)에는 없다 | `null` / 기본값 |
+| `liveMetadata`의 `price` / `salePrice` / `discountStartAt` / `discountEndAt` | `storyPacks/{packId}` | 유료화가 붙으면서 | `0` / `null` |
+| `liveMetadata`의 `defaultBgmId` / `defaultTtsVoiceId` | `storyPacks/{packId}` | BGM/TTS가 붙으면서 | `null` |
+| `category` | `images/{imageId}` | 이미지 분류가 생기면서 | `기타` |
+| `parentCommentId` / `likeCount` | `comments/{commentId}` | 답글/좋아요가 붙으면서 | `null` / `0` |
+| `ttsAudioUrl` 계열 4종 | `nodes/{nodeId}` | TTS가 붙으면서 | `null` |
+
+⚠️ 실제로 겪은 사례: `watchVisiblePacks()`가 `suspended != true`를 **클라이언트
+필터**로 처리하는 이유가 바로 이것이다 — `where('suspended', isEqualTo: false)`로
+서버에서 걸렀다면 그 필드가 없는 옛 팩이 전부 카탈로그에서 사라졌을 것이다.
+
+---
+
 ## storyPacks/{packId}
 
 ```
@@ -260,6 +346,34 @@ item 분기) 구조는 아래 모양으로 완전히 대체됐다 — 어떤 현
 rejectNode 규칙에서 실제로 오래 방치된 버그였다(옛 필드명을 점 표기로 비교하다가
 "속성을 찾을 수 없음" 에러로 모든 노드 승인이 permission-denied로 막혔다) —
 아래 "보안 규칙" 절 참고.
+
+### 읽기 권한 — draft와 live가 한 문서에 같이 있다
+
+이 문서는 **"지금 편집 중"(top-level 필드)과 "마지막으로 승인됨"
+(`liveSnapshot`)을 동시에** 들고 있다. 리더는 언제나 `liveSnapshot`만 읽는다
+(`StoryReaderRepository`). 읽기 규칙은 이렇게 갈린다:
+
+- 팩 작가 본인 / admin → 무엇이든(초안 포함). 노드 편집기와 승인 화면이
+  top-level draft를 봐야 한다.
+- 그 외 로그인 사용자 → **`status == 'published'`인 문서만.**
+
+이 조건은 리더 쿼리 `.where('status','==','published')`와 **글자 그대로 짝이
+맞아야 한다** — Firestore는 규칙을 필터로 쓰지 않고(rules are not filters)
+"쿼리 제약만으로 규칙이 만족됨"이 증명돼야 쿼리를 허용하기 때문이다. 한쪽만
+고치면 리더가 통째로 깨진다.
+
+⚠️ 이 규칙이 **막지 못하는** 것 두 가지(둘 다 알려진 미해결 문제):
+
+1. **이미 발행된 노드를 수정 중인 미승인 초안.** `saveNode()`가 문서 전체를
+   `.set()`하므로 그 초안은 같은 문서의 top-level에 들어가는데 `status`는
+   `published`로 남는다. Firestore 규칙은 문서 단위 전부-아니면-전무라 필드
+   단위 투영이 불가능하다 — 진짜로 막으려면 draft와 live를 서로 다른 문서로
+   쪼개야 한다(스키마 변경).
+2. **유료 팩의 발행된 본문.** `{path=**}/nodes` collection-group 규칙은
+   `packId`를 캡처할 수 없어 소유권 조건을 걸 수 없고, 리더 홈 탭의
+   `_fetchPublishedNodeCounts()`가 모든 팩의 발행 노드를 훑어야 해서 열어 둘
+   수밖에 없다. 닫으려면 `publishedNodeCount`를 `storyPacks` 문서에 비정규화
+   해야 한다 — `firestore.rules`의 해당 주석과 `doc/codebase_audit.md` 참고.
 
 ```
 order: int                        // 선형 스토리의 챕터 순서. 배경 이미지 인계
@@ -958,11 +1072,37 @@ ownedPackIds: array<string>    // 소유한(구매/무료로 확보한) 스토�
 먼저 반영하고, 클라이언트(`paywall.dart`)는 성공 응답을 받은 뒤에만
 `GameState.markPackOwned()`로 로컬 상태를 맞춘다 — 그래야 그사이 다른 이유로
 `GameState`가 한 번 더 저장돼도(전체 문서 덮어쓰기) 서버가 방금 부여한
-소유권을 실수로 되돌리지 않는다. ⚠️ `firestore.rules`는 이 문서 전체를
-`allow read, write: if isSignedIn() && myUid() == userId`로 자유롭게 허용한다
-— `ownedPackIds`만 따로 잠그지 않으므로, 클라이언트가 직접 Firestore SDK로
-이 배열에 임의의 packId를 써넣는 것 자체는 규칙상 막혀 있지 않다(알려진 한계,
-아직 안 고침).
+소유권을 실수로 되돌리지 않는다.
+
+### `ownedPackIds` 보안 — 이 문서는 "혼합 문서"다
+
+이 문서의 나머지 필드(inventory/level/exp/hearts/...)는 클라이언트가 자유롭게
+써도 되는 게임 상태지만, **`ownedPackIds` 하나만은 "무엇을 돈 주고 샀는가"라는
+서버 권한 데이터**다. 그래서 `firestore.rules`는 문서 전체를 잠그는 대신
+(그러면 세이브 자체가 안 된다) 이 필드 하나만 잠근다:
+
+```
+allow create: ... && request.resource.data.get('ownedPackIds', []).size() == 0;
+allow update: ... && !request.resource.data.diff(resource.data)
+                        .affectedKeys().hasAny(['ownedPackIds']);
+allow delete: if false;
+```
+
+즉 **클라이언트의 쓰기는 이 필드의 값을 바꾸지 못한다**(같은 값을 다시 써
+넣는 건 diff에 안 잡히므로 통과한다 — 전체 `.set()` 방식이 그대로 동작하는
+이유). 값을 실제로 바꾸는 건 `purchasePack`/`purchaseBundle` Cloud Function이
+Admin SDK로 하는 `arrayUnion`뿐이고, 그건 규칙 자체를 우회한다.
+
+⚠️ 예전엔 이 match가 `allow read, write`였고, 그 상태에서는 아무 로그인
+계정이나 SDK로 이 배열에 packId를 써넣어 **모든 유료 팩을 공짜로 가질 수
+있었다**. 게다가 `firestore.rules`의 `readerOwnsPack()`이 바로 이 배열을 읽어
+리뷰/댓글 작성 자격까지 판정하므로, 규칙 자신이 사용자가 조작 가능한 값을
+신뢰하고 있었다. (`doc/codebase_audit.md` 2a-1)
+
+부작용 하나: 로컬 `GameState`가 서버보다 뒤처진 상태에서 저장을 시도하면
+(예: 다른 기기에서 방금 구매) 그 쓰기는 이제 **거부된다**. 예전 같으면 조용히
+구매를 되돌렸을 상황이라 거부가 더 안전하지만, `CloudSyncController`가 저장
+실패를 `debugPrint`로만 삼키므로 사용자에게는 아무 표시가 없다.
 
 ## users/{uid}/wallet/current — 코인 지갑
 
@@ -1650,6 +1790,40 @@ limit = 100})`(공용 메서드) 하나를 서로 다른 `kinds` 조합으로 �
 지금 코드베이스에서 여기 해당하는 쿼리들을 저장소 루트의 `firestore.indexes.json`에
 정의해 뒀다:
 
+아래 표가 `firestore.indexes.json`의 `indexes` 배열과 1:1로 대응한다 —
+**어떤 쿼리가 필요로 하는지**와 **그 쿼리를 던지는 화면**까지 같이 적는다.
+
+| 색인 (컬렉션 · 필드) | 필요한 쿼리 | 던지는 화면 |
+|---|---|---|
+| `genres` (active, sortOrder) | `GenreRepository.watchActiveGenres()` | 홈 탭 장르 행, 새 스토리팩 다이얼로그 |
+| `homeBanners` (active, sortOrder) | `HomeBannerRepository.watchActiveBanners()` | 홈 탭 히어로 배너 |
+| `homeEvents` (active, sortOrder) | `HomeEventRepository.watchActiveEvents()` | 홈 탭 진입 이벤트 팝업 |
+| `pointPackages` (active, platform, sortOrder) | `PointPackageRepository.watchWebPackages()` | 충전 화면 |
+| `packBundles` (active, sortOrder) | `PackBundleRepository.watchActiveBundles()` | 홈 탭 번들 카드 |
+| `notices` (active, createdAt↓) | `NoticeRepository.watchActiveNotices()` / `watchLatestNoticeAt()` | 공지사항 탭, 하단 탭 안 읽음 배지 |
+| `storyPacks` (authorId, title) | `AdminStoryRepository.watchPacksForAuthor()` | 작가 도구 팩 목록 |
+| `comments` (isDeleted, parentCommentId, createdAt↓) | `StoryPackCommentRepository.fetchPage()` | 팩 상세 댓글 |
+| `comments` (parentCommentId, isDeleted, createdAt↑) | `StoryPackCommentRepository.fetchReplies()` | 팩 상세 답글 |
+| `comments` (isDeleted, createdAt↓) | **없음 — 아래 ⚠️ 참고** | — |
+| `transactions` CG (type, createdAt↓) | `BillingRepository` 기본 조회 | admin 결제내역/코인사용내역 |
+| `transactions` CG (type, uid, createdAt↓) | 같은 화면의 uid 검색 | 〃 |
+| `transactions` CG (type, displayName, createdAt↓) | 같은 화면의 이름 검색 | 〃 |
+| `activityLog` (kind, createdAt↓) | `ActivityLogRepository.watchApprovalHistory()` | 승인 대기함/스토리팩 승인/작가 신청의 "처리 이력" |
+
+⚠️ **`comments` (isDeleted, createdAt↓)는 지금 어떤 쿼리도 쓰지 않는다** —
+삭제 후보다(지우지는 않았다). 댓글 쿼리 두 개는 둘 다 `parentCommentId`까지
+함께 거르므로 3필드 색인을 쓴다. 그리고 `(isDeleted, createdAt)`은
+`(isDeleted, parentCommentId, createdAt)`의 접두(prefix)가 아니라서 그쪽
+색인으로 대체되지도 않는다 — 즉 정말로 아무도 안 쓰는 색인이다. 답글을
+구분하지 않고 전체 댓글을 훑던 예전 쿼리의 잔재로 보인다. 지우기 전에
+콘솔에서 실제 사용량(색인 사용 통계)을 한 번 확인할 것.
+
+`reviews`는 색인이 필요 없다 — `StoryPackReviewRepository.fetchPage()`가 동등
+필터 없이 `orderBy('createdAt', descending: true)`만 쓰므로 Firestore 자동
+단일 필드 색인으로 충분하다.
+
+아래는 위 표의 항목 중 배경 설명이 필요한 것들이다:
+
 - `genres`: `GenreRepository.watchActiveGenres()` — `where('active', isEqualTo: true).orderBy('sortOrder')`
 - `packBundles`: `PackBundleRepository.watchActiveBundles()` — `where('active', isEqualTo: true).orderBy('sortOrder')`
   (genres/homeBanners/homeEvents/pointPackages와 같은 모양의 색인)
@@ -1680,11 +1854,19 @@ limit = 100})`(공용 메서드) 하나를 서로 다른 `kinds` 조합으로 �
   "처리 이력"이 전부 이 색인 하나에 얹힌다(위 "activityLog/{autoId}" 절
   참고).
 
-`fieldOverrides`에는 별도로 두 개 더 있다 — `nodes` 컬렉션의 `pendingAction`
-필드를 `COLLECTION_GROUP` 범위에서도 쿼리할 수 있게 하는 오버라이드,
-`transactions` 컬렉션의 `createdAt` 필드를 `COLLECTION_GROUP` 범위에서
-단독으로(다른 필터 없이) 쿼리할 수 있게 하는 오버라이드(computeDailyRevenueSnapshot이
-하루 범위로만 걸러 모든 유저의 거래를 훑을 때 쓴다).
+`fieldOverrides`에는 별도로 **세 개**가 있다:
+
+| 오버라이드 | 필요한 쿼리 | 던지는 화면 |
+|---|---|---|
+| `nodes.pendingAction` (CG) | `AdminStoryRepository.watchPendingNodes()` — `collectionGroup('nodes').where('pendingAction', whereIn: [...])` | admin 승인 대기함 |
+| `nodes.status` (CG) | `StoryPackRepository._fetchPublishedNodeCounts()` — `collectionGroup('nodes').where('status','==','published')` | 리더 홈 탭(팩별 발행 노드 수) |
+| `transactions.createdAt` (CG) | `computeDailyRevenueSnapshot` — 하루 범위로만 걸러 전 유저 거래를 훑는다 | (예약 Cloud Function) |
+
+`nodes.status` 오버라이드는 보안 규칙과 짝을 이룬다 — `firestore.rules`의
+`{path=**}/nodes` 규칙이 `resource.data.status == 'published'` 갈래를 갖는 이유,
+그리고 그 규칙이 지금 유료 콘텐츠 구멍으로 남아 있는 이유가 전부 이
+`_fetchPublishedNodeCounts()` 쿼리 하나 때문이다(그 규칙의 주석과
+`doc/codebase_audit.md` 참고).
 `AdminStoryRepository.watchPendingNodes()`의 `collectionGroup('nodes').where('pendingAction', whereIn: [...])`가
 여기 해당한다 — 이건 앞서 추가한 `{path=**}/nodes/{nodeId}` 보안 규칙과는
 완전히 별개의 요구사항이다: 보안 규칙은 "이 요청을 허용할지"를 정하고, 필드
@@ -1703,6 +1885,126 @@ limit = 100})`(공용 메서드) 하나를 서로 다른 `kinds` 조합으로 �
 이미 이 파일을 가리키고 있어서, `firebase deploy --only firestore:indexes`로
 바로 배포할 수 있다 — 위 "승인 대기함" collection-group 색인처럼 콘솔에서 수동으로
 만들어도 되지만, 이 둘은 파일로 관리해 재현 가능하게 남겨 뒀다.
+
+## Cloud Functions 인가 요약
+
+⚠️ **`functions/src/index.ts`의 모든 함수는 `firestore.rules`를 우회한다.**
+Admin SDK로 실행되므로 보안 규칙 검사를 아예 받지 않는다 — "규칙에서 막아
+뒀으니 안전하다"가 Cloud Function에는 성립하지 않고, **함수마다 자기 인가를
+직접 해야 한다.** 호출자 role은 언제나 서버가 `users/{uid}.role`을 직접 다시
+읽어서 확인한다(`isCallerAdmin()` / `isCallerAuthorOrAdmin()`) — 클라이언트가
+보낸 role 주장은 신뢰하지 않는다.
+
+| 함수 | 종류 | 호출 자격 | 주로 쓰는 것 |
+|---|---|---|---|
+| `onReviewWritten` | 트리거 | (호출 불가) | `storyPacks.avgRating` / `reviewCount` |
+| `onCommentLikeWritten` | 트리거 | (호출 불가) | `comments.likeCount` |
+| `onNodeApprovedGenerateTts` | 트리거 | (호출 불가) | `nodes.ttsAudioUrl` 계열 |
+| `computeDailyRankingSnapshot` | 예약 | (호출 불가) | `rankingSnapshots/{date}` |
+| `computeDailyRevenueSnapshot` | 예약 | (호출 불가) | `revenueSnapshots/{date}` |
+| `refreshTypecastVoiceCacheScheduled` | 예약 | (호출 불가) | `ttsVoiceCache/typecast` |
+| `kakaoSignIn` | onCall | **비로그인 허용** (로그인 자체) | Auth 커스텀 토큰 |
+| `confirmCoinCharge` | onCall | 로그인 + 본인 결제 | `wallet.balance`, `transactions` |
+| `purchasePack` | onCall | 로그인 | `save.ownedPackIds`, `wallet`, `transactions` |
+| `purchaseBundle` | onCall | 로그인 | 〃 |
+| `synthesizeNodeTts` | onCall | 로그인 + **구매/무료/미리보기** | `nodes.ttsAudioUrl` 계열 |
+| `previewNodeTts` | onCall | author 또는 admin | `nodes.ttsPreviewAudioUrl` 계열 |
+| `refreshTypecastVoices` | onCall | author 또는 admin | `ttsVoiceCache/typecast` |
+| `refundCoinCharge` | onCall | admin | `wallet.balance`, `transactions` |
+| `setAuthorAccountDisabled` | onCall | admin | `users.accountDisabled`, `storyPacks.suspended*`, `activityLog` |
+
+**클라이언트가 절대 못 쓰고 여기서만 채우는 필드**: `wallet.balance`,
+`save.ownedPackIds`, `storyPacks.avgRating`/`reviewCount`, `comments.likeCount`,
+`nodes.ttsAudioUrl`/`ttsAudioGeneratedForBodyHash`/`ttsPreviewAudioUrl`/
+`ttsPreviewAudioGeneratedForBodyHash`, `users.accountDisabled`,
+그리고 `rankingSnapshots`/`revenueSnapshots`/`ttsVoiceCache` 전체.
+
+**시크릿(`defineSecret`)**: `TOSS_SECRET_KEY`(confirmCoinCharge, refundCoinCharge),
+`TYPECAST_API_KEY`(synthesizeNodeTts, previewNodeTts, onNodeApprovedGenerateTts,
+refreshTypecastVoiceCacheScheduled, refreshTypecastVoices),
+`KAKAO_REST_API_KEY` + `KAKAO_CLIENT_SECRET`(kakaoSignIn).
+
+`synthesizeNodeTts`의 인가가 특히 중요하다 — 독자가 직접 부르는 함수라 role
+게이트가 맞지 않고, 대신 `canListenToNodeTts()`가 (작가 본인/admin | 무료 팩 |
+구매자 | 작가가 정한 `order` 기준 하위 N개 미리보기) 를 서버에서 판정한다.
+`readingProgress.visitedNodeCount`처럼 **사용자가 직접 쓸 수 있는 값은 인가에
+절대 쓰지 않는다** — 초기화하면 무제한이 되기 때문이다.
+
+## Storage 규칙 — 이 저장소에 파일이 없다
+
+⚠️ **`storage.rules` 파일이 이 저장소에 존재하지 않고, `firebase.json`에도
+`storage` 항목이 없다.** 즉 Storage 규칙은 Firebase 콘솔에서만 손으로 관리되고
+있으며, 저장소에서 배포하거나 diff를 볼 방법이 없다. 확인하려면 콘솔을 직접
+열어야 한다.
+
+⚠️ **그리고 Storage 규칙은 이 프로젝트의 파일 접근을 사실상 통제하지 못한다.**
+업로드 경로 둘 다 **다운로드 토큰 URL**을 만들어 Firestore 문서에 그대로
+저장하기 때문이다:
+
+- Flutter admin(`AdminImageRepository`/`AdminSfxRepository`/`AdminBgmRepository`):
+  `ref.getDownloadURL()`
+- Cloud Function(`uploadAndGetDownloadUrl`, TTS 오디오):
+  `firebaseStorageDownloadTokens` 메타데이터를 직접 심고 그 토큰이 붙은
+  `https://firebasestorage.googleapis.com/...?alt=media&token=...` URL을 반환
+
+이런 토큰 URL은 **Storage 보안 규칙을 우회한다** — 토큰을 아는 사람은 로그인
+없이도 파일을 받을 수 있다. `functions/src/index.ts`의 `uploadAndGetDownloadUrl`
+주석에 "Storage 보안 규칙(`request.auth != null`)만으로 읽기가 통제된다"고
+적혀 있는데 **이 설명은 사실과 다르다**(고치지 않고 남겼다 — 아래 "어긋나는
+지점" 참고).
+
+영향 범위:
+- 표지 이미지가 공개인 건 정상이고 문제없다.
+- 하지만 **유료 팩의 노드 배경 이미지와 TTS 내레이션 오디오도 같은 방식으로
+  공개**다. 그리고 그 URL은 노드 문서에 들어 있으므로, `{path=**}/nodes`
+  구멍으로 노드를 읽을 수 있는 사람은 URL을 얻어 로그인조차 없이 파일을
+  받을 수 있다 — 유료 콘텐츠 유출 경로가 하나 더 있다는 뜻이다.
+- 이 패스에서는 고치지 않는다(보고만). 제대로 닫으려면 토큰 URL 대신 수명이
+  짧은 signed URL을 그때그때 발급하는 Cloud Function 경유로 바꿔야 한다.
+
+## 이 문서와 코드가 어긋나는 지점
+
+문서화 패스에서 발견한 것들이다. **어느 쪽이 틀렸는지 확정하지 않고 남겨
+둔다** — 문서를 코드에 맞춰 조용히 고치면 진짜 버그가 묻히기 때문이다.
+
+1. **`images` / `sfxLibrary`의 카테고리 변경 권한.**
+   `AdminImageRepository.updateCategory()`와 `AdminSfxRepository.updateCategory()`가
+   `.update({'category': ...})`를 호출하는데, `firestore.rules`의 두 match에는
+   `create, delete`만 있고 `update`가 없다. 배포본에는 `update`가 있어서
+   이 파일만 뒤처진 것이거나, 아니면 두 라이브러리의 "카테고리 변경"이
+   프로덕션에서 permission-denied로 실패하고 있다. 콘솔 확인 필요.
+
+2. **`uploadAndGetDownloadUrl`의 주석이 사실과 다르다.**
+   "Storage 보안 규칙만으로 읽기가 통제된다"고 적혀 있으나, 이 함수가 만드는
+   건 규칙을 우회하는 다운로드 토큰 URL이다(위 "Storage 규칙" 절).
+
+3. **`previewNodeLimit`이 어디에도 저장되지 않는다.**
+   팩 상세 화면은 "구매 전 N개 노드까지 무료로 미리볼 수 있어요"라고 안내하고
+   두 리더가 이 값으로 페이월을 건다. 그런데 이 값은 Firestore 어디에도 없고
+   admin에서 편집할 수도 없다 — `StoryPack.previewNodeLimit`의 Dart 기본값
+   `3`이 사실상 유일한 값이다. 작가별/팩별로 정할 수 있어야 하는 값이라면
+   `liveMetadata`에 넣고 편집 UI를 붙여야 한다.
+   (`canListenToNodeTts()`는 이미 `liveMetadata.previewNodeLimit`을 먼저 읽고
+   없으면 3으로 떨어지게 해 뒀다 — 나중에 필드가 생겨도 함수는 그대로 동작한다.)
+
+4. **`rejectNode`가 이미 발행된 노드의 `status`를 `draft`로 되돌린다.**
+   `AdminStoryRepository.rejectNode()`는 수정 요청이 반려되면 `status: 'draft'`로
+   쓰는데, 이미 연재 중이던 노드도 그렇게 된다(`liveSnapshot`은 보존한다).
+   리더의 `fetchPublishedNodes()`는 `status == 'published'`만 읽으므로, 그
+   노드는 **살아 있는 이야기에서 사라진다**. 의도된 동작이라기엔 이상하다 —
+   확인 필요. (Part 1의 새 읽기 규칙과는 무관하다. 규칙 이전부터 그랬다.)
+
+## 이 문서를 고칠 때
+
+- 절의 물리적 순서는 **일부러 건드리지 않았다.** 1800줄 넘는 문서를 주제별로
+  재배치하면 diff가 통째로 뒤집혀 리뷰가 불가능해지고, 그 과정에서 사실이
+  누락될 위험이 크다. 대신 맨 위 목차가 주제별 순서를 제공한다 — 새 절을
+  추가할 때는 **본문은 맨 아래에 붙이고 목차에만 알맞은 그룹으로 넣으면 된다.**
+- 새 컬렉션을 추가하면 다음 다섯 가지를 같이 채운다: 경로/용도, 필드 표,
+  보안 규칙 요약, 읽고 쓰는 코드, 그리고 필요하면 색인.
+- 중간에 추가한 필드는 반드시 위 "옛 문서에 없는 필드" 표에도 한 줄 넣는다.
+- 새 Cloud Function을 추가하면 "Cloud Functions 인가 요약" 표와
+  `functions/src/index.ts` 맨 위의 같은 표, 두 곳 모두에 한 줄 추가한다.
 
 ## 보안 규칙 — 원본은 저장소 루트의 `firestore.rules`
 

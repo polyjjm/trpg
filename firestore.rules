@@ -1,6 +1,69 @@
 rules_version = '2';
+
+// =============================================================================
+// ⚠️ 이 파일을 고치기 전에 반드시 읽을 것 — 이 프로젝트를 반복해서 물어뜯은 함정
+// =============================================================================
+//
+// [1] 없는 필드에 점(.) 표기로 접근하면 요청 **전체**가 permission-denied가 된다.
+//
+//     resource.data.someField            ← 문서에 someField가 없으면 규칙이
+//                                          "속성을 찾을 수 없음" 에러로 터지고,
+//                                          그 요청은 통째로 거부된다.
+//     resource.data.get('someField', null)  ← 없으면 null. 이렇게 쓴다.
+//
+//     "그럴 리 없다"고 넘기지 말 것 — 이 프로젝트에서만 세 번 터졌다:
+//       · storyPacks 문서 레벨: 예전에 만들어진 팩에 authorId/type/genres/
+//         price가 아예 없어서 메타데이터 승인이 전부 실패했다.
+//       · authorApplications: 콘솔에서 손으로 만든 문서에 검토 필드가 없었다.
+//       · nodes의 approveNode/rejectNode: blocks 스키마 마이그레이션으로
+//         title/day/body/bgImageId가 사라졌는데 규칙이 그 이름을 점 표기로
+//         비교하고 있어서, 모든 승인/반려가 permission-denied로 죽었다.
+//
+//     중간에 추가된 필드는 **옛 문서에 없다**(백필하지 않았다):
+//       storyPacks.createdAt / users.createdAt / users.accountDisabled /
+//       suspended·suspendedReason·suspendedAt·suspendedBy /
+//       liveMetadata의 price·salePrice·discountStartAt·discountEndAt·
+//       defaultBgmId·defaultTtsVoiceId
+//     이 필드들은 예외 없이 get(key, null)로 읽는다.
+//
+//     유일한 예외는 아래 nodes의 `resource.data.status`다 — 쿼리 안전성 증명
+//     때문에 일부러 점 표기를 쓴다(그 자리 주석에 이유를 적어 뒀다).
+//
+// [2] 규칙은 필터가 아니다(rules are not filters).
+//
+//     Firestore는 쿼리 결과를 규칙으로 걸러 주지 않는다. "쿼리 제약만 보고
+//     규칙이 반드시 만족됨"이 증명돼야 쿼리가 통과한다 — 규칙이 참조하는
+//     필드를 쿼리가 제약하지 않으면 **쿼리 전체가 거부된다**(문서 하나하나가
+//     아니라).
+//
+//     그래서 아래 nodes 규칙의 `resource.data.status == 'published'`는
+//     클라이언트 쿼리의 `.where('status','==','published')`와 글자 그대로
+//     짝이 맞아야 한다. 한쪽만 고치면 리더가 통째로 깨진다.
+//
+// [3] collectionGroup 쿼리는 {path=**} 형태의 재귀 규칙으로만 허용된다.
+//
+//     중첩 match(/storyPacks/{packId}/nodes/{nodeId})는 상위 경로를 아는
+//     직접 접근에만 적용된다. collectionGroup('nodes')/collectionGroup(
+//     'transactions')은 아래쪽 {path=**} 규칙이 따로 커버한다 — 그리고 그
+//     규칙은 packId/userId를 캡처할 수 없으므로 소유권 기반 조건을 쓸 수
+//     없다. 이 비대칭이 지금 남아 있는 유료 콘텐츠 구멍의 원인이다
+//     ({path=**}/nodes 주석 참고).
+//
+// [4] Admin SDK(Cloud Functions)는 이 파일을 통째로 우회한다.
+//
+//     functions/src/index.ts의 모든 함수는 규칙 검사를 받지 않는다. 따라서
+//     "규칙에서 막았으니 안전하다"는 Cloud Function에는 해당하지 않는다 —
+//     함수마다 자기 인가를 직접 해야 한다. synthesizeNodeTts에 구매 확인이
+//     없던 게 정확히 그 이유로 생긴 구멍이었다.
+//
+// =============================================================================
+
 service cloud.firestore {
   match /databases/{database}/documents {
+
+    // =========================================================================
+    // 공용 헬퍼
+    // =========================================================================
 
     function isSignedIn() {
       return request.auth != null;
@@ -78,9 +141,56 @@ service cloud.firestore {
         && get(/databases/$(database)/documents/storyPacks/$(packId)/comments/$(parentId)).data.get('parentCommentId', null) == null;
     }
 
-    // 기존 게임 세이브 데이터 — 본인만 읽고 쓴다.
+    // =========================================================================
+    // 사용자별 개인 문서 — users/{uid}/ 아래. 원칙적으로 본인만 접근하고,
+    // "돈"에 해당하는 값(wallet.balance, save.ownedPackIds)만 Cloud Function
+    // 전용으로 따로 잠근다.
+    // =========================================================================
+
+    // users/{uid}/save/{docId} — 게임 세이브 블롭 하나(GameState.toJson(),
+    // CloudSaveService가 `.set()`으로 문서 전체를 통째로 덮어쓴다).
+    //
+    // 읽기/쓰기 모두 본인만. 다만 wallet과 달리 이 문서는 **혼합 문서**다 —
+    // 대부분은 클라이언트가 자유롭게 써도 되는 게임 상태(inventory/level/exp/
+    // hearts/...)지만, `ownedPackIds` 하나만은 "무엇을 돈 주고 샀는가"라는
+    // 서버 권한 데이터다. 그래서 문서 전체를 잠그는 대신(그러면 세이브 자체가
+    // 안 된다) 필드 하나만 잠근다.
+    //
+    // ⚠️ ownedPackIds를 왜 잠그는가: 이 배열이 곧 유료 팩 소유권이다. 예전엔
+    // 이 match가 `allow read, write`였고, 그래서 아무 로그인 계정이나 SDK로
+    // 이 문서에 ownedPackIds를 직접 써 넣어 **모든 유료 팩을 공짜로 가질 수
+    // 있었다** — purchasePack/purchaseBundle Cloud Function이 코인을 차감하고
+    // 거래를 기록하는 게 전부 무의미해지는 구멍이었다. 게다가 위
+    // readerOwnsPack()이 바로 이 배열을 읽어 리뷰/댓글 작성 자격을 판정하므로,
+    // 규칙 자신이 사용자가 조작 가능한 값을 신뢰하고 있었다.
+    //
+    // 정상 흐름이 안 막히는 이유: purchasePack/purchaseBundle은 Admin SDK
+    // (db.doc(...).set(..., {merge:true}))로 쓰므로 이 규칙 자체를 우회한다.
+    // 클라이언트는 CloudSaveService.save()가 항상 문서 전체를 set하지만,
+    // 로컬 GameState.ownedPackIds는 서버 값을 그대로 미러링하고 있으므로
+    // 그 키는 diff에 안 잡힌다 — 값이 실제로 달라질 때만 거부된다.
+    // (구매 직후에는 requestPackPurchase가 markPackOwned()로 로컬을 먼저
+    // 맞춰 두므로 다음 저장도 그대로 통과한다.)
+    //
+    // 잠금 방식은 storyPacks의 viewCount/suspended 규칙과 같은 affectedKeys()
+    // 화이트리스트의 역(逆)이다 — "이 키들만 바뀔 수 있다"가 아니라 "이 키는
+    // 절대 바뀌면 안 된다".
     match /users/{userId}/save/{saveDocId} {
-      allow read, write: if isSignedIn() && myUid() == userId;
+      allow read: if isSignedIn() && myUid() == userId;
+
+      // 최초 생성(CloudSyncController.loadOrInitialize의 초기 세이브)에는
+      // resource가 아직 없어서 diff()를 쓸 수 없다 — 대신 "소유 목록이 채워진
+      // 채로 도착하면 안 된다"로 막는다. 신규 유저는 항상 빈 배열이다.
+      allow create: if isSignedIn() && myUid() == userId
+        && request.resource.data.get('ownedPackIds', []).size() == 0;
+
+      allow update: if isSignedIn() && myUid() == userId
+        && !request.resource.data.diff(resource.data).affectedKeys()
+              .hasAny(['ownedPackIds']);
+
+      // 문서를 통째로 지우면 ownedPackIds도 같이 사라진다(= 구매 이력 소멸).
+      // 클라이언트에 이 문서를 지우는 코드 경로 자체가 없다.
+      allow delete: if false;
     }
 
     // 리더 화면(SceneFrame) 표시/재생 환경설정 — save/current와 같은 "본인만
@@ -130,8 +240,20 @@ service cloud.firestore {
       allow read: if isAdmin();
     }
 
-    // users/{uid} — 신원/권한 문서. role/authorApplicationStatus는 본인이 함부로
-    // 못 바꾼다(승인/반려 흐름을 통해서만 바뀐다).
+    // =========================================================================
+    // 신원 · 권한 — 누가 누구인지, 무엇을 할 수 있는지. 위 헬퍼들(myRole/
+    // isAdmin/isAuthorOrAdmin)이 전부 여기 users/{uid}.role을 원천으로 본다.
+    // =========================================================================
+
+    // users/{uid} — 신원/권한 문서. 읽기는 본인과 admin(admin의 "회원 관리"
+    // 화면이 users 컬렉션 전체를 훑는다). 쓰기는 세 갈래로 갈린다: 최초 생성
+    // (본인, 항상 reader로), admin의 자유로운 갱신(승인/반려/자격 회수),
+    // 그리고 본인의 작가 신청 제출 하나뿐이다. role/authorApplicationStatus는
+    // 본인이 함부로 못 바꾼다 — 승인/반려 흐름을 통해서만 바뀐다.
+    //
+    // accountDisabled는 여기 어느 규칙으로도 클라이언트가 쓸 수 없다 —
+    // setAuthorAccountDisabled Cloud Function이 Admin SDK로만 쓰는, Firebase
+    // Auth의 disabled 플래그를 비추는 거울 필드다(user_profile.dart 참고).
     match /users/{userId} {
       allow read: if isSignedIn() && (myUid() == userId || isAdmin());
 
@@ -145,6 +267,15 @@ service cloud.firestore {
 
       // 본인 갱신은 신청 제출(submitApplication)뿐 — role은 절대 못 바꾸고,
       // authorApplicationStatus는 none/rejected → pending으로만 바뀔 수 있다.
+      //
+      // ⚠️ 미해결: 이 규칙만 파일 맨 위 [1]번 함정을 그대로 밟고 있다 —
+      // displayName/email/authorApplicationStatus를 점(.) 표기로 읽는다.
+      // 이 필드들이 없는 문서(그 필드가 생기기 전에 만들어진 계정, 이메일을
+      // 안 주는 공급자로 로그인한 계정, 콘솔에서 손으로 만든 문서)에서는
+      // 규칙이 에러로 터져 **그 계정은 작가 신청을 영영 할 수 없다**.
+      // 바로 아래 authorApplications 규칙은 같은 문제를 이미 get(key, null)로
+      // 해결해 뒀는데 여기만 안 고쳐졌다. 고치면 동작이 바뀌는 변경이라
+      // 문서화 패스에서는 손대지 않았다 — doc/codebase_audit.md 2a-5 참고.
       allow update: if isSignedIn() && myUid() == userId
         && request.resource.data.role == resource.data.role
         && request.resource.data.displayName == resource.data.displayName
@@ -176,6 +307,16 @@ service cloud.firestore {
         && request.resource.data.get('portfolioLinks', null) == resource.data.get('portfolioLinks', null)
         && request.resource.data.get('submittedAt', null) == resource.data.get('submittedAt', null);
     }
+
+    // =========================================================================
+    // 운영 참고 데이터 — admin이 관리하고 로그인한 누구나 읽는 컬렉션들.
+    // 여섯 개(genres/homeBanners/homeEvents/pointPackages/packBundles/notices)
+    // 전부 정확히 같은 모양이다: `read: isSignedIn()` + `write: isAdmin()`.
+    // active/기간/플랫폼 같은 노출 필터링은 전부 클라이언트가 하므로 규칙은
+    // "로그인했는지"만 본다 — 숨겨야 할 비밀이 아니라 "지금 보여줄 것"을
+    // 고르는 문제이기 때문이다. 돈이 걸린 검증(가격/잔액)은 규칙이 아니라
+    // 해당 Cloud Function이 Admin SDK로 원본을 다시 읽어서 한다.
+    // =========================================================================
 
     // genres/{genreId} — admin이 관리하는 참고 데이터. 앱 재배포 없이 admin이
     // 콘솔이나(나중에 생길) 관리 UI로 추가/수정한다.
@@ -224,9 +365,8 @@ service cloud.firestore {
     // ownedPackIds 부여는 이 규칙과 무관하게 purchaseBundle Cloud Function이
     // Admin SDK로 이 컬렉션을 직접 다시 읽어서 한다 — 코인 잔액(wallet)과
     // ownedPackIds에 대한 클라이언트 쓰기 권한은 여기서도 추가하지 않는다
-    // (이미 위에서 wallet은 읽기 전용, ownedPackIds는 save/current 문서
-    // 전체 read/write 허용 안의 알려진 한계로만 남아 있다 — 둘 다 이
-    // 기능 때문에 새로 넓히지 않는다).
+    // (wallet은 읽기 전용, ownedPackIds는 save/current의 update 규칙이
+    // affectedKeys로 잠가 뒀다 — 둘 다 이 기능 때문에 새로 넓히지 않는다).
     match /packBundles/{bundleId} {
       allow read: if isSignedIn();
       allow write: if isAdmin();
@@ -243,6 +383,12 @@ service cloud.firestore {
       allow read: if isSignedIn();
       allow write: if isAdmin();
     }
+
+    // =========================================================================
+    // 서버 집계 스냅샷 — 예약 실행 Cloud Function만 쓴다(Admin SDK라 이 파일을
+    // 우회한다). 둘 다 write 규칙이 아예 없고, 기본값(거부)이 곧 "쓰기는
+    // Cloud Function 전용"이라는 선언이다. 읽기 권한만 서로 다르다.
+    // =========================================================================
 
     // rankingSnapshots/{date} — "YYYY-MM-DD"(KST) 문서 id, {packIds: [...]}.
     // functions/src/index.ts의 computeDailyRankingSnapshot(매일 KST 00:10
@@ -262,6 +408,26 @@ service cloud.firestore {
       allow read: if isAdmin();
     }
 
+    // =========================================================================
+    // 스토리 콘텐츠 — storyPacks와 그 하위(nodes/reviews/comments/likes),
+    // 그리고 collectionGroup용 재귀 규칙. 이 파일에서 가장 복잡한 구역이다.
+    //
+    // 관통하는 원칙 하나: **작가가 쓴 draft와 독자가 보는 live를 규칙이
+    // 분리한다.** 팩 메타데이터는 top-level(draft) / liveMetadata(승인본),
+    // 노드는 top-level(draft) / liveSnapshot(승인본)으로 나뉘고, 독자에게
+    // 실제로 적용되는 값(가격 판정 effectivePrice 포함)은 언제나 승인본
+    // 쪽이다. 그래서 작가는 draft를 자유롭게 고칠 수 있고, 규칙은 대신
+    // "승인본과 검토 필드를 클라이언트가 못 건드리게" 하는 데 집중한다.
+    // =========================================================================
+
+    // storyPacks/{packId} — 작품 한 편. 로그인한 누구나 읽는다(카탈로그/
+    // 상세 화면이 제목·표지·가격을 봐야 한다 — 유료 여부와 무관하게 "무엇을
+    // 파는지"는 공개 정보다). 쓰기는 다섯 갈래로 나뉘고 각각 아래에 주석이
+    // 붙어 있다: 작가의 생성, 작가의 draft 저장/승인 요청, admin의 승인/반려,
+    // 독자의 viewCount +1, admin의 강제 내리기/복원.
+    //
+    // avgRating/reviewCount는 어느 갈래로도 클라이언트가 못 쓴다 —
+    // onReviewWritten Cloud Function이 Admin SDK로만 갱신한다.
     match /storyPacks/{packId} {
       allow read: if isSignedIn();
 
@@ -371,7 +537,34 @@ service cloud.firestore {
       allow delete: if isAdmin();
 
       match /nodes/{nodeId} {
-        allow read: if isSignedIn();
+        // 읽기 — 작가 본인/admin은 무엇이든(초안 포함) 읽는다. 노드 편집기와
+        // 승인 화면이 top-level draft 필드를 그대로 봐야 하기 때문이다.
+        //
+        // 그 외 로그인 사용자(= 독자)는 **status == 'published'인 문서만**
+        // 읽을 수 있다. 이 조건이 리더 쪽 StoryReaderRepository.
+        // fetchPublishedNodes()의 쿼리(`.where('status','==','published')`)와
+        // 정확히 일치하기 때문에 그 쿼리는 그대로 통과한다 — Firestore는
+        // 규칙을 필터로 쓰지 않고(rules are not filters) "쿼리 제약만으로
+        // 규칙이 만족됨이 증명되는가"를 보므로, 쿼리가 제약하지 않는 필드를
+        // 규칙이 참조하면 쿼리 전체가 거부된다. 여기서는 status를 점(.)
+        // 표기로 직접 읽는 게 의도적이다 — get('status', ...)로 감싸면 그
+        // 증명이 성립하지 않을 수 있다. status는 AdminStoryNode.
+        // toFirestoreJson()이 항상 써 넣으므로 누락될 일이 없고, 만에 하나
+        // 없는 문서가 있어도 결과는 "거부"라 안전한 쪽으로 실패한다.
+        //
+        // ⚠️ 이 조건이 막는 것과 못 막는 것을 정확히 알아둘 것:
+        //  - 막는다: 한 번도 발행된 적 없는 순수 초안(status == 'draft')이
+        //    독자에게 새는 것.
+        //  - 못 막는다(구조적 한계): 이미 발행된 노드를 작가가 수정 중일 때의
+        //    **미승인 초안**. saveNode()가 문서 전체를 set하므로 그 초안은
+        //    같은 문서의 top-level 필드에 들어가는데 status는 'published'로
+        //    남는다. Firestore 규칙은 문서 단위 전부-아니면-전무라 필드 단위
+        //    투영이 불가능하다 — 이걸 진짜로 막으려면 draft와 live를 서로 다른
+        //    문서로 쪼개야 한다(스키마 변경, 별도 작업).
+        //  - 못 막는다(별도 경로): 유료 팩의 **발행된** 본문. 아래
+        //    {path=**}/nodes 재귀 규칙 주석 참고 — 그쪽이 진짜 구멍이다.
+        allow read: if isPackOwnedBy(packId) || isAdmin()
+          || (isSignedIn() && resource.data.status == 'published');
 
         // 작가 자신의 저장(임시저장/승인요청 제출, saveNode) — status/liveSnapshot은
         // 절대 못 건드린다. 이 두 필드는 오직 admin의 승인/반려에서만 바뀐다.
@@ -525,13 +718,65 @@ service cloud.firestore {
     //
     // 읽기 전용이다 — 쓰기(saveNode/approveNode/rejectNode/deleteNodeDoc)는
     // 전부 직접 문서 참조로만 이뤄지므로 위 중첩 match의 쓰기 규칙만으로 충분하다.
+    //
+    // 두 갈래로 나뉜다:
+    //  - admin: 무엇이든. watchPendingNodes()의 `.where('pendingAction', ...)`
+    //    쿼리는 status를 제약하지 않으므로 이 갈래가 없으면 승인 대기함이
+    //    통째로 깨진다. isAuthorOrAdmin()이 아니라 isAdmin()인 게 의도적이다 —
+    //    이 쿼리를 쓰는 화면(AdminDashboardPage)이 admin 전용이고, author까지
+    //    열어주면 남의 팩 초안을 collectionGroup으로 훑을 수 있게 된다.
+    //  - 그 외 로그인 사용자: status == 'published'인 문서만. 위 중첩 match의
+    //    독자 갈래와 같은 조건이고, 리더 쪽 StoryPackRepository.
+    //    _fetchPublishedNodeCounts()의 `.where('status','==','published')`
+    //    쿼리와 정확히 일치해 그대로 통과한다.
+    //
+    // ⚠️ 알려진 미해결 구멍 — 유료 팩 본문이 여기로 샌다.
+    // _fetchPublishedNodeCounts()는 홈 화면에서 **모든 팩**의 발행 노드를
+    // collectionGroup으로 긁어 와서 팩별 개수를 센다(publishedNodeCount가
+    // storyPacks 문서에 비정규화돼 있지 않아서다). 그래서 이 규칙은 구매
+    // 여부와 무관하게 모든 독자에게 열려 있어야 하고, 결과적으로 **구매하지
+    // 않은 유료 팩의 발행 본문도 SDK로 직접 읽을 수 있다**.
+    //
+    // 여기서 isPackFree(packId)/readerOwnsPack(packId)로 좁히는 건 애초에
+    // 불가능하다 — {path=**}는 상위 경로를 캡처하지 못해서 packId를 알 수 없다.
+    //
+    // 닫으려면 클라이언트 변경이 필요하다(별도 작업):
+    //   1. 노드 쓰기에 반응하는 Cloud Function 트리거로
+    //      storyPacks/{packId}.publishedNodeCount를 유지 + 기존 팩 백필,
+    //   2. _fetchPublishedNodeCounts()를 없애고 그 필드를 읽게 바꾸고,
+    //   3. 그러고 나면 이 규칙을 `allow read: if isAdmin();`으로 좁힐 수 있다,
+    //   4. 미리보기는 노드에 previewEligible 플래그를 승인 시점에 찍고
+    //      리더가 2단계로(미리보기분 → 구매 후 전체) 나눠 읽게 한다.
+    // 자세한 내용은 doc/codebase_audit.md 참고.
     match /{path=**}/nodes/{nodeId} {
-      allow read: if isSignedIn();
+      allow read: if isAdmin()
+        || (isSignedIn() && resource.data.status == 'published');
     }
 
-    // images/{imageId} — 색인 문서. 실제 파일은 Storage(아래 별도 규칙)에 있다.
+    // =========================================================================
+    // 공유 미디어 라이브러리 — images/sfxLibrary/bgmLibrary는 전부 "Firestore
+    // 문서는 색인일 뿐이고 실제 파일은 Storage에 있다"는 같은 구조다. 셋 다
+    // 팩별이 아니라 **모든 작가가 공유**한다(FIRESTORE_SCHEMA.md 참고).
+    //
+    // ⚠️ 여기서 잠그는 건 색인 문서지 파일이 아니다. Storage 쪽 규칙은 이
+    // 저장소에 storage.rules 파일 자체가 없어서 Firebase 콘솔에서 손으로
+    // 관리한다 — 이 규칙들이 Storage 접근을 제한한다고 착각하지 말 것.
+    // =========================================================================
+
+    // images/{imageId} — 색인 문서. 실제 파일은 Storage(콘솔 관리 규칙)에 있다.
     // 업로더를 추적하는 필드가 아직 없어 모든 author/admin이 공유하는
     // 라이브러리다 — uploaderId가 생기면 그때 좁힐 수 있다.
+    //
+    // ⚠️ 코드와 이 파일이 어긋난다(문서화 패스라 고치지 않고 남김):
+    // AdminImageRepository.updateCategory()가 `.update({'category': ...})`를
+    // 호출하는데(ImageLibraryTab의 "카테고리 변경" 액션) 이 match에는
+    // create/delete만 있고 update가 없다. 바로 아래 sfxLibrary도 완전히 같은
+    // 상태다(AdminSfxRepository.updateCategory). 둘 중 하나가 사실이다:
+    //   (a) 실제 배포된 규칙에는 update가 있다 — 이 파일이 배포본과 어긋난
+    //       또 하나의 예(파일 맨 위 배포 드리프트 주의 참고), 또는
+    //   (b) 두 라이브러리의 "카테고리 변경"이 프로덕션에서 permission-denied로
+    //       실패하고 있다.
+    // 콘솔에서 배포본을 확인해서 판정할 것. doc/codebase_audit.md 참고.
     match /images/{imageId} {
       allow read: if isSignedIn();
       allow create, delete: if isAuthorOrAdmin();
@@ -569,19 +814,39 @@ service cloud.firestore {
       allow write: if false;
     }
 
-    // writerNotices/{noticeId} — packId로 소유 스토리팩을 가리킨다.
+    // =========================================================================
+    // 공지 · 운영 로그
+    // =========================================================================
+
+    // writerNotices/{noticeId} — 작가가 **자기 팩에** 올리는 변경사항 공지.
+    // packId 필드로 어느 팩 것인지 가리킨다(플랫폼 전체 공지인 notices와는
+    // 완전히 다른 컬렉션이다 — 위 notices 주석 참고).
+    //
+    // 읽기는 로그인한 누구나(독자가 팩 상세에서 본다). 쓰기는 그 팩의 작가
+    // 본인이거나 admin일 때만 — isPackOwnedBy()가 create는 들어오는 문서의
+    // packId로, delete는 이미 저장된 문서의 packId로 소유권을 확인한다.
+    // update가 없는 건 의도다: 공지는 고치는 게 아니라 지우고 다시 올린다.
     match /writerNotices/{noticeId} {
       allow read: if isSignedIn();
       allow create: if isAdmin() || isPackOwnedBy(request.resource.data.packId);
       allow delete: if isAdmin() || isPackOwnedBy(resource.data.packId);
     }
 
-      // 관리자 개요의 "최근 활동" 타임라인. 기록 주체가 Cloud Functions가
-        // 아니라 admin 클라이언트다. update/delete를 막아 append-only로 둔다.
-        match /activityLog/{eventId} {
-          allow read: if isAdmin();
-          allow create: if isAdmin();
-          allow update, delete: if false;
-        }
+    // activityLog/{eventId} — 관리자 개요의 "최근 활동" 타임라인이자 승인
+    // 대기함의 "처리 이력" 원천. 이 프로젝트에서 드물게 **Cloud Functions가
+    // 아니라 admin 클라이언트가 직접 쓰는** 감사 로그다(승인/반려/상품 수정/
+    // 배너 게시가 전부 이미 admin 클라이언트의 쓰기라, 같은 동작을 서버에서
+    // 다시 감지할 이유가 없다는 판단 — ActivityLogRepository 문서 참고).
+    //
+    // 그래서 읽기도 쓰기도 admin만. update/delete를 막아 append-only로 둔다 —
+    // 감사 로그가 사후에 고쳐지면 감사 로그가 아니다.
+    //
+    // 예외: setAuthorAccountDisabled Cloud Function은 계정 정지/해제 건을
+    // 서버에서 직접 남긴다(Admin SDK라 이 규칙을 우회한다).
+    match /activityLog/{eventId} {
+      allow read: if isAdmin();
+      allow create: if isAdmin();
+      allow update, delete: if false;
+    }
   }
 }
