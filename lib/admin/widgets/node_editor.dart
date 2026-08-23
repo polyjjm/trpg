@@ -8,6 +8,10 @@ import '../models/admin_sfx.dart';
 import '../models/admin_story_node.dart';
 import '../models/admin_story_node_summary.dart';
 import '../models/admin_tts_voice.dart';
+// 프리셋 enum의 .label extension이 여기 있다 — 칩에 값을 적으려면
+// node_effects_editor.dart를 import하는 것만으론 안 된다(extension은
+// 재수출되지 않는다).
+import '../models/node_effects.dart';
 import '../models/pending_action.dart';
 import '../models/story_pack_type.dart';
 import 'admin_theme.dart';
@@ -118,8 +122,10 @@ class _NodeEditorState extends State<NodeEditor> {
   bool _backgroundExpanded = false;
   bool _effectsExpanded = false;
 
-  /// 데스크톱에서 연출 효과 칩을 눌러 상세를 펼쳤는지.
-  bool _effectDetailExpanded = false;
+  /// 데스크톱에서 지금 펼쳐 둔 효과 — null이면 아무것도 안 펼친 상태다.
+  /// 일곱 줄을 한꺼번에 펼치면 지금 무엇을 만지려던 건지 화면에서 사라지므로,
+  /// 누른 칩 하나의 설정만 보여준다.
+  NodeEffectKind? _openEffect;
 
   AdminStoryNode get node => widget.node;
 
@@ -255,9 +261,9 @@ class _NodeEditorState extends State<NodeEditor> {
                 const SizedBox(height: 10),
                 _EffectChipRow(
                   node: node,
-                  expanded: _effectDetailExpanded,
-                  onToggle: () => setState(
-                        () => _effectDetailExpanded = !_effectDetailExpanded,
+                  openEffect: _openEffect,
+                  onSelect: (kind) => setState(
+                        () => _openEffect = _openEffect == kind ? null : kind,
                   ),
                 ),
               ],
@@ -265,9 +271,17 @@ class _NodeEditorState extends State<NodeEditor> {
           ),
         ],
       ),
-      if (_effectDetailExpanded) ...[
-        const SizedBox(height: 16),
-        _buildEffectsEditor(),
+      if (_openEffect != null) ...[
+        const SizedBox(height: 14),
+        Container(
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            color: AdminColors.panel2,
+            borderRadius: BorderRadius.circular(10),
+            border: Border.all(color: AdminColors.border),
+          ),
+          child: _buildEffectsEditor(only: _openEffect),
+        ),
       ],
     ];
   }
@@ -313,8 +327,9 @@ class _NodeEditorState extends State<NodeEditor> {
     ];
   }
 
-  Widget _buildEffectsEditor() {
+  Widget _buildEffectsEditor({NodeEffectKind? only}) {
     return NodeEffectsEditor(
+      only: only,
       effects: node.effects,
       sfxLibrary: widget.sfxLibrary,
       bgmLibrary: widget.bgmLibrary,
@@ -378,7 +393,8 @@ class _NodeEditorState extends State<NodeEditor> {
       );
     }
 
-    if (node.liveSnapshot != null &&
+    if (!widget.dirty &&
+        node.liveSnapshot != null &&
         node.pendingAction != PendingAction.edit &&
         node.pendingAction != PendingAction.create) {
       banners.add(
@@ -448,92 +464,79 @@ class _SectionLabel extends StatelessWidget {
 /// 켜고 끌 수 있는 게 아니다.
 class _EffectChipRow extends StatelessWidget {
   final AdminStoryNode node;
-  final bool expanded;
-  final VoidCallback onToggle;
+
+  /// 지금 펼쳐 둔 효과 — 그 칩만 테두리를 강하게 준다.
+  final NodeEffectKind? openEffect;
+  final ValueChanged<NodeEffectKind> onSelect;
 
   const _EffectChipRow({
     required this.node,
-    required this.expanded,
-    required this.onToggle,
+    required this.openEffect,
+    required this.onSelect,
   });
 
   @override
   Widget build(BuildContext context) {
-    final effects = node.effects;
+    final e = node.effects;
+    final bgm = e.bgm;
 
-    // 길이는 자유 숫자가 아니라 프리셋 enum(BlackoutDurationPreset 등)이라
-    // 칩에 값으로 적기엔 이름이 길다 — 켜졌는지만 표시하고, 구체적인 값은
-    // "효과 설정 열기"로 펼친 NodeEffectsEditor에서 본다.
+    // 칩에 적는 값은 실제 프리셋 라벨을 그대로 쓴다 — "켜짐"만 적으면 어떤
+    // 값으로 켜져 있는지 보려고 매번 펼쳐야 한다. null이면 꺼진 상태.
     final chips = <Widget>[
       _EffectChip(
         icon: Icons.brightness_2_rounded,
         label: '암전',
-        value: effects.blackout.enabled ? '켜짐' : null,
-        onTap: onToggle,
+        value: e.blackout.enabled ? e.blackout.durationPreset.label : null,
+        open: openEffect == NodeEffectKind.blackout,
+        onTap: () => onSelect(NodeEffectKind.blackout),
       ),
       _EffectChip(
         icon: Icons.vibration_rounded,
         label: '화면 흔들림',
-        value: effects.shake.enabled ? '켜짐' : null,
-        onTap: onToggle,
-      ),
-      _EffectChip(
-        icon: Icons.smartphone_rounded,
-        label: '진동',
-        value: effects.haptic.enabled ? '켜짐' : null,
-        onTap: onToggle,
-      ),
-      _EffectChip(
-        icon: Icons.music_note_rounded,
-        label: '배경음악',
-        value: effects.bgm == null ? null : '설정됨',
-        onTap: onToggle,
+        value: e.shake.enabled ? e.shake.intensityPreset.label : null,
+        open: openEffect == NodeEffectKind.shake,
+        onTap: () => onSelect(NodeEffectKind.shake),
       ),
       _EffectChip(
         icon: Icons.graphic_eq_rounded,
         label: '효과음',
-        value: effects.sfx.enabled ? '설정됨' : null,
-        onTap: onToggle,
+        value: e.sfx.enabled ? (e.sfx.sfxId == null ? '미선택' : '설정됨') : null,
+        open: openEffect == NodeEffectKind.sfx,
+        onTap: () => onSelect(NodeEffectKind.sfx),
+      ),
+      _EffectChip(
+        icon: Icons.flash_on_rounded,
+        label: '화면 플래시',
+        value: e.flash.enabled ? e.flash.colorPreset.label : null,
+        open: openEffect == NodeEffectKind.flash,
+        onTap: () => onSelect(NodeEffectKind.flash),
+      ),
+      _EffectChip(
+        icon: Icons.music_note_rounded,
+        label: '배경음악',
+        // null(이전과 동일)은 기본값이라 꺼진 것으로 본다 — 무음 전환과
+        // 트랙 지정만 "이 노드가 뭔가 바꿨다"는 뜻이다.
+        value: bgm == null ? null : (bgm.silence ? '무음' : '트랙'),
+        open: openEffect == NodeEffectKind.bgm,
+        onTap: () => onSelect(NodeEffectKind.bgm),
       ),
       _EffectChip(
         icon: Icons.record_voice_over_rounded,
-        label: 'TTS 보이스',
-        value: effects.tts == null ? null : '설정됨',
-        onTap: onToggle,
+        label: 'TTS 내레이션',
+        value: e.tts == null ? null : '재정의',
+        open: openEffect == NodeEffectKind.tts,
+        onTap: () => onSelect(NodeEffectKind.tts),
+      ),
+      _EffectChip(
+        icon: Icons.smartphone_rounded,
+        label: '진동',
+        value: e.haptic.enabled ? e.haptic.durationPreset.label : null,
+        open: openEffect == NodeEffectKind.haptic,
+        onTap: () => onSelect(NodeEffectKind.haptic),
       ),
     ];
 
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Wrap(spacing: 8, runSpacing: 8, children: chips),
-        const SizedBox(height: 8),
-        InkWell(
-          onTap: onToggle,
-          borderRadius: BorderRadius.circular(6),
-          child: Padding(
-            padding: const EdgeInsets.symmetric(vertical: 4),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Icon(
-                  expanded
-                      ? Icons.expand_less_rounded
-                      : Icons.expand_more_rounded,
-                  size: 16,
-                  color: AdminColors.muted,
-                ),
-                const SizedBox(width: 4),
-                Text(
-                  expanded ? '효과 설정 접기' : '효과 설정 열기',
-                  style: TextStyle(fontSize: 11.5, color: AdminColors.muted),
-                ),
-              ],
-            ),
-          ),
-        ),
-      ],
-    );
+    return Wrap(spacing: 8, runSpacing: 8, children: chips);
   }
 }
 
@@ -543,12 +546,17 @@ class _EffectChip extends StatelessWidget {
 
   /// null이면 이 효과는 꺼져 있다 — 테두리만 있는 중성 칩.
   final String? value;
+
+  /// 지금 이 칩의 설정이 아래에 펼쳐져 있는지.
+  final bool open;
+
   final VoidCallback onTap;
 
   const _EffectChip({
     required this.icon,
     required this.label,
     required this.value,
+    required this.open,
     required this.onTap,
   });
 
@@ -566,9 +574,12 @@ class _EffectChip extends StatelessWidget {
               : AdminColors.panel2,
           borderRadius: BorderRadius.circular(8),
           border: Border.all(
-            color: on
+            color: open
+                ? AdminColors.gold
+                : (on
                 ? AdminColors.gold.withOpacity(0.45)
-                : AdminColors.border,
+                : AdminColors.border),
+            width: open ? 1.5 : 1,
           ),
         ),
         child: Row(

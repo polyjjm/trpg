@@ -81,6 +81,22 @@ class _AuthorToolPageState extends State<AuthorToolPage> {
   /// 속해 있으면 전환할 때마다 사라진다.
   final NodeEditSessionCache _sessionCache = NodeEditSessionCache();
 
+  @override
+  void initState() {
+    super.initState();
+    // 관리자 페이지를 새 창으로 여는 방식: 같은 앱을 ?admin=1로 한 번 더
+    // 띄우고(로그인/역할 확인은 AdminGatePage가 평소처럼 처리한다), 작가
+    // 도구가 뜨는 즉시 관리자 페이지를 밀어 넣는다. 별도 배포물이 아니라
+    // 같은 앱 안의 화면이라, 라우팅을 새로 깔지 않고 이걸로 끝난다.
+    //
+    // Navigator를 initState에서 바로 쓸 수 없으니 첫 프레임 뒤로 미룬다.
+    if (widget.isAdmin && ExternalLinks.isAdminDeepLink) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _pushAdminDashboard();
+      });
+    }
+  }
+
   Future<void> _handleSignOut() async {
     await widget.authService.signOut();
     if (!mounted) return;
@@ -93,15 +109,14 @@ class _AuthorToolPageState extends State<AuthorToolPage> {
     );
   }
 
-  /// 관리자 페이지 — 별도 창으로 연다. [ExternalLinks.adminDashboardUrl]이
-  /// 아직 없으면 예전처럼 같은 창에서 이동한다(그쪽이 동작하지 않는 것보다
-  /// 낫다).
+  /// 관리자 페이지 — 새 창으로 연다. 지금 주소에 admin=1을 붙인 URL이라
+  /// (ExternalLinks.adminDashboardUrl) 배포 주소가 무엇이든 그대로 동작한다.
   void _openAdminDashboard() {
-    final url = ExternalLinks.adminDashboardUrl;
-    if (url.isNotEmpty) {
-      openExternalLink(url);
-      return;
-    }
+    openExternalLink(ExternalLinks.adminDashboardUrl);
+  }
+
+  /// ?admin=1로 열린 창에서 실제로 관리자 페이지를 띄운다.
+  void _pushAdminDashboard() {
     Navigator.push(
       context,
       MaterialPageRoute(
@@ -341,12 +356,7 @@ class _TopBar extends StatelessWidget {
             },
           ),
           _VerticalRule(),
-          const SizedBox(width: 14),
-          _ExternalTextLink(
-            label: '독자로 보기',
-            onTap: () => openExternalLink(ExternalLinks.readerAppUrl),
-          ),
-          const SizedBox(width: 10),
+          const SizedBox(width: 8),
           const _ThemeModeToggle(),
           const SizedBox(width: 8),
           _AccountMenu(
@@ -424,35 +434,6 @@ class _SubmitAllButton extends StatelessWidget {
   }
 }
 
-class _ExternalTextLink extends StatelessWidget {
-  final String label;
-  final VoidCallback onTap;
-
-  const _ExternalTextLink({required this.label, required this.onTap});
-
-  @override
-  Widget build(BuildContext context) {
-    return InkWell(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(6),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 6),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Text(
-              label,
-              style: TextStyle(fontSize: 12.5, color: AdminColors.muted),
-            ),
-            const SizedBox(width: 4),
-            Icon(Icons.open_in_new_rounded, size: 15, color: AdminColors.muted),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
 /// 라이트/다크 토글 — admin_theme.dart 상단 doc에 적어 둔 대로, 지금은
 /// MaterialApp.themeMode만 바꾼다(기본 Material 위젯에만 반영, AdminColors로
 /// 직접 칠한 화면 대부분은 아직 반응하지 않는다).
@@ -513,6 +494,8 @@ class _AccountMenu extends StatelessWidget {
       ),
       onSelected: (value) {
         switch (value) {
+          case 'reader':
+            openExternalLink(ExternalLinks.readerAppUrl);
           case 'admin':
             onOpenAdminDashboard();
           case 'signout':
@@ -526,6 +509,24 @@ class _AccountMenu extends StatelessWidget {
           child: Text(
             email,
             style: TextStyle(fontSize: 11.5, color: AdminColors.muted),
+          ),
+        ),
+        PopupMenuItem<String>(
+          value: 'reader',
+          height: 42,
+          child: Row(
+            children: [
+              Text(
+                '독자로 보기',
+                style: TextStyle(fontSize: 13, color: AdminColors.ivory),
+              ),
+              const SizedBox(width: 6),
+              Icon(
+                Icons.open_in_new_rounded,
+                size: 14,
+                color: AdminColors.muted,
+              ),
+            ],
           ),
         ),
         if (isAdmin)

@@ -13,21 +13,23 @@ import 'labeled_field.dart';
 import 'sfx_picker_field.dart';
 import 'tts_voice_picker_field.dart';
 
+/// 연출 효과 일곱 갈래 — node_editor.dart의 효과 칩이 "지금 이 칩의 설정만
+/// 펼쳐라"고 지목하는 데 쓴다.
+enum NodeEffectKind { blackout, shake, sfx, flash, bgm, tts, haptic }
+
 /// "연출 효과" 섹션 — 프리셋 전용 5종(암전/화면 흔들림/효과음/화면 플래시/
-/// 진동)에 배경음악 전환/TTS 내레이션 커스터마이즈를 더 다룬다 — 배경음악은
-/// 프리셋 드롭다운이 아니라 "이전과 동일/트랙 선택/무음 전환" 3지선다다
-/// (_BgmEffectRow 참고), TTS는 체크박스 하나로 "팩 기본값 그대로" ↔
-/// "이 노드만 보이스/감정/피치/템포 재정의"를 오간다(_TtsEffectRow 참고,
-/// _SfxEffectRow와 같은 "체크박스 + 펼쳐지는 상세 컨트롤" 레이아웃). 자유
-/// 설정이 없어서 비개발자 작가도 무슨 값을 넣어야 할지 고민할 필요가
-/// 없다는 원칙은 그대로다(감정 프리셋도 자유 입력이 아니라 정해진 목록
-/// 중에서 고른다).
+/// 진동)에 배경음악 전환/TTS 내레이션 커스터마이즈를 더 다룬다. 배경음악은
+/// 프리셋 드롭다운이 아니라 "이전과 동일/트랙 선택/무음 전환" 3지선다이고
+/// (_BgmEffectRow), TTS는 체크박스 하나로 "팩 기본값 그대로" ↔ "이 노드만
+/// 재정의"를 오간다(_TtsEffectRow). 자유 설정이 없어서 비개발자 작가도 무슨
+/// 값을 넣어야 할지 고민할 필요가 없다는 원칙은 그대로다.
 ///
-/// 접고 펴는 건 이 위젯 바깥(node_editor.dart의 "연출 효과" 필/토글)이
-/// 맡는다 — 예전엔 여기 자체가 ExpansionTile이었는데, 노드 에디터 전체를
-/// 통 카드로 다시 짠 뒤로는 그 바깥 토글과 겹쳐 접었다 펴는 UI가 두 겹이
-/// 되는 게 이상해서, 그 껍데기(제목 줄 + 화살표)만 걷어내고 효과별 행들은
-/// 그대로 옮겨왔다 — 실제 편집 로직/각 행의 모양은 손대지 않았다.
+/// [only]가 있으면 **그 효과 한 줄만** 그린다 — 데스크톱 노드 에디터에서
+/// 효과 칩을 누르면 그 칩에 해당하는 설정만 아래에 펼치기 위한 것이다.
+/// 일곱 줄을 한꺼번에 펼치면 지금 무엇을 만지려던 건지 화면에서 사라진다.
+/// null이면 예전처럼 전부 그린다(좁은 폭의 접힘 섹션이 그렇게 쓴다).
+///
+/// 접고 펴는 건 이 위젯 바깥(node_editor.dart)이 맡는다.
 class NodeEffectsEditor extends StatelessWidget {
   final NodeEffects effects;
   final List<AdminSfx> sfxLibrary;
@@ -39,13 +41,15 @@ class NodeEffectsEditor extends StatelessWidget {
   /// "미리듣기" 버튼(_TtsEffectRow 안)이 previewNodeTts를 부르는 데 필요한
   /// 값들 — 팩/노드 id, 지금 화면의(아직 저장 전일 수도 있는) 본문 블록,
   /// 팩 기본 보이스. Cloud Function이 liveSnapshot이 아니라 이 값들을 그대로
-  /// 받아 생성하므로(node_tts_repository.dart의 synthesizeNodeTts와 다른
-  /// 점), 여기서 직접 실어 보낸다.
+  /// 받아 생성하므로 여기서 직접 실어 보낸다.
   final AdminTtsVoiceRepository ttsVoiceRepository;
   final String packId;
   final String nodeId;
   final List<AdminNodeBlock> blocks;
   final String? defaultTtsVoiceId;
+
+  /// null이면 전부, 값이 있으면 그 한 줄만.
+  final NodeEffectKind? only;
 
   final ValueChanged<NodeEffects> onChanged;
 
@@ -62,14 +66,16 @@ class NodeEffectsEditor extends StatelessWidget {
     required this.nodeId,
     required this.blocks,
     required this.defaultTtsVoiceId,
+    this.only,
     required this.onChanged,
   });
 
+  bool _shows(NodeEffectKind kind) => only == null || only == kind;
+
   @override
   Widget build(BuildContext context) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
+    final rows = <Widget>[
+      if (_shows(NodeEffectKind.blackout))
         _EffectRow<BlackoutDurationPreset>(
           label: '암전 (블랙아웃)',
           description: '텍스트 나오기 전 화면이 잠깐 검게 변해요',
@@ -88,7 +94,7 @@ class NodeEffectsEditor extends StatelessWidget {
             ),
           ),
         ),
-        const SizedBox(height: 14),
+      if (_shows(NodeEffectKind.shake))
         _EffectRow<ShakeIntensityPreset>(
           label: '화면 흔들림',
           description: '텍스트 등장과 함께 화면이 짧게 흔들려요',
@@ -105,7 +111,7 @@ class NodeEffectsEditor extends StatelessWidget {
             ),
           ),
         ),
-        const SizedBox(height: 14),
+      if (_shows(NodeEffectKind.sfx))
         _SfxEffectRow(
           sfx: effects.sfx,
           sfxLibrary: sfxLibrary,
@@ -120,7 +126,7 @@ class NodeEffectsEditor extends StatelessWidget {
             ),
           ),
         ),
-        const SizedBox(height: 14),
+      if (_shows(NodeEffectKind.flash))
         _FlashEffectRow(
           flash: effects.flash,
           onEnabledChanged: (value) => onChanged(
@@ -137,7 +143,7 @@ class NodeEffectsEditor extends StatelessWidget {
             ),
           ),
         ),
-        const SizedBox(height: 14),
+      if (_shows(NodeEffectKind.bgm))
         _BgmEffectRow(
           bgm: effects.bgm,
           bgmLibrary: bgmLibrary,
@@ -147,7 +153,7 @@ class NodeEffectsEditor extends StatelessWidget {
                 : effects.copyWith(bgm: bgm),
           ),
         ),
-        const SizedBox(height: 14),
+      if (_shows(NodeEffectKind.tts))
         _TtsEffectRow(
           tts: effects.tts,
           voices: ttsVoices,
@@ -164,7 +170,7 @@ class NodeEffectsEditor extends StatelessWidget {
                 : effects.copyWith(tts: tts),
           ),
         ),
-        const SizedBox(height: 14),
+      if (_shows(NodeEffectKind.haptic))
         _EffectRow<HapticDurationPreset>(
           label: '진동 (모바일)',
           description: '모바일 기기에서만 재생돼요',
@@ -181,21 +187,33 @@ class NodeEffectsEditor extends StatelessWidget {
             ),
           ),
         ),
-        const SizedBox(height: 12),
-        Text(
-          '체크한 효과는 이 노드의 텍스트가 나타나기 시작할 때 함께 재생돼요.',
-          style: TextStyle(fontSize: 11, color: AdminColors.muted),
-        ),
+    ];
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        for (var i = 0; i < rows.length; i++) ...[
+          if (i > 0) const SizedBox(height: 14),
+          rows[i],
+        ],
+        // 한 줄만 보여줄 때는 굳이 붙이지 않는다 — 그 줄의 설명이 이미 바로
+        // 위에 있어서 같은 말을 두 번 하는 셈이 된다.
+        if (only == null) ...[
+          const SizedBox(height: 12),
+          Text(
+            '체크한 효과는 이 노드의 텍스트가 나타나기 시작할 때 함께 재생돼요.',
+            style: TextStyle(fontSize: 11, color: AdminColors.muted),
+          ),
+        ],
       ],
     );
   }
 }
 
-/// "효과음" 행 전용 — 나머지 세 행(_EffectRow<T>)은 고정 프리셋 목록 중
-/// 하나를 고르는 좁은 드롭다운이면 충분하지만, 효과음은 라이브러리에서
-/// 카테고리로 좁혀가며 고르고 미리 들어볼 수 있어야 해서(SfxPickerField)
-/// 체크박스 줄 아래에 그 피커를 통째로 펼쳐 넣는 별도 레이아웃을 쓴다 —
-/// _BackgroundSection이 ImagePickerField를 펼쳐 넣는 방식과 같다.
+/// "효과음" 행 전용 — 나머지 행(_EffectRow<T>)은 고정 프리셋 중 하나를 고르는
+/// 좁은 드롭다운이면 충분하지만, 효과음은 라이브러리에서 카테고리로 좁혀가며
+/// 고르고 미리 들어볼 수 있어야 해서(SfxPickerField) 체크박스 줄 아래에 그
+/// 피커를 통째로 펼쳐 넣는 별도 레이아웃을 쓴다.
 class _SfxEffectRow extends StatelessWidget {
   final SfxEffect sfx;
   final List<AdminSfx> sfxLibrary;
@@ -223,7 +241,7 @@ class _SfxEffectRow extends StatelessWidget {
               child: Checkbox(
                 value: sfx.enabled,
                 fillColor: WidgetStateProperty.resolveWith(
-                  (states) => states.contains(WidgetState.selected)
+                      (states) => states.contains(WidgetState.selected)
                       ? AdminColors.gold
                       : AdminColors.checkboxUncheckedFill,
                 ),
@@ -279,12 +297,10 @@ class _SfxEffectRow extends StatelessWidget {
 
 enum _BgmMode { inherit, track, silence }
 
-/// "배경음악" 행 전용 — 나머지 행들과 달리 켜짐/꺼짐 체크박스가 아니라
-/// "이전과 동일(기본값)/트랙 선택/무음으로 전환" 3지선다다(effects.bgm이
-/// null/트랙 지정/silence=true 셋 중 하나로 표현되는 것과 정확히 대응 —
-/// node_effects.dart의 BgmEffect doc 참고). "트랙 선택"을 골랐을 때만 그
-/// 아래에 BgmPickerField를 펼친다 — _SfxEffectRow가 체크박스 아래 SfxPickerField를
-/// 펼치는 것과 같은 레이아웃 관례다.
+/// "배경음악" 행 전용 — 켜짐/꺼짐 체크박스가 아니라 "이전과 동일(기본값)/
+/// 트랙 선택/무음으로 전환" 3지선다다(effects.bgm이 null/트랙 지정/
+/// silence=true 셋 중 하나로 표현되는 것과 정확히 대응). "트랙 선택"을
+/// 골랐을 때만 그 아래에 BgmPickerField를 펼친다.
 class _BgmEffectRow extends StatelessWidget {
   final BgmEffect? bgm;
   final List<AdminBgm> bgmLibrary;
@@ -488,10 +504,8 @@ class _BgmModeChip extends StatelessWidget {
 }
 
 /// "TTS 내레이션" 행 전용 — bgm처럼 3지선다가 아니라 sfx처럼 "체크박스 +
-/// 펼쳐지는 상세 컨트롤"이다. 체크 해제(기본값)면 [TtsEffect] 자체가
-/// null이라 팩 기본 보이스 + Typecast Smart Emotion(자동 감정) + 중립
-/// 피치/템포로 생성된다 — 체크하면 그 순간부터 이 노드만의 값을 하나씩
-/// 재정의할 수 있다.
+/// 펼쳐지는 상세 컨트롤"이다. 체크 해제(기본값)면 [TtsEffect] 자체가 null이라
+/// 팩 기본 보이스 + Smart Emotion(자동 감정) + 중립 피치/템포로 생성된다.
 class _TtsEffectRow extends StatelessWidget {
   final TtsEffect? tts;
   final List<AdminTtsVoice> voices;
@@ -537,7 +551,7 @@ class _TtsEffectRow extends StatelessWidget {
               child: Checkbox(
                 value: _customized,
                 fillColor: WidgetStateProperty.resolveWith(
-                  (states) => states.contains(WidgetState.selected)
+                      (states) => states.contains(WidgetState.selected)
                       ? AdminColors.gold
                       : AdminColors.checkboxUncheckedFill,
                 ),
@@ -602,6 +616,11 @@ class _TtsEffectRow extends StatelessWidget {
                   onRefresh: onRefreshVoices,
                   refreshing: refreshingVoices,
                   noSelectionLabel: '(선택 안 함) 팩 기본 보이스',
+                  sampleContext: TtsVoiceSampleContext(   // ← 추가
+                    repository: ttsVoiceRepository,
+                    packId: packId,
+                    nodeId: nodeId,
+                  ),
                   onChanged: (id) => onChanged(
                     current.copyWith(voiceId: id, clearVoiceId: id == null),
                   ),
@@ -663,12 +682,11 @@ class _TtsEffectRow extends StatelessWidget {
 }
 
 /// "미리듣기" 버튼 — previewNodeTts를 불러 지금 화면의(임시저장 전일 수도
-/// 있는) 본문+TTS 설정으로 오디오를 만들고, 받은 URL을 바로 재생한다(요청
-/// 사양 Part 1-1). 재생 자체는 AudioService.playSfx를 재사용한다 —
-/// SfxLibraryTab의 미리듣기 버튼과 똑같은 "1회성 URL 재생" 용도라 새 재생기를
-/// 따로 만들 이유가 없다. 여러 번 다시 눌러도 된다 — 설정이 안 바뀌었으면
-/// Cloud Function이 캐시를 그대로 돌려주고, 바뀌었으면 그 값으로 다시
-/// 생성한다.
+/// 있는) 본문+TTS 설정으로 오디오를 만들고, 받은 URL을 바로 재생한다. 재생
+/// 자체는 AudioService.playSfx를 재사용한다 — SfxLibraryTab의 미리듣기와
+/// 똑같은 "1회성 URL 재생" 용도라 새 재생기를 만들 이유가 없다. 여러 번 다시
+/// 눌러도 된다 — 설정이 안 바뀌었으면 Cloud Function이 캐시를 그대로
+/// 돌려주고, 바뀌었으면 그 값으로 다시 생성한다.
 class _TtsPreviewButton extends StatefulWidget {
   final AdminTtsVoiceRepository repository;
   final String packId;
@@ -726,13 +744,13 @@ class _TtsPreviewButtonState extends State<_TtsPreviewButton> {
       ),
       icon: _loading
           ? SizedBox(
-              width: 14,
-              height: 14,
-              child: CircularProgressIndicator(
-                strokeWidth: 2,
-                color: AdminColors.muted,
-              ),
-            )
+        width: 14,
+        height: 14,
+        child: CircularProgressIndicator(
+          strokeWidth: 2,
+          color: AdminColors.muted,
+        ),
+      )
           : Icon(Icons.volume_up_rounded, size: 16, color: AdminColors.gold),
       label: Text(
         _loading ? '생성 중…' : '미리듣기',
@@ -743,10 +761,9 @@ class _TtsPreviewButtonState extends State<_TtsPreviewButton> {
 }
 
 /// 감정 프리셋 드롭다운 — "자동(Smart Emotion)"이 곧 `value == null`이다.
-/// 위의 범용 [_PresetDropdown]은 항목이 전부 non-null이라는 전제로
-/// "null이면 콜백을 안 부른다"는 가드를 이미 갖고 있어서(다른 프리셋
-/// 드롭다운에서는 문제없다 — 거긴 정말로 null이 될 일이 없다), null 자체가
-/// 유효한 선택지인 이 자리에는 재사용할 수 없다 — 그래서 이 위젯만 따로 둔다.
+/// 범용 [_PresetDropdown]은 항목이 전부 non-null이라는 전제로 "null이면
+/// 콜백을 안 부른다"는 가드를 갖고 있어서, null 자체가 유효한 선택지인 이
+/// 자리에는 재사용할 수 없다 — 그래서 이 위젯만 따로 둔다.
 class TtsEmotionDropdown extends StatelessWidget {
   final TtsEmotionPreset? value;
   final ValueChanged<TtsEmotionPreset?> onChanged;
@@ -848,7 +865,7 @@ class TtsSlider extends StatelessWidget {
 /// "화면 플래시" 행 전용 — 나머지 프리셋 행(_EffectRow<T>)은 축 하나(지속
 /// 시간 또는 강도)만 고르면 되지만, 플래시는 색(FlashColorPreset)과 지속
 /// 시간(FlashDurationPreset) 두 축을 동시에 골라야 해서 드롭다운을 두 개
-/// 나란히 놓는다 — 그 점만 빼면 체크박스+라벨 구조는 _EffectRow와 같다.
+/// 나란히 놓는다.
 class _FlashEffectRow extends StatelessWidget {
   final FlashEffect flash;
   final ValueChanged<bool> onEnabledChanged;
@@ -873,7 +890,7 @@ class _FlashEffectRow extends StatelessWidget {
           child: Checkbox(
             value: flash.enabled,
             fillColor: WidgetStateProperty.resolveWith(
-              (states) => states.contains(WidgetState.selected)
+                  (states) => states.contains(WidgetState.selected)
                   ? AdminColors.gold
                   : AdminColors.checkboxUncheckedFill,
             ),
@@ -996,8 +1013,8 @@ class _PresetDropdown<T> extends StatelessWidget {
       ],
       onChanged: enabled
           ? (value) {
-              if (value != null) onChanged(value);
-            }
+        if (value != null) onChanged(value);
+      }
           : null,
     );
   }
@@ -1036,7 +1053,7 @@ class _EffectRow<T> extends StatelessWidget {
           child: Checkbox(
             value: enabled,
             fillColor: WidgetStateProperty.resolveWith(
-              (states) => states.contains(WidgetState.selected)
+                  (states) => states.contains(WidgetState.selected)
                   ? AdminColors.gold
                   : AdminColors.checkboxUncheckedFill,
             ),
@@ -1119,8 +1136,8 @@ class _EffectRow<T> extends StatelessWidget {
             ],
             onChanged: enabled
                 ? (value) {
-                    if (value != null) onPresetChanged(value);
-                  }
+              if (value != null) onPresetChanged(value);
+            }
                 : null,
           ),
         ),
