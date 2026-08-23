@@ -11,13 +11,23 @@ class CloudSyncController {
     required GameState gameState,
     required AuthService authService,
     CloudSaveService? cloudSaveService,
-  })  : _gameState = gameState,
-        _authService = authService,
-        _cloudSaveService = cloudSaveService ?? CloudSaveService();
+  }) : _gameState = gameState,
+       _authService = authService,
+       _cloudSaveService = cloudSaveService ?? CloudSaveService();
 
   final GameState _gameState;
   final AuthService _authService;
   final CloudSaveService _cloudSaveService;
+
+  /// 자동 저장 실패를 앱 UI에 전달한다. null이면 마지막 저장이 성공했거나
+  /// 아직 실패한 적이 없다는 뜻이다. 같은 오류가 연속으로 발생해도 배너를
+  /// 반복해서 띄우지 않고, 다음 최신 저장 성공 시 자동으로 해제한다.
+  final ValueNotifier<String?> _saveErrorMessage = ValueNotifier<String?>(null);
+  ValueListenable<String?> get saveErrorMessage => _saveErrorMessage;
+
+  /// GameState 변경이 빠르게 연속으로 일어나면 저장 요청도 겹칠 수 있다.
+  /// 오래된 요청의 성공/실패가 더 최신 요청의 결과를 덮지 않도록 순번을 둔다.
+  int _saveAttempt = 0;
 
   void attach() {
     _gameState.addListener(_onGameStateChanged);
@@ -27,11 +37,25 @@ class CloudSyncController {
     _gameState.removeListener(_onGameStateChanged);
   }
 
+  void dispose() {
+    _saveErrorMessage.dispose();
+  }
+
   void _onGameStateChanged() {
     final uid = _authService.userId;
     if (uid == null) return;
-    _cloudSaveService.save(uid, _gameState).catchError((Object e) {
+
+    final attempt = ++_saveAttempt;
+    _cloudSaveService.save(uid, _gameState).then((_) {
+      if (attempt == _saveAttempt) {
+        _saveErrorMessage.value = null;
+      }
+    }).catchError((Object e) {
       debugPrint('클라우드 세이브 저장 실패: $e');
+      if (attempt == _saveAttempt) {
+        _saveErrorMessage.value =
+            '진행 상황을 클라우드에 저장하지 못했어요. 연결 상태를 확인한 뒤 다시 시도해 주세요.';
+      }
     });
   }
 

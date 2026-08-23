@@ -131,10 +131,52 @@ class _MainPageState extends State<MainPage> {
 
   @override
   Widget build(BuildContext context) {
+    final cloudSync = AuthScope.cloudSyncOf(context);
+
     return Scaffold(
       body: Stack(
         children: [
           ?_destination,
+          // 자동 저장 실패는 debugPrint로만 삼키지 않고 사용자에게도 보인다.
+          // 실패가 이어지는 동안 배너 하나만 유지되고, 최신 저장이 성공하면
+          // CloudSyncController가 null로 되돌려 자동으로 사라진다.
+          ValueListenableBuilder<String?>(
+            valueListenable: cloudSync.saveErrorMessage,
+            builder: (context, message, child) {
+              if (message == null) return const SizedBox.shrink();
+              return Align(
+                alignment: Alignment.topCenter,
+                child: SafeArea(
+                  child: Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+                    child: Material(
+                      elevation: 8,
+                      borderRadius: BorderRadius.circular(12),
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 14,
+                          vertical: 12,
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            const Icon(Icons.cloud_off_outlined, size: 20),
+                            const SizedBox(width: 10),
+                            Flexible(
+                              child: Text(
+                                message,
+                                style: const TextStyle(fontSize: 13),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              );
+            },
+          ),
           // web/index.html의 #app-loading(Flutter 엔진이 뜨기 전 HTML/CSS
           // 스플래시)과 같은 카드 디자인을 그대로 이어받는 AppLoadingScreen을
           // 프로세스 시작부터 실제 콘텐츠가 준비될 때까지 단 하나의 인스턴스로
