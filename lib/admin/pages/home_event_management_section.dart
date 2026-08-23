@@ -27,13 +27,19 @@ class HomeEventManagementSection extends StatefulWidget {
   });
 
   @override
-  State<HomeEventManagementSection> createState() => _HomeEventManagementSectionState();
+  State<HomeEventManagementSection> createState() =>
+      _HomeEventManagementSectionState();
 }
 
-class _HomeEventManagementSectionState extends State<HomeEventManagementSection> {
-  late final Stream<List<AdminHomeEvent>> _eventsStream = widget.repository.watchAllEvents();
+class _HomeEventManagementSectionState
+    extends State<HomeEventManagementSection> {
+  late final Stream<List<AdminHomeEvent>> _eventsStream = widget.repository
+      .watchAllEvents();
 
-  Future<void> _openCreateDialog(List<AdminStoryPack> packs, int nextSortOrder) async {
+  Future<void> _openCreateDialog(
+    List<AdminStoryPack> packs,
+    int nextSortOrder,
+  ) async {
     final result = await showDialog<_EventFormResult>(
       context: context,
       builder: (_) => _EventFormDialog(existing: null, packs: packs),
@@ -54,7 +60,10 @@ class _HomeEventManagementSectionState extends State<HomeEventManagementSection>
     );
   }
 
-  Future<void> _openEditDialog(AdminHomeEvent event, List<AdminStoryPack> packs) async {
+  Future<void> _openEditDialog(
+    AdminHomeEvent event,
+    List<AdminStoryPack> packs,
+  ) async {
     final result = await showDialog<_EventFormResult>(
       context: context,
       builder: (_) => _EventFormDialog(existing: event, packs: packs),
@@ -79,7 +88,11 @@ class _HomeEventManagementSectionState extends State<HomeEventManagementSection>
     await widget.repository.deleteEvent(event);
   }
 
-  Future<void> _reorder(List<AdminHomeEvent> events, int oldIndex, int newIndex) async {
+  Future<void> _reorder(
+    List<AdminHomeEvent> events,
+    int oldIndex,
+    int newIndex,
+  ) async {
     if (newIndex > oldIndex) newIndex -= 1;
     final reordered = [...events];
     final moved = reordered.removeAt(oldIndex);
@@ -108,25 +121,44 @@ class _HomeEventManagementSectionState extends State<HomeEventManagementSection>
                     final events = snapshot.data ?? const <AdminHomeEvent>[];
                     final nextSortOrder = events.isEmpty
                         ? 0
-                        : events.map((e) => e.sortOrder).reduce((a, b) => a > b ? a : b) + 1;
+                        : events
+                                  .map((e) => e.sortOrder)
+                                  .reduce((a, b) => a > b ? a : b) +
+                              1;
 
                     return Row(
                       children: [
                         Expanded(
                           child: Text(
                             '홈 이벤트 관리',
-                            style: TextStyle(fontSize: 16, color: AdminColors.ivory, fontWeight: FontWeight.w700),
+                            style: TextStyle(
+                              fontSize: 16,
+                              color: AdminColors.ivory,
+                              fontWeight: FontWeight.w700,
+                            ),
                           ),
                         ),
                         ElevatedButton(
-                          onPressed: () => _openCreateDialog(packs, nextSortOrder),
+                          onPressed: () =>
+                              _openCreateDialog(packs, nextSortOrder),
                           style: ElevatedButton.styleFrom(
                             backgroundColor: AdminColors.gold,
                             foregroundColor: Colors.black,
-                            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 16,
+                              vertical: 10,
+                            ),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(8),
+                            ),
                           ),
-                          child: const Text('+ 새 이벤트', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700)),
+                          child: const Text(
+                            '+ 새 이벤트',
+                            style: TextStyle(
+                              fontSize: 13,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
                         ),
                       ],
                     );
@@ -137,7 +169,11 @@ class _HomeEventManagementSectionState extends State<HomeEventManagementSection>
                   '여기서 만든 이벤트는 홈 탭이 열릴 때 모달 팝업으로 떠요. 동시에 여러 이벤트가 활성 상태면 '
                   '정렬 순서가 가장 작은 것 하나만 보여줘요(여러 개가 겹쳐 뜨지 않아요). 독자가 "다시 보지 않기"를 '
                   '누르면 그 이벤트만 그 사람 기기에서 다시는 안 떠요 — 새 이벤트를 만들면 그 사람에게도 새로 떠요.',
-                  style: TextStyle(fontSize: 12, color: AdminColors.muted, height: 1.5),
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: AdminColors.muted,
+                    height: 1.5,
+                  ),
                 ),
                 const SizedBox(height: 16),
                 StreamBuilder<List<AdminHomeEvent>>(
@@ -146,18 +182,30 @@ class _HomeEventManagementSectionState extends State<HomeEventManagementSection>
                     if (snapshot.hasError) {
                       return SelectableText(
                         '이벤트 목록을 불러오지 못했어요: ${snapshot.error}',
-                        style: const TextStyle(fontSize: 12, color: AdminColors.danger),
+                        style: const TextStyle(
+                          fontSize: 12,
+                          color: AdminColors.danger,
+                        ),
                       );
                     }
                     if (snapshot.connectionState == ConnectionState.waiting) {
-                      return Text('불러오는 중...', style: TextStyle(fontSize: 13, color: AdminColors.muted));
+                      return Text(
+                        '불러오는 중...',
+                        style: TextStyle(
+                          fontSize: 13,
+                          color: AdminColors.muted,
+                        ),
+                      );
                     }
 
                     final events = snapshot.data ?? const <AdminHomeEvent>[];
                     if (events.isEmpty) {
                       return Text(
                         '등록된 이벤트가 없어요. "+ 새 이벤트"로 첫 이벤트를 만들어보세요.',
-                        style: TextStyle(fontSize: 13, color: AdminColors.muted),
+                        style: TextStyle(
+                          fontSize: 13,
+                          color: AdminColors.muted,
+                        ),
                       );
                     }
 
@@ -165,7 +213,8 @@ class _HomeEventManagementSectionState extends State<HomeEventManagementSection>
                       shrinkWrap: true,
                       physics: const NeverScrollableScrollPhysics(),
                       buildDefaultDragHandles: false,
-                      onReorder: (oldIndex, newIndex) => _reorder(events, oldIndex, newIndex),
+                      onReorder: (oldIndex, newIndex) =>
+                          _reorder(events, oldIndex, newIndex),
                       children: [
                         for (var i = 0; i < events.length; i++)
                           _EventRow(
@@ -226,7 +275,11 @@ class _EventRow extends StatelessWidget {
           children: [
             ReorderableDragStartListener(
               index: index,
-              child: Icon(Icons.drag_indicator_rounded, color: AdminColors.muted, size: 20),
+              child: Icon(
+                Icons.drag_indicator_rounded,
+                color: AdminColors.muted,
+                size: 20,
+              ),
             ),
             const SizedBox(width: 10),
             ClipRRect(
@@ -238,7 +291,8 @@ class _EventRow extends StatelessWidget {
                     ? Image.network(
                         event.imageUrl,
                         fit: BoxFit.cover,
-                        errorBuilder: (_, _, _) => ColoredBox(color: AdminColors.panel2),
+                        errorBuilder: (_, _, _) =>
+                            ColoredBox(color: AdminColors.panel2),
                       )
                     : ColoredBox(color: AdminColors.panel2),
               ),
@@ -252,26 +306,43 @@ class _EventRow extends StatelessWidget {
                     children: [
                       Flexible(
                         child: Text(
-                          title != null && title.isNotEmpty ? title : (linkedPackTitle ?? '(제목 없음)'),
+                          title != null && title.isNotEmpty
+                              ? title
+                              : (linkedPackTitle ?? '(제목 없음)'),
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
-                          style: TextStyle(fontWeight: FontWeight.w700, fontSize: 14, color: AdminColors.ivory),
+                          style: TextStyle(
+                            fontWeight: FontWeight.w700,
+                            fontSize: 14,
+                            color: AdminColors.ivory,
+                          ),
                         ),
                       ),
                       if (dimmed) ...[
                         const SizedBox(width: 8),
                         Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 6,
+                            vertical: 2,
+                          ),
                           decoration: BoxDecoration(
                             color: AdminColors.statusDraftBg,
                             borderRadius: BorderRadius.circular(999),
                           ),
-                          child: const Text('비활성', style: TextStyle(fontSize: 9, color: AdminColors.statusDraftText)),
+                          child: const Text(
+                            '비활성',
+                            style: TextStyle(
+                              fontSize: 9,
+                              color: AdminColors.statusDraftText,
+                            ),
+                          ),
                         ),
                       ],
                     ],
                   ),
-                  if (linkedPackTitle != null || event.startDate != null || event.endDate != null) ...[
+                  if (linkedPackTitle != null ||
+                      event.startDate != null ||
+                      event.endDate != null) ...[
                     const SizedBox(height: 2),
                     Text(
                       [
@@ -291,14 +362,20 @@ class _EventRow extends StatelessWidget {
               onTap: onEdit,
               child: const Padding(
                 padding: EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                child: Text('편집', style: TextStyle(fontSize: 12, color: AdminColors.accent)),
+                child: Text(
+                  '편집',
+                  style: TextStyle(fontSize: 12, color: AdminColors.accent),
+                ),
               ),
             ),
             InkWell(
               onTap: onDelete,
               child: const Padding(
                 padding: EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                child: Text('삭제', style: TextStyle(fontSize: 12, color: AdminColors.danger)),
+                child: Text(
+                  '삭제',
+                  style: TextStyle(fontSize: 12, color: AdminColors.danger),
+                ),
               ),
             ),
           ],
@@ -349,8 +426,9 @@ class _EventFormDialogState extends State<_EventFormDialog> {
   late bool _active = widget.existing?.active ?? true;
   late DateTime? _startDate = widget.existing?.startDate;
   late DateTime? _endDate = widget.existing?.endDate;
-  late final TextEditingController _titleController =
-      TextEditingController(text: widget.existing?.title ?? '');
+  late final TextEditingController _titleController = TextEditingController(
+    text: widget.existing?.title ?? '',
+  );
 
   bool get _isEditing => widget.existing != null;
 
@@ -365,7 +443,10 @@ class _EventFormDialogState extends State<_EventFormDialog> {
   }
 
   Future<void> _pickImage() async {
-    final result = await FilePicker.platform.pickFiles(type: FileType.image, withData: true);
+    final result = await FilePicker.platform.pickFiles(
+      type: FileType.image,
+      withData: true,
+    );
     final bytes = result?.files.firstOrNull?.bytes;
     if (bytes == null) return;
     setState(() => _pickedImageBytes = bytes);
@@ -411,7 +492,10 @@ class _EventFormDialogState extends State<_EventFormDialog> {
 
     return AlertDialog(
       backgroundColor: AdminColors.panel,
-      title: Text(_isEditing ? '이벤트 편집' : '새 이벤트', style: TextStyle(color: AdminColors.ivory)),
+      title: Text(
+        _isEditing ? '이벤트 편집' : '새 이벤트',
+        style: TextStyle(color: AdminColors.ivory),
+      ),
       content: SizedBox(
         width: 380,
         child: SingleChildScrollView(
@@ -454,14 +538,22 @@ class _EventFormDialogState extends State<_EventFormDialog> {
               LabeledField(
                 label: '연결할 스토리팩 (선택)',
                 child: DropdownButtonFormField<String>(
-                  initialValue: widget.packs.any((p) => p.id == _linkedPackId) ? _linkedPackId : null,
+                  initialValue: widget.packs.any((p) => p.id == _linkedPackId)
+                      ? _linkedPackId
+                      : null,
                   decoration: adminInputDecoration(hintText: '(선택 안 함)'),
                   dropdownColor: AdminColors.inputDropdownMenuBg,
                   style: TextStyle(color: AdminColors.inputText, fontSize: 13),
                   items: [
-                    const DropdownMenuItem<String>(value: null, child: Text('(선택 안 함)')),
+                    const DropdownMenuItem<String>(
+                      value: null,
+                      child: Text('(선택 안 함)'),
+                    ),
                     for (final pack in widget.packs)
-                      DropdownMenuItem<String>(value: pack.id, child: Text(pack.title)),
+                      DropdownMenuItem<String>(
+                        value: pack.id,
+                        child: Text(pack.title),
+                      ),
                   ],
                   onChanged: (value) => setState(() => _linkedPackId = value),
                 ),
@@ -500,7 +592,10 @@ class _EventFormDialogState extends State<_EventFormDialog> {
               const SizedBox(height: 16),
               Row(
                 children: [
-                  Text('활성', style: TextStyle(fontSize: 12, color: AdminColors.muted)),
+                  Text(
+                    '활성',
+                    style: TextStyle(fontSize: 12, color: AdminColors.muted),
+                  ),
                   const Spacer(),
                   Switch(
                     value: _active,
@@ -520,7 +615,10 @@ class _EventFormDialogState extends State<_EventFormDialog> {
         ),
         TextButton(
           onPressed: _canSubmit ? _submit : null,
-          child: Text(_isEditing ? '저장' : '만들기', style: const TextStyle(color: AdminColors.gold)),
+          child: Text(
+            _isEditing ? '저장' : '만들기',
+            style: const TextStyle(color: AdminColors.gold),
+          ),
         ),
       ],
     );
@@ -529,7 +627,11 @@ class _EventFormDialogState extends State<_EventFormDialog> {
   Widget _buildImagePreview(String? existingImageUrl) {
     final pickedBytes = _pickedImageBytes;
     if (pickedBytes != null) {
-      return Image.memory(pickedBytes, fit: BoxFit.cover, width: double.infinity);
+      return Image.memory(
+        pickedBytes,
+        fit: BoxFit.cover,
+        width: double.infinity,
+      );
     }
     if (existingImageUrl != null && existingImageUrl.isNotEmpty) {
       return Image.network(
@@ -561,7 +663,11 @@ class _DateField extends StatelessWidget {
   final VoidCallback onTap;
   final VoidCallback onClear;
 
-  const _DateField({required this.date, required this.onTap, required this.onClear});
+  const _DateField({
+    required this.date,
+    required this.onTap,
+    required this.onClear,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -583,13 +689,22 @@ class _DateField extends StatelessWidget {
                 date == null
                     ? '(선택 안 함)'
                     : '${date.year}.${date.month.toString().padLeft(2, '0')}.${date.day.toString().padLeft(2, '0')}',
-                style: TextStyle(fontSize: 13, color: date == null ? AdminColors.muted : AdminColors.inputText),
+                style: TextStyle(
+                  fontSize: 13,
+                  color: date == null
+                      ? AdminColors.muted
+                      : AdminColors.inputText,
+                ),
               ),
             ),
             if (date != null)
               InkWell(
                 onTap: onClear,
-                child: Icon(Icons.close_rounded, size: 16, color: AdminColors.muted),
+                child: Icon(
+                  Icons.close_rounded,
+                  size: 16,
+                  color: AdminColors.muted,
+                ),
               ),
           ],
         ),

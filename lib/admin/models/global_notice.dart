@@ -24,7 +24,10 @@ class AdminGlobalNotice {
     required this.createdAt,
   });
 
-  factory AdminGlobalNotice.fromFirestore(String id, Map<String, dynamic> json) {
+  factory AdminGlobalNotice.fromFirestore(
+    String id,
+    Map<String, dynamic> json,
+  ) {
     return AdminGlobalNotice(
       id: id,
       title: json['title'] as String? ?? '',

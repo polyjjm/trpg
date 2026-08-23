@@ -24,8 +24,8 @@ class PointPackageManagementSection extends StatefulWidget {
 
 class _PointPackageManagementSectionState
     extends State<PointPackageManagementSection> {
-  late final Stream<List<AdminPointPackage>> _packagesStream =
-      widget.repository.watchAllPackages();
+  late final Stream<List<AdminPointPackage>> _packagesStream = widget.repository
+      .watchAllPackages();
 
   Future<void> _openCreateDialog() async {
     final result = await showDialog<_PackageFormResult>(
@@ -141,7 +141,11 @@ class _PointPackageManagementSectionState
               '여기서 만들고 고친 상품이 충전 화면의 코인 상품 카드로 바로 나타나요. '
               '할인가/기간을 정해두면 결제 시점에 서버가 자동으로 판단해요. '
               '삭제하면 목록에서 즉시 사라지지만, 이미 결제된 내역/지급된 코인에는 영향이 없어요.',
-              style: TextStyle(fontSize: 12, color: AdminColors.muted, height: 1.5),
+              style: TextStyle(
+                fontSize: 12,
+                color: AdminColors.muted,
+                height: 1.5,
+              ),
             ),
             const SizedBox(height: 16),
             StreamBuilder<List<AdminPointPackage>>(
@@ -150,7 +154,10 @@ class _PointPackageManagementSectionState
                 if (snapshot.hasError) {
                   return SelectableText(
                     '상품 목록을 불러오지 못했어요: ${snapshot.error}',
-                    style: const TextStyle(fontSize: 12, color: AdminColors.danger),
+                    style: const TextStyle(
+                      fontSize: 12,
+                      color: AdminColors.danger,
+                    ),
                   );
                 }
 
@@ -252,7 +259,7 @@ class _PackageRow extends StatelessWidget {
                   Text(
                     hasDiscount
                         ? '₩${package.originalPriceKRW} → ₩${package.salePriceKRW}'
-                            '${_formatWindow(package.discountStartAt, package.discountEndAt)}'
+                              '${_formatWindow(package.discountStartAt, package.discountEndAt)}'
                         : '₩${package.originalPriceKRW}',
                     style: TextStyle(
                       fontSize: 11.5,
@@ -272,14 +279,20 @@ class _PackageRow extends StatelessWidget {
               onTap: onEdit,
               child: const Padding(
                 padding: EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                child: Text('편집', style: TextStyle(fontSize: 12, color: AdminColors.accent)),
+                child: Text(
+                  '편집',
+                  style: TextStyle(fontSize: 12, color: AdminColors.accent),
+                ),
               ),
             ),
             InkWell(
               onTap: onDelete,
               child: const Padding(
                 padding: EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                child: Text('삭제', style: TextStyle(fontSize: 12, color: AdminColors.danger)),
+                child: Text(
+                  '삭제',
+                  style: TextStyle(fontSize: 12, color: AdminColors.danger),
+                ),
               ),
             ),
           ],
@@ -359,21 +372,26 @@ class _PackageFormDialog extends StatefulWidget {
 }
 
 class _PackageFormDialogState extends State<_PackageFormDialog> {
-  late final TextEditingController _nameController =
-      TextEditingController(text: widget.existing?.name ?? '');
-  late final TextEditingController _coinController =
-      TextEditingController(text: '${widget.existing?.coinAmount ?? 0}');
-  late final TextEditingController _bonusController =
-      TextEditingController(text: '${widget.existing?.bonusCoins ?? 0}');
-  late final TextEditingController _priceController =
-      TextEditingController(text: '${widget.existing?.originalPriceKRW ?? 0}');
+  late final TextEditingController _nameController = TextEditingController(
+    text: widget.existing?.name ?? '',
+  );
+  late final TextEditingController _coinController = TextEditingController(
+    text: '${widget.existing?.coinAmount ?? 0}',
+  );
+  late final TextEditingController _bonusController = TextEditingController(
+    text: '${widget.existing?.bonusCoins ?? 0}',
+  );
+  late final TextEditingController _priceController = TextEditingController(
+    text: '${widget.existing?.originalPriceKRW ?? 0}',
+  );
   late final TextEditingController _salePriceController = TextEditingController(
     text: widget.existing?.salePriceKRW != null
         ? '${widget.existing!.salePriceKRW}'
         : '',
   );
-  late final TextEditingController _sortOrderController =
-      TextEditingController(text: '${widget.existing?.sortOrder ?? 0}');
+  late final TextEditingController _sortOrderController = TextEditingController(
+    text: '${widget.existing?.sortOrder ?? 0}',
+  );
 
   late bool _active = widget.existing?.active ?? true;
   late DateTime? _discountStartAt = widget.existing?.discountStartAt;
@@ -405,7 +423,8 @@ class _PackageFormDialogState extends State<_PackageFormDialog> {
       (int.tryParse(_priceController.text.trim()) ?? 0) > 0;
 
   Future<void> _pickDate({required bool isStart}) async {
-    final initial = (isStart ? _discountStartAt : _discountEndAt) ?? DateTime.now();
+    final initial =
+        (isStart ? _discountStartAt : _discountEndAt) ?? DateTime.now();
     final picked = await showDatePicker(
       context: context,
       initialDate: initial,
@@ -431,7 +450,9 @@ class _PackageFormDialogState extends State<_PackageFormDialog> {
         coinAmount: int.tryParse(_coinController.text.trim()) ?? 0,
         bonusCoins: int.tryParse(_bonusController.text.trim()) ?? 0,
         originalPriceKRW: int.tryParse(_priceController.text.trim()) ?? 0,
-        salePriceKRW: salePriceText.isEmpty ? null : int.tryParse(salePriceText),
+        salePriceKRW: salePriceText.isEmpty
+            ? null
+            : int.tryParse(salePriceText),
         discountStartAt: _discountStartAt,
         discountEndAt: _discountEndAt,
         active: _active,
@@ -476,7 +497,10 @@ class _PackageFormDialogState extends State<_PackageFormDialog> {
                       child: TextField(
                         controller: _coinController,
                         keyboardType: TextInputType.number,
-                        style: TextStyle(color: AdminColors.ivory, fontSize: 13),
+                        style: TextStyle(
+                          color: AdminColors.ivory,
+                          fontSize: 13,
+                        ),
                         decoration: adminInputDecoration(hintText: '500'),
                       ),
                     ),
@@ -488,7 +512,10 @@ class _PackageFormDialogState extends State<_PackageFormDialog> {
                       child: TextField(
                         controller: _bonusController,
                         keyboardType: TextInputType.number,
-                        style: TextStyle(color: AdminColors.ivory, fontSize: 13),
+                        style: TextStyle(
+                          color: AdminColors.ivory,
+                          fontSize: 13,
+                        ),
                         decoration: adminInputDecoration(hintText: '0'),
                       ),
                     ),
@@ -504,7 +531,10 @@ class _PackageFormDialogState extends State<_PackageFormDialog> {
                       child: TextField(
                         controller: _priceController,
                         keyboardType: TextInputType.number,
-                        style: TextStyle(color: AdminColors.ivory, fontSize: 13),
+                        style: TextStyle(
+                          color: AdminColors.ivory,
+                          fontSize: 13,
+                        ),
                         decoration: adminInputDecoration(hintText: '5500'),
                       ),
                     ),
@@ -516,7 +546,10 @@ class _PackageFormDialogState extends State<_PackageFormDialog> {
                       child: TextField(
                         controller: _salePriceController,
                         keyboardType: TextInputType.number,
-                        style: TextStyle(color: AdminColors.ivory, fontSize: 13),
+                        style: TextStyle(
+                          color: AdminColors.ivory,
+                          fontSize: 13,
+                        ),
                         decoration: adminInputDecoration(hintText: '(할인 없음)'),
                       ),
                     ),
@@ -559,9 +592,13 @@ class _PackageFormDialogState extends State<_PackageFormDialog> {
                         initialValue: _platform,
                         decoration: adminInputDecoration(),
                         dropdownColor: AdminColors.inputDropdownMenuBg,
-                        style: TextStyle(color: AdminColors.inputText, fontSize: 13),
+                        style: TextStyle(
+                          color: AdminColors.inputText,
+                          fontSize: 13,
+                        ),
                         items: [
-                          for (final platform in AdminPointPackagePlatform.values)
+                          for (final platform
+                              in AdminPointPackagePlatform.values)
                             DropdownMenuItem(
                               value: platform,
                               child: Text(platform.label),
@@ -580,7 +617,10 @@ class _PackageFormDialogState extends State<_PackageFormDialog> {
                       child: TextField(
                         controller: _sortOrderController,
                         keyboardType: TextInputType.number,
-                        style: TextStyle(color: AdminColors.ivory, fontSize: 13),
+                        style: TextStyle(
+                          color: AdminColors.ivory,
+                          fontSize: 13,
+                        ),
                         decoration: adminInputDecoration(hintText: '0'),
                       ),
                     ),
@@ -590,7 +630,10 @@ class _PackageFormDialogState extends State<_PackageFormDialog> {
               const SizedBox(height: 16),
               Row(
                 children: [
-                  Text('활성', style: TextStyle(fontSize: 12, color: AdminColors.muted)),
+                  Text(
+                    '활성',
+                    style: TextStyle(fontSize: 12, color: AdminColors.muted),
+                  ),
                   const Spacer(),
                   Switch(
                     value: _active,
@@ -625,7 +668,11 @@ class _DateField extends StatelessWidget {
   final VoidCallback onTap;
   final VoidCallback onClear;
 
-  const _DateField({required this.date, required this.onTap, required this.onClear});
+  const _DateField({
+    required this.date,
+    required this.onTap,
+    required this.onClear,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -647,13 +694,22 @@ class _DateField extends StatelessWidget {
                 date == null
                     ? '(선택 안 함)'
                     : '${date.year}.${date.month.toString().padLeft(2, '0')}.${date.day.toString().padLeft(2, '0')}',
-                style: TextStyle(fontSize: 13, color: date == null ? AdminColors.muted : AdminColors.inputText),
+                style: TextStyle(
+                  fontSize: 13,
+                  color: date == null
+                      ? AdminColors.muted
+                      : AdminColors.inputText,
+                ),
               ),
             ),
             if (date != null)
               InkWell(
                 onTap: onClear,
-                child: Icon(Icons.close_rounded, size: 16, color: AdminColors.muted),
+                child: Icon(
+                  Icons.close_rounded,
+                  size: 16,
+                  color: AdminColors.muted,
+                ),
               ),
           ],
         ),

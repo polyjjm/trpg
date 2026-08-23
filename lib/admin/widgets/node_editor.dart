@@ -142,7 +142,7 @@ class _NodeEditorState extends State<NodeEditor> {
               const InfoBanner(
                 style: InfoBannerStyle.dirty,
                 text:
-                '이 노드는 삭제 요청이 들어가 있어요. 상위 관리자 승인을 기다리는 중이고, '
+                    '이 노드는 삭제 요청이 들어가 있어요. 상위 관리자 승인을 기다리는 중이고, '
                     '그동안 플레이어에게는 계속 원래 내용이 보여요.',
               ),
               OutlinedButton(
@@ -178,10 +178,7 @@ class _NodeEditorState extends State<NodeEditor> {
               onChanged: widget.onChanged,
             ),
             const SizedBox(height: 22),
-            _SectionLabel(
-              '본문',
-              trailing: '문단 ${node.blocks.length}',
-            ),
+            _SectionLabel('본문', trailing: '문단 ${node.blocks.length}'),
             const SizedBox(height: 10),
             NodeBodyBlocksEditor(
               blocks: node.blocks,
@@ -220,7 +217,10 @@ class _NodeEditorState extends State<NodeEditor> {
             const SizedBox(height: 20),
             Divider(color: AdminColors.border, height: 1),
             const SizedBox(height: 20),
-            if (isWide) ..._buildWideStagingSections() else ..._buildNarrowStagingSections(),
+            if (isWide)
+              ..._buildWideStagingSections()
+            else
+              ..._buildNarrowStagingSections(),
             const SizedBox(height: 20),
             _SaveBar(onSaveDraft: widget.onSaveDraft),
           ],
@@ -263,7 +263,7 @@ class _NodeEditorState extends State<NodeEditor> {
                   node: node,
                   openEffect: _openEffect,
                   onSelect: (kind) => setState(
-                        () => _openEffect = _openEffect == kind ? null : kind,
+                    () => _openEffect = _openEffect == kind ? null : kind,
                   ),
                 ),
               ],
@@ -361,7 +361,7 @@ class _NodeEditorState extends State<NodeEditor> {
         InfoBanner(
           style: InfoBannerStyle.rejected,
           text:
-          '반려됐어요: $rejectionReason\n'
+              '반려됐어요: $rejectionReason\n'
               '고친 뒤 임시저장하고, 상단의 "변경사항 전체 승인요청"으로 다시 제출해주세요.',
         ),
       );
@@ -372,7 +372,7 @@ class _NodeEditorState extends State<NodeEditor> {
         const InfoBanner(
           style: InfoBannerStyle.dirty,
           text:
-          '저장하지 않은 변경사항이 있어요. "임시저장"을 눌러야 다음에 다시 열었을 때 남아있고, '
+              '저장하지 않은 변경사항이 있어요. "임시저장"을 눌러야 다음에 다시 열었을 때 남아있고, '
               '상단의 "변경사항 전체 승인요청"을 보내야 상위 관리자 검토 후 플레이어에게 반영돼요.',
         ),
       );
@@ -388,7 +388,7 @@ class _NodeEditorState extends State<NodeEditor> {
         InfoBanner(
           style: InfoBannerStyle.dirty,
           text:
-          '$actionLabel 승인 요청을 보냈어요. 상위 관리자가 검토 중이에요 — 승인 전까지 $visibility',
+              '$actionLabel 승인 요청을 보냈어요. 상위 관리자가 검토 중이에요 — 승인 전까지 $visibility',
         ),
       );
     }
@@ -401,7 +401,7 @@ class _NodeEditorState extends State<NodeEditor> {
         const InfoBanner(
           style: InfoBannerStyle.live,
           text:
-          '이 노드는 현재 연재 중이에요. 지금 여기서 수정하면 바로 반영되는 게 아니라, '
+              '이 노드는 현재 연재 중이에요. 지금 여기서 수정하면 바로 반영되는 게 아니라, '
               '상단의 "변경사항 전체 승인요청"을 보내서 상위 관리자가 승인해야 실제 반영돼요.',
         ),
       );
@@ -569,16 +569,14 @@ class _EffectChip extends StatelessWidget {
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
         decoration: BoxDecoration(
-          color: on
-              ? AdminColors.gold.withOpacity(0.10)
-              : AdminColors.panel2,
+          color: on ? AdminColors.gold.withOpacity(0.10) : AdminColors.panel2,
           borderRadius: BorderRadius.circular(8),
           border: Border.all(
             color: open
                 ? AdminColors.gold
                 : (on
-                ? AdminColors.gold.withOpacity(0.45)
-                : AdminColors.border),
+                      ? AdminColors.gold.withOpacity(0.45)
+                      : AdminColors.border),
             width: open ? 1.5 : 1,
           ),
         ),
@@ -706,9 +704,9 @@ class _MetaRow extends StatelessWidget {
             style: TextStyle(color: AdminColors.inputText, fontSize: 12.5),
             decoration: adminInputDecoration(hintText: '순서 (배경 인계 기준)')
                 .copyWith(
-              isDense: true,
-              prefixIcon: const Icon(Icons.sort_rounded, size: 14),
-            ),
+                  isDense: true,
+                  prefixIcon: const Icon(Icons.sort_rounded, size: 14),
+                ),
             onChanged: (value) {
               node.order = int.tryParse(value) ?? node.order;
               onChanged();
@@ -873,7 +871,7 @@ class _BackgroundAppliesForwardToggle extends StatelessWidget {
           child: Checkbox(
             value: value,
             fillColor: WidgetStateProperty.resolveWith(
-                  (states) => states.contains(WidgetState.selected)
+              (states) => states.contains(WidgetState.selected)
                   ? AdminColors.gold
                   : AdminColors.checkboxUncheckedFill,
             ),
@@ -902,9 +900,7 @@ class _BackgroundAppliesForwardToggle extends StatelessWidget {
                 ),
                 const SizedBox(height: 4),
                 Text(
-                  value
-                      ? '체크 해제하면 이 배경은 이 노드에만 적용돼요.'
-                      : '지금은 이 노드에만 적용돼요.',
+                  value ? '체크 해제하면 이 배경은 이 노드에만 적용돼요.' : '지금은 이 노드에만 적용돼요.',
                   style: TextStyle(
                     fontSize: 11,
                     color: AdminColors.muted,

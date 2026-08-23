@@ -56,7 +56,11 @@ class BillingPage<T> {
   final QueryDocumentSnapshot<Map<String, dynamic>>? lastDoc;
   final bool hasMore;
 
-  const BillingPage({required this.items, required this.lastDoc, required this.hasMore});
+  const BillingPage({
+    required this.items,
+    required this.lastDoc,
+    required this.hasMore,
+  });
 
   static BillingPage<T> empty<T>() =>
       BillingPage<T>(items: const [], lastDoc: null, hasMore: false);
@@ -73,7 +77,10 @@ class AdminBillingRepository {
 
   static const int pageSize = 20;
 
-  Query<Map<String, dynamic>> _baseQuery(String type, AdminBillingFilter filter) {
+  Query<Map<String, dynamic>> _baseQuery(
+    String type,
+    AdminBillingFilter filter,
+  ) {
     Query<Map<String, dynamic>> q = _firestore
         .collectionGroup('transactions')
         .where('type', isEqualTo: type);
@@ -91,10 +98,16 @@ class AdminBillingRepository {
           .orderBy('createdAt', descending: true);
     } else {
       if (filter.startDate != null) {
-        q = q.where('createdAt', isGreaterThanOrEqualTo: Timestamp.fromDate(filter.startDate!));
+        q = q.where(
+          'createdAt',
+          isGreaterThanOrEqualTo: Timestamp.fromDate(filter.startDate!),
+        );
       }
       if (filter.endDate != null) {
-        q = q.where('createdAt', isLessThanOrEqualTo: Timestamp.fromDate(filter.endDate!));
+        q = q.where(
+          'createdAt',
+          isLessThanOrEqualTo: Timestamp.fromDate(filter.endDate!),
+        );
       }
       q = q.orderBy('createdAt', descending: true);
     }
@@ -103,10 +116,12 @@ class AdminBillingRepository {
 
   bool _passesClientFilter(DateTime? createdAt, AdminBillingFilter filter) {
     if (filter.isNameSearch) {
-      if (filter.startDate != null && (createdAt == null || createdAt.isBefore(filter.startDate!))) {
+      if (filter.startDate != null &&
+          (createdAt == null || createdAt.isBefore(filter.startDate!))) {
         return false;
       }
-      if (filter.endDate != null && (createdAt == null || createdAt.isAfter(filter.endDate!))) {
+      if (filter.endDate != null &&
+          (createdAt == null || createdAt.isAfter(filter.endDate!))) {
         return false;
       }
     }
@@ -122,10 +137,14 @@ class AdminBillingRepository {
     final snapshot = await q.get();
 
     final hasMore = snapshot.docs.length > pageSize;
-    final pageDocs = hasMore ? snapshot.docs.sublist(0, pageSize) : snapshot.docs;
+    final pageDocs = hasMore
+        ? snapshot.docs.sublist(0, pageSize)
+        : snapshot.docs;
 
     var items = pageDocs.map(AdminChargeTransaction.fromFirestore).toList();
-    items = items.where((t) => _passesClientFilter(t.createdAt, filter)).toList();
+    items = items
+        .where((t) => _passesClientFilter(t.createdAt, filter))
+        .toList();
     if (filter.minAmountKRW != null) {
       items = items.where((t) => t.amountKRW >= filter.minAmountKRW!).toList();
     }
@@ -149,10 +168,14 @@ class AdminBillingRepository {
     final snapshot = await q.get();
 
     final hasMore = snapshot.docs.length > pageSize;
-    final pageDocs = hasMore ? snapshot.docs.sublist(0, pageSize) : snapshot.docs;
+    final pageDocs = hasMore
+        ? snapshot.docs.sublist(0, pageSize)
+        : snapshot.docs;
 
     var items = pageDocs.map(AdminPurchaseTransaction.fromFirestore).toList();
-    items = items.where((t) => _passesClientFilter(t.createdAt, filter)).toList();
+    items = items
+        .where((t) => _passesClientFilter(t.createdAt, filter))
+        .toList();
 
     return BillingPage(
       items: items,
@@ -174,22 +197,29 @@ class AdminBillingRepository {
     DateTime endDate,
   ) async {
     final keys = <String>[];
-    for (var d = DateTime(startDate.year, startDate.month, startDate.day);
-        !d.isAfter(endDate);
-        d = d.add(const Duration(days: 1))) {
+    for (
+      var d = DateTime(startDate.year, startDate.month, startDate.day);
+      !d.isAfter(endDate);
+      d = d.add(const Duration(days: 1))
+    ) {
       keys.add(dateKeyOf(d));
     }
     if (keys.isEmpty) return const [];
 
     final results = <AdminRevenueSnapshot>[];
     for (var i = 0; i < keys.length; i += 30) {
-      final chunk = keys.sublist(i, i + 30 > keys.length ? keys.length : i + 30);
+      final chunk = keys.sublist(
+        i,
+        i + 30 > keys.length ? keys.length : i + 30,
+      );
       final snapshot = await _firestore
           .collection('revenueSnapshots')
           .where(FieldPath.documentId, whereIn: chunk)
           .get();
       results.addAll(
-        snapshot.docs.map((doc) => AdminRevenueSnapshot.fromFirestore(doc.id, doc.data())),
+        snapshot.docs.map(
+          (doc) => AdminRevenueSnapshot.fromFirestore(doc.id, doc.data()),
+        ),
       );
     }
     results.sort((a, b) => a.dateKey.compareTo(b.dateKey));

@@ -138,9 +138,9 @@ class _StoryNodeSidebarState extends State<StoryNodeSidebar> {
     return widget.nodes
         .where(
           (n) =>
-      n.preview.toLowerCase().contains(query) ||
-          n.id.toLowerCase().contains(query),
-    )
+              n.preview.toLowerCase().contains(query) ||
+              n.id.toLowerCase().contains(query),
+        )
         .toList();
   }
 
@@ -387,10 +387,7 @@ class _ListHeader extends StatelessWidget {
               onTap: onEnterSelectMode,
               borderRadius: BorderRadius.circular(6),
               child: Padding(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 4,
-                  vertical: 2,
-                ),
+                padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
                 child: Text(
                   '선택',
                   style: TextStyle(fontSize: 11.5, color: AdminColors.muted),
@@ -437,7 +434,7 @@ class _BulkToolbar extends StatelessWidget {
             child: Checkbox(
               value: allSelected,
               fillColor: WidgetStateProperty.resolveWith(
-                    (states) => states.contains(WidgetState.selected)
+                (states) => states.contains(WidgetState.selected)
                     ? AdminColors.gold
                     : AdminColors.checkboxUncheckedFill,
               ),
@@ -461,10 +458,7 @@ class _BulkToolbar extends StatelessWidget {
             onTap: onBulkDelete,
             borderRadius: BorderRadius.circular(6),
             child: Container(
-              padding: const EdgeInsets.symmetric(
-                horizontal: 10,
-                vertical: 6,
-              ),
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
               decoration: BoxDecoration(
                 color: enabled ? AdminColors.rejectBg : AdminColors.panel2,
                 border: Border.all(
@@ -578,7 +572,7 @@ class _NodeItemState extends State<_NodeItem> {
                   child: Checkbox(
                     value: widget.checked,
                     fillColor: WidgetStateProperty.resolveWith(
-                          (states) => states.contains(WidgetState.selected)
+                      (states) => states.contains(WidgetState.selected)
                           ? AdminColors.gold
                           : AdminColors.checkboxUncheckedFill,
                     ),
@@ -619,9 +613,7 @@ class _NodeItemState extends State<_NodeItem> {
                         node.preview.isEmpty ? '(내용 없음)' : node.preview,
                         style: TextStyle(
                           fontSize: 13,
-                          color: active
-                              ? AdminColors.ivory
-                              : AdminColors.muted,
+                          color: active ? AdminColors.ivory : AdminColors.muted,
                         ),
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,

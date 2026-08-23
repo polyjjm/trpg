@@ -204,7 +204,8 @@ class _AdminDashboardShellState extends State<_AdminDashboardShell> {
   final AdminPackBundleRepository _packBundleRepository =
       AdminPackBundleRepository();
   final AdminBillingRepository _billingRepository = AdminBillingRepository();
-  final AdminGlobalNoticeRepository _globalNoticeRepository = AdminGlobalNoticeRepository();
+  final AdminGlobalNoticeRepository _globalNoticeRepository =
+      AdminGlobalNoticeRepository();
   final AdminImageRepository _imageRepository = AdminImageRepository();
   final ActivityLogRepository _activityLogRepository = ActivityLogRepository();
 
@@ -311,8 +312,7 @@ class _AdminDashboardShellState extends State<_AdminDashboardShell> {
               reviewerUid: widget.authService.userId ?? '',
               packTitles: {for (final p in packs) p.id: p.title},
               packAuthors: {for (final p in packs) p.id: p.authorName},
-              onNavigate: (section) =>
-                  setState(() => _activeSection = section),
+              onNavigate: (section) => setState(() => _activeSection = section),
             );
           },
         );
@@ -324,14 +324,19 @@ class _AdminDashboardShellState extends State<_AdminDashboardShell> {
             return ApprovalsTab(
               repository: _storyRepository,
               imageRepository: _imageRepository,
+              activityLog: _activityLogRepository,
+              reviewerUid: widget.authService.userId ?? '',
               packTitles: {for (final p in packs) p.id: p.title},
               packTypes: {for (final p in packs) p.id: p.type},
+              packAuthors: {for (final p in packs) p.id: p.authorName},
             );
           },
         );
       case _AdminSection.packApprovals:
         return PackApprovalsTab(
           repository: _storyRepository,
+          imageRepository: _imageRepository,
+          activityLog: _activityLogRepository,
           reviewerUid: widget.authService.userId ?? '',
         );
       case _AdminSection.reports:
@@ -372,7 +377,9 @@ class _AdminDashboardShellState extends State<_AdminDashboardShell> {
           authorUid: widget.authService.userId ?? '',
         );
       case _AdminSection.pointPackages:
-        return PointPackageManagementSection(repository: _pointPackageRepository);
+        return PointPackageManagementSection(
+          repository: _pointPackageRepository,
+        );
       case _AdminSection.packBundles:
         return PackBundleManagementSection(
           repository: _packBundleRepository,

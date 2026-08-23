@@ -59,7 +59,10 @@ class _CategoryPickerDialogState extends State<CategoryPickerDialog> {
           onPressed: () => Navigator.pop(context, _selected),
           child: Text(
             widget.confirmLabel,
-            style: TextStyle(color: AdminColors.gold, fontWeight: FontWeight.w700),
+            style: TextStyle(
+              color: AdminColors.gold,
+              fontWeight: FontWeight.w700,
+            ),
           ),
         ),
       ],

@@ -28,10 +28,13 @@ class PackBundleManagementSection extends StatefulWidget {
 
 class _PackBundleManagementSectionState
     extends State<PackBundleManagementSection> {
-  late final Stream<List<AdminPackBundle>> _bundlesStream =
-      widget.repository.watchAllBundles();
+  late final Stream<List<AdminPackBundle>> _bundlesStream = widget.repository
+      .watchAllBundles();
 
-  Future<void> _openCreateDialog(List<AdminStoryPack> packs, int nextSortOrder) async {
+  Future<void> _openCreateDialog(
+    List<AdminStoryPack> packs,
+    int nextSortOrder,
+  ) async {
     final result = await showDialog<_BundleFormResult>(
       context: context,
       builder: (_) => _BundleFormDialog(existing: null, packs: packs),
@@ -50,7 +53,10 @@ class _PackBundleManagementSectionState
     );
   }
 
-  Future<void> _openEditDialog(AdminPackBundle bundle, List<AdminStoryPack> packs) async {
+  Future<void> _openEditDialog(
+    AdminPackBundle bundle,
+    List<AdminStoryPack> packs,
+  ) async {
     final result = await showDialog<_BundleFormResult>(
       context: context,
       builder: (_) => _BundleFormDialog(existing: bundle, packs: packs),
@@ -114,7 +120,10 @@ class _PackBundleManagementSectionState
                     final bundles = snapshot.data ?? const <AdminPackBundle>[];
                     final nextSortOrder = bundles.isEmpty
                         ? 0
-                        : bundles.map((b) => b.sortOrder).reduce((a, b) => a > b ? a : b) + 1;
+                        : bundles
+                                  .map((b) => b.sortOrder)
+                                  .reduce((a, b) => a > b ? a : b) +
+                              1;
 
                     return Row(
                       children: [
@@ -129,14 +138,26 @@ class _PackBundleManagementSectionState
                           ),
                         ),
                         ElevatedButton(
-                          onPressed: () => _openCreateDialog(packs, nextSortOrder),
+                          onPressed: () =>
+                              _openCreateDialog(packs, nextSortOrder),
                           style: ElevatedButton.styleFrom(
                             backgroundColor: AdminColors.gold,
                             foregroundColor: Colors.black,
-                            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 16,
+                              vertical: 10,
+                            ),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(8),
+                            ),
                           ),
-                          child: const Text('+ 새 번들', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700)),
+                          child: const Text(
+                            '+ 새 번들',
+                            style: TextStyle(
+                              fontSize: 13,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
                         ),
                       ],
                     );
@@ -147,7 +168,11 @@ class _PackBundleManagementSectionState
                   '여기서 만든 번들이 홈 화면 "번들 상품" 섹션과 포함된 팩의 상세 화면에 바로 나타나요. '
                   '구매자가 이미 갖고 있는 팩이 섞여 있으면, 서버가 자동으로 아직 없는 팩 개수만큼만 '
                   '가격을 나눠서 청구해요 — 전부 이미 갖고 있으면 구매가 막혀요.',
-                  style: TextStyle(fontSize: 12, color: AdminColors.muted, height: 1.5),
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: AdminColors.muted,
+                    height: 1.5,
+                  ),
                 ),
                 const SizedBox(height: 16),
                 StreamBuilder<List<AdminPackBundle>>(
@@ -156,18 +181,30 @@ class _PackBundleManagementSectionState
                     if (snapshot.hasError) {
                       return SelectableText(
                         '번들 목록을 불러오지 못했어요: ${snapshot.error}',
-                        style: const TextStyle(fontSize: 12, color: AdminColors.danger),
+                        style: const TextStyle(
+                          fontSize: 12,
+                          color: AdminColors.danger,
+                        ),
                       );
                     }
                     if (snapshot.connectionState == ConnectionState.waiting) {
-                      return Text('불러오는 중...', style: TextStyle(fontSize: 13, color: AdminColors.muted));
+                      return Text(
+                        '불러오는 중...',
+                        style: TextStyle(
+                          fontSize: 13,
+                          color: AdminColors.muted,
+                        ),
+                      );
                     }
 
                     final bundles = snapshot.data ?? const <AdminPackBundle>[];
                     if (bundles.isEmpty) {
                       return Text(
                         '등록된 번들이 없어요. "+ 새 번들"로 첫 번들을 만들어보세요.',
-                        style: TextStyle(fontSize: 13, color: AdminColors.muted),
+                        style: TextStyle(
+                          fontSize: 13,
+                          color: AdminColors.muted,
+                        ),
                       );
                     }
 
@@ -180,7 +217,9 @@ class _PackBundleManagementSectionState
                         final reordered = [...bundles];
                         final moved = reordered.removeAt(oldIndex);
                         reordered.insert(newIndex, moved);
-                        widget.repository.reorder(reordered.map((b) => b.id).toList());
+                        widget.repository.reorder(
+                          reordered.map((b) => b.id).toList(),
+                        );
                       },
                       children: [
                         for (var i = 0; i < bundles.length; i++)
@@ -249,7 +288,11 @@ class _BundleRow extends StatelessWidget {
               index: index,
               child: Padding(
                 padding: const EdgeInsets.only(top: 2),
-                child: Icon(Icons.drag_indicator_rounded, color: AdminColors.muted, size: 20),
+                child: Icon(
+                  Icons.drag_indicator_rounded,
+                  color: AdminColors.muted,
+                  size: 20,
+                ),
               ),
             ),
             const SizedBox(width: 10),
@@ -286,7 +329,7 @@ class _BundleRow extends StatelessWidget {
                   Text(
                     hasDiscount
                         ? '${bundle.price}코인 → ${bundle.salePrice}코인'
-                            '${_formatWindow(bundle.discountStartAt, bundle.discountEndAt)}'
+                              '${_formatWindow(bundle.discountStartAt, bundle.discountEndAt)}'
                         : '${bundle.price}코인',
                     style: TextStyle(
                       fontSize: 11.5,
@@ -306,14 +349,20 @@ class _BundleRow extends StatelessWidget {
               onTap: onEdit,
               child: const Padding(
                 padding: EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                child: Text('편집', style: TextStyle(fontSize: 12, color: AdminColors.accent)),
+                child: Text(
+                  '편집',
+                  style: TextStyle(fontSize: 12, color: AdminColors.accent),
+                ),
               ),
             ),
             InkWell(
               onTap: onDelete,
               child: const Padding(
                 padding: EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                child: Text('삭제', style: TextStyle(fontSize: 12, color: AdminColors.danger)),
+                child: Text(
+                  '삭제',
+                  style: TextStyle(fontSize: 12, color: AdminColors.danger),
+                ),
               ),
             ),
           ],
@@ -390,12 +439,16 @@ class _BundleFormDialog extends StatefulWidget {
 }
 
 class _BundleFormDialogState extends State<_BundleFormDialog> {
-  late final TextEditingController _nameController =
-      TextEditingController(text: widget.existing?.name ?? '');
-  late final TextEditingController _priceController =
-      TextEditingController(text: '${widget.existing?.price ?? 0}');
+  late final TextEditingController _nameController = TextEditingController(
+    text: widget.existing?.name ?? '',
+  );
+  late final TextEditingController _priceController = TextEditingController(
+    text: '${widget.existing?.price ?? 0}',
+  );
   late final TextEditingController _salePriceController = TextEditingController(
-    text: widget.existing?.salePrice != null ? '${widget.existing!.salePrice}' : '',
+    text: widget.existing?.salePrice != null
+        ? '${widget.existing!.salePrice}'
+        : '',
   );
   final TextEditingController _packSearchController = TextEditingController();
 
@@ -429,7 +482,8 @@ class _BundleFormDialogState extends State<_BundleFormDialog> {
       _selectedPackIds.length >= 2;
 
   Future<void> _pickDate({required bool isStart}) async {
-    final initial = (isStart ? _discountStartAt : _discountEndAt) ?? DateTime.now();
+    final initial =
+        (isStart ? _discountStartAt : _discountEndAt) ?? DateTime.now();
     final picked = await showDatePicker(
       context: context,
       initialDate: initial,
@@ -476,7 +530,9 @@ class _BundleFormDialogState extends State<_BundleFormDialog> {
     final query = _packSearchController.text.trim().toLowerCase();
     final filteredPacks = query.isEmpty
         ? widget.packs
-        : widget.packs.where((p) => p.title.toLowerCase().contains(query)).toList();
+        : widget.packs
+              .where((p) => p.title.toLowerCase().contains(query))
+              .toList();
 
     return AlertDialog(
       backgroundColor: AdminColors.panel,
@@ -509,7 +565,10 @@ class _BundleFormDialogState extends State<_BundleFormDialog> {
                       child: TextField(
                         controller: _priceController,
                         keyboardType: TextInputType.number,
-                        style: TextStyle(color: AdminColors.ivory, fontSize: 13),
+                        style: TextStyle(
+                          color: AdminColors.ivory,
+                          fontSize: 13,
+                        ),
                         decoration: adminInputDecoration(hintText: '900'),
                       ),
                     ),
@@ -521,7 +580,10 @@ class _BundleFormDialogState extends State<_BundleFormDialog> {
                       child: TextField(
                         controller: _salePriceController,
                         keyboardType: TextInputType.number,
-                        style: TextStyle(color: AdminColors.ivory, fontSize: 13),
+                        style: TextStyle(
+                          color: AdminColors.ivory,
+                          fontSize: 13,
+                        ),
                         decoration: adminInputDecoration(hintText: '(할인 없음)'),
                       ),
                     ),
@@ -579,7 +641,10 @@ class _BundleFormDialogState extends State<_BundleFormDialog> {
                     ? Center(
                         child: Text(
                           '검색 결과가 없어요',
-                          style: TextStyle(fontSize: 12, color: AdminColors.muted),
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: AdminColors.muted,
+                          ),
                         ),
                       )
                     : ListView.builder(
@@ -595,7 +660,10 @@ class _BundleFormDialogState extends State<_BundleFormDialog> {
                             activeColor: AdminColors.gold,
                             title: Text(
                               pack.title,
-                              style: TextStyle(fontSize: 13, color: AdminColors.ivory),
+                              style: TextStyle(
+                                fontSize: 13,
+                                color: AdminColors.ivory,
+                              ),
                             ),
                           );
                         },
@@ -604,7 +672,10 @@ class _BundleFormDialogState extends State<_BundleFormDialog> {
               const SizedBox(height: 16),
               Row(
                 children: [
-                  Text('활성', style: TextStyle(fontSize: 12, color: AdminColors.muted)),
+                  Text(
+                    '활성',
+                    style: TextStyle(fontSize: 12, color: AdminColors.muted),
+                  ),
                   const Spacer(),
                   Switch(
                     value: _active,
@@ -639,7 +710,11 @@ class _DateField extends StatelessWidget {
   final VoidCallback onTap;
   final VoidCallback onClear;
 
-  const _DateField({required this.date, required this.onTap, required this.onClear});
+  const _DateField({
+    required this.date,
+    required this.onTap,
+    required this.onClear,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -661,13 +736,22 @@ class _DateField extends StatelessWidget {
                 date == null
                     ? '(선택 안 함)'
                     : '${date.year}.${date.month.toString().padLeft(2, '0')}.${date.day.toString().padLeft(2, '0')}',
-                style: TextStyle(fontSize: 13, color: date == null ? AdminColors.muted : AdminColors.inputText),
+                style: TextStyle(
+                  fontSize: 13,
+                  color: date == null
+                      ? AdminColors.muted
+                      : AdminColors.inputText,
+                ),
               ),
             ),
             if (date != null)
               InkWell(
                 onTap: onClear,
-                child: Icon(Icons.close_rounded, size: 16, color: AdminColors.muted),
+                child: Icon(
+                  Icons.close_rounded,
+                  size: 16,
+                  color: AdminColors.muted,
+                ),
               ),
           ],
         ),

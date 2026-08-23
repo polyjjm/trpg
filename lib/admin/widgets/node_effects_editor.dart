@@ -241,7 +241,7 @@ class _SfxEffectRow extends StatelessWidget {
               child: Checkbox(
                 value: sfx.enabled,
                 fillColor: WidgetStateProperty.resolveWith(
-                      (states) => states.contains(WidgetState.selected)
+                  (states) => states.contains(WidgetState.selected)
                       ? AdminColors.gold
                       : AdminColors.checkboxUncheckedFill,
                 ),
@@ -551,7 +551,7 @@ class _TtsEffectRow extends StatelessWidget {
               child: Checkbox(
                 value: _customized,
                 fillColor: WidgetStateProperty.resolveWith(
-                      (states) => states.contains(WidgetState.selected)
+                  (states) => states.contains(WidgetState.selected)
                       ? AdminColors.gold
                       : AdminColors.checkboxUncheckedFill,
                 ),
@@ -616,7 +616,8 @@ class _TtsEffectRow extends StatelessWidget {
                   onRefresh: onRefreshVoices,
                   refreshing: refreshingVoices,
                   noSelectionLabel: '(선택 안 함) 팩 기본 보이스',
-                  sampleContext: TtsVoiceSampleContext(   // ← 추가
+                  sampleContext: TtsVoiceSampleContext(
+                    // ← 추가
                     repository: ttsVoiceRepository,
                     packId: packId,
                     nodeId: nodeId,
@@ -744,13 +745,13 @@ class _TtsPreviewButtonState extends State<_TtsPreviewButton> {
       ),
       icon: _loading
           ? SizedBox(
-        width: 14,
-        height: 14,
-        child: CircularProgressIndicator(
-          strokeWidth: 2,
-          color: AdminColors.muted,
-        ),
-      )
+              width: 14,
+              height: 14,
+              child: CircularProgressIndicator(
+                strokeWidth: 2,
+                color: AdminColors.muted,
+              ),
+            )
           : Icon(Icons.volume_up_rounded, size: 16, color: AdminColors.gold),
       label: Text(
         _loading ? '생성 중…' : '미리듣기',
@@ -890,7 +891,7 @@ class _FlashEffectRow extends StatelessWidget {
           child: Checkbox(
             value: flash.enabled,
             fillColor: WidgetStateProperty.resolveWith(
-                  (states) => states.contains(WidgetState.selected)
+              (states) => states.contains(WidgetState.selected)
                   ? AdminColors.gold
                   : AdminColors.checkboxUncheckedFill,
             ),
@@ -1013,8 +1014,8 @@ class _PresetDropdown<T> extends StatelessWidget {
       ],
       onChanged: enabled
           ? (value) {
-        if (value != null) onChanged(value);
-      }
+              if (value != null) onChanged(value);
+            }
           : null,
     );
   }
@@ -1053,7 +1054,7 @@ class _EffectRow<T> extends StatelessWidget {
           child: Checkbox(
             value: enabled,
             fillColor: WidgetStateProperty.resolveWith(
-                  (states) => states.contains(WidgetState.selected)
+              (states) => states.contains(WidgetState.selected)
                   ? AdminColors.gold
                   : AdminColors.checkboxUncheckedFill,
             ),
@@ -1136,8 +1137,8 @@ class _EffectRow<T> extends StatelessWidget {
             ],
             onChanged: enabled
                 ? (value) {
-              if (value != null) onPresetChanged(value);
-            }
+                    if (value != null) onPresetChanged(value);
+                  }
                 : null,
           ),
         ),

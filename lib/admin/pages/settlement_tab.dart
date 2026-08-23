@@ -44,7 +44,10 @@ class _SettlementTabState extends State<SettlementTab> {
       case _RangePreset.thisMonth:
         return (DateTime(today.year, today.month, 1), today);
       case _RangePreset.custom:
-        return (_customStart ?? today.subtract(const Duration(days: 6)), _customEnd ?? today);
+        return (
+          _customStart ?? today.subtract(const Duration(days: 6)),
+          _customEnd ?? today,
+        );
     }
   }
 
@@ -80,7 +83,11 @@ class _SettlementTabState extends State<SettlementTab> {
     if (picked == null) return;
     setState(() {
       _preset = _RangePreset.custom;
-      _customStart = DateTime(picked.start.year, picked.start.month, picked.start.day);
+      _customStart = DateTime(
+        picked.start.year,
+        picked.start.month,
+        picked.start.day,
+      );
       _customEnd = DateTime(picked.end.year, picked.end.month, picked.end.day);
     });
     _load();
@@ -106,7 +113,10 @@ class _SettlementTabState extends State<SettlementTab> {
               style: const TextStyle(fontSize: 12, color: AdminColors.danger),
             )
           else if (_isLoading && _snapshots == null)
-            Text('불러오는 중...', style: TextStyle(fontSize: 13, color: AdminColors.muted))
+            Text(
+              '불러오는 중...',
+              style: TextStyle(fontSize: 13, color: AdminColors.muted),
+            )
           else
             _buildContent(_snapshots ?? const []),
         ],
@@ -154,9 +164,18 @@ class _SettlementTabState extends State<SettlementTab> {
 
   Widget _buildContent(List<AdminRevenueSnapshot> snapshots) {
     final totalRevenue = snapshots.fold<int>(0, (sum, s) => sum + s.revenueKRW);
-    final totalCharges = snapshots.fold<int>(0, (sum, s) => sum + s.chargeCount);
-    final totalCoinsGranted = snapshots.fold<int>(0, (sum, s) => sum + s.coinsGranted);
-    final totalCoinsSpent = snapshots.fold<int>(0, (sum, s) => sum + s.coinsSpent);
+    final totalCharges = snapshots.fold<int>(
+      0,
+      (sum, s) => sum + s.chargeCount,
+    );
+    final totalCoinsGranted = snapshots.fold<int>(
+      0,
+      (sum, s) => sum + s.coinsGranted,
+    );
+    final totalCoinsSpent = snapshots.fold<int>(
+      0,
+      (sum, s) => sum + s.coinsSpent,
+    );
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -165,9 +184,18 @@ class _SettlementTabState extends State<SettlementTab> {
           spacing: 12,
           runSpacing: 12,
           children: [
-            _SummaryCard(label: '기간 매출', value: '${_formatNumber(totalRevenue)}원'),
-            _SummaryCard(label: '충전 건수', value: '${_formatNumber(totalCharges)}건'),
-            _SummaryCard(label: '지급 코인', value: '${_formatNumber(totalCoinsGranted)}코인'),
+            _SummaryCard(
+              label: '기간 매출',
+              value: '${_formatNumber(totalRevenue)}원',
+            ),
+            _SummaryCard(
+              label: '충전 건수',
+              value: '${_formatNumber(totalCharges)}건',
+            ),
+            _SummaryCard(
+              label: '지급 코인',
+              value: '${_formatNumber(totalCoinsGranted)}코인',
+            ),
             _SummaryCard(
               label: '코인 사용량',
               value: '${_formatNumber(totalCoinsSpent)}코인',
@@ -177,13 +205,30 @@ class _SettlementTabState extends State<SettlementTab> {
         ),
         const SizedBox(height: 24),
         if (snapshots.isEmpty)
-          Text('이 기간엔 집계된 데이터가 없어요.', style: TextStyle(fontSize: 13, color: AdminColors.muted))
+          Text(
+            '이 기간엔 집계된 데이터가 없어요.',
+            style: TextStyle(fontSize: 13, color: AdminColors.muted),
+          )
         else ...[
-          Text('일별 매출 vs 코인 사용량', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: AdminColors.ivory)),
+          Text(
+            '일별 매출 vs 코인 사용량',
+            style: TextStyle(
+              fontSize: 14,
+              fontWeight: FontWeight.w700,
+              color: AdminColors.ivory,
+            ),
+          ),
           const SizedBox(height: 12),
           _DailyChart(snapshots: snapshots),
           const SizedBox(height: 24),
-          Text('일별 상세', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: AdminColors.ivory)),
+          Text(
+            '일별 상세',
+            style: TextStyle(
+              fontSize: 14,
+              fontWeight: FontWeight.w700,
+              color: AdminColors.ivory,
+            ),
+          ),
           const SizedBox(height: 12),
           _buildDailyTable(snapshots),
         ],
@@ -206,14 +251,22 @@ class _SettlementTabState extends State<SettlementTab> {
         ],
         rows: [
           for (final s in snapshots.reversed)
-            DataRow(cells: [
-              DataCell(Text(s.dateKey)),
-              DataCell(Text('${_formatNumber(s.revenueKRW)}원')),
-              DataCell(Text('${s.chargeCount}')),
-              DataCell(Text('${s.coinsGranted}')),
-              DataCell(Text('${s.coinsSpent}')),
-              DataCell(Text(s.refundedKRW > 0 ? '${_formatNumber(s.refundedKRW)}원' : '-')),
-            ]),
+            DataRow(
+              cells: [
+                DataCell(Text(s.dateKey)),
+                DataCell(Text('${_formatNumber(s.revenueKRW)}원')),
+                DataCell(Text('${s.chargeCount}')),
+                DataCell(Text('${s.coinsGranted}')),
+                DataCell(Text('${s.coinsSpent}')),
+                DataCell(
+                  Text(
+                    s.refundedKRW > 0
+                        ? '${_formatNumber(s.refundedKRW)}원'
+                        : '-',
+                  ),
+                ),
+              ],
+            ),
         ],
       ),
     );
@@ -235,7 +288,11 @@ class _PresetChip extends StatelessWidget {
   final bool selected;
   final VoidCallback onTap;
 
-  const _PresetChip({required this.label, required this.selected, required this.onTap});
+  const _PresetChip({
+    required this.label,
+    required this.selected,
+    required this.onTap,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -245,9 +302,13 @@ class _PresetChip extends StatelessWidget {
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
         decoration: BoxDecoration(
-          color: selected ? AdminColors.gold.withOpacity(0.15) : AdminColors.panel2,
+          color: selected
+              ? AdminColors.gold.withOpacity(0.15)
+              : AdminColors.panel2,
           borderRadius: BorderRadius.circular(999),
-          border: Border.all(color: selected ? AdminColors.gold : AdminColors.border),
+          border: Border.all(
+            color: selected ? AdminColors.gold : AdminColors.border,
+          ),
         ),
         child: Text(
           label,
@@ -284,10 +345,20 @@ class _SummaryCard extends StatelessWidget {
         children: [
           Text(label, style: TextStyle(fontSize: 12, color: AdminColors.muted)),
           const SizedBox(height: 8),
-          Text(value, style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800, color: AdminColors.ivory)),
+          Text(
+            value,
+            style: TextStyle(
+              fontSize: 18,
+              fontWeight: FontWeight.w800,
+              color: AdminColors.ivory,
+            ),
+          ),
           if (caption != null) ...[
             const SizedBox(height: 4),
-            Text(caption!, style: TextStyle(fontSize: 10, color: AdminColors.muted)),
+            Text(
+              caption!,
+              style: TextStyle(fontSize: 10, color: AdminColors.muted),
+            ),
           ],
         ],
       ),
@@ -335,9 +406,15 @@ class _DailyChart extends StatelessWidget {
         const SizedBox(height: 4),
         Row(
           children: [
-            Text(snapshots.first.dateKey, style: TextStyle(fontSize: 10, color: AdminColors.muted)),
+            Text(
+              snapshots.first.dateKey,
+              style: TextStyle(fontSize: 10, color: AdminColors.muted),
+            ),
             const Spacer(),
-            Text(snapshots.last.dateKey, style: TextStyle(fontSize: 10, color: AdminColors.muted)),
+            Text(
+              snapshots.last.dateKey,
+              style: TextStyle(fontSize: 10, color: AdminColors.muted),
+            ),
           ],
         ),
       ],
@@ -356,7 +433,11 @@ class _LegendDot extends StatelessWidget {
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
-        Container(width: 8, height: 8, decoration: BoxDecoration(color: color, shape: BoxShape.circle)),
+        Container(
+          width: 8,
+          height: 8,
+          decoration: BoxDecoration(color: color, shape: BoxShape.circle),
+        ),
         const SizedBox(width: 6),
         Text(label, style: TextStyle(fontSize: 11, color: AdminColors.muted)),
       ],
@@ -396,8 +477,12 @@ class _DualBarChartPainter extends CustomPainter {
       final groupLeft = groupWidth * i;
       final centerX = groupLeft + groupWidth / 2;
 
-      final revenueHeight = maxRevenue == 0 ? 0.0 : (revenue[i] / maxRevenue) * size.height;
-      final coinsHeight = maxCoins == 0 ? 0.0 : (coinsSpent[i] / maxCoins) * size.height;
+      final revenueHeight = maxRevenue == 0
+          ? 0.0
+          : (revenue[i] / maxRevenue) * size.height;
+      final coinsHeight = maxCoins == 0
+          ? 0.0
+          : (coinsSpent[i] / maxCoins) * size.height;
 
       final revenueRect = Rect.fromLTWH(
         centerX - gap / 2 - barWidth,
@@ -419,6 +504,7 @@ class _DualBarChartPainter extends CustomPainter {
 
   @override
   bool shouldRepaint(covariant _DualBarChartPainter oldDelegate) {
-    return oldDelegate.revenue != revenue || oldDelegate.coinsSpent != coinsSpent;
+    return oldDelegate.revenue != revenue ||
+        oldDelegate.coinsSpent != coinsSpent;
   }
 }

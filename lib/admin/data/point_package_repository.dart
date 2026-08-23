@@ -20,11 +20,14 @@ class AdminPointPackageRepository {
   /// 관리자 화면 전용 — 비활성 상품까지 전부 보여준다(리더 쪽 사본의
   /// watchWebPackages가 active==true && platform=='web'만 거른다).
   Stream<List<AdminPointPackage>> watchAllPackages() {
-    return _packages.orderBy('sortOrder').snapshots().map(
-      (snapshot) => snapshot.docs
-          .map((doc) => AdminPointPackage.fromFirestore(doc.id, doc.data()))
-          .toList(),
-    );
+    return _packages
+        .orderBy('sortOrder')
+        .snapshots()
+        .map(
+          (snapshot) => snapshot.docs
+              .map((doc) => AdminPointPackage.fromFirestore(doc.id, doc.data()))
+              .toList(),
+        );
   }
 
   Future<void> createPackage({

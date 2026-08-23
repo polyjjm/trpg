@@ -57,7 +57,15 @@ class _BillingFilterBarState extends State<BillingFilterBar> {
       } else {
         // 종료일은 그날 끝까지 포함해야 하니 23:59:59.999로 맞춘다 —
         // createdAt <= endDate 비교가 종료일 당일 거래도 포함하게 하려고.
-        _endDate = DateTime(picked.year, picked.month, picked.day, 23, 59, 59, 999);
+        _endDate = DateTime(
+          picked.year,
+          picked.month,
+          picked.day,
+          23,
+          59,
+          59,
+          999,
+        );
       }
     });
     _apply();
@@ -71,8 +79,12 @@ class _BillingFilterBarState extends State<BillingFilterBar> {
       AdminBillingFilter(
         startDate: _startDate,
         endDate: _endDate,
-        uidQuery: _searchMode == _SearchMode.uid && searchText.isNotEmpty ? searchText : null,
-        nameQuery: _searchMode == _SearchMode.name && searchText.isNotEmpty ? searchText : null,
+        uidQuery: _searchMode == _SearchMode.uid && searchText.isNotEmpty
+            ? searchText
+            : null,
+        nameQuery: _searchMode == _SearchMode.name && searchText.isNotEmpty
+            ? searchText
+            : null,
         minAmountKRW: widget.showAmountFilter ? minAmount : null,
         maxAmountKRW: widget.showAmountFilter ? maxAmount : null,
       ),
@@ -114,7 +126,9 @@ class _BillingFilterBarState extends State<BillingFilterBar> {
                     onSubmitted: (_) => _apply(),
                     style: TextStyle(color: AdminColors.ivory, fontSize: 13),
                     decoration: adminInputDecoration(
-                      hintText: _searchMode == _SearchMode.name ? '표시 이름' : 'uid',
+                      hintText: _searchMode == _SearchMode.name
+                          ? '표시 이름'
+                          : 'uid',
                     ),
                   ),
                 ),
@@ -125,8 +139,14 @@ class _BillingFilterBarState extends State<BillingFilterBar> {
                   underline: const SizedBox.shrink(),
                   style: TextStyle(color: AdminColors.inputText, fontSize: 12),
                   items: const [
-                    DropdownMenuItem(value: _SearchMode.name, child: Text('이름')),
-                    DropdownMenuItem(value: _SearchMode.uid, child: Text('uid')),
+                    DropdownMenuItem(
+                      value: _SearchMode.name,
+                      child: Text('이름'),
+                    ),
+                    DropdownMenuItem(
+                      value: _SearchMode.uid,
+                      child: Text('uid'),
+                    ),
                   ],
                   onChanged: (mode) {
                     if (mode != null) setState(() => _searchMode = mode);
@@ -140,14 +160,20 @@ class _BillingFilterBarState extends State<BillingFilterBar> {
           width: 150,
           child: LabeledField(
             label: '시작일',
-            child: _DateChip(label: _fmt(_startDate), onTap: () => _pickDate(isStart: true)),
+            child: _DateChip(
+              label: _fmt(_startDate),
+              onTap: () => _pickDate(isStart: true),
+            ),
           ),
         ),
         SizedBox(
           width: 150,
           child: LabeledField(
             label: '종료일',
-            child: _DateChip(label: _fmt(_endDate), onTap: () => _pickDate(isStart: false)),
+            child: _DateChip(
+              label: _fmt(_endDate),
+              onTap: () => _pickDate(isStart: false),
+            ),
           ),
         ),
         if (widget.showAmountFilter) ...[
@@ -184,9 +210,14 @@ class _BillingFilterBarState extends State<BillingFilterBar> {
             backgroundColor: AdminColors.gold,
             foregroundColor: Colors.black,
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(8),
+            ),
           ),
-          child: const Text('검색', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700)),
+          child: const Text(
+            '검색',
+            style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700),
+          ),
         ),
         TextButton(
           onPressed: _reset,

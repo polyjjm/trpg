@@ -81,7 +81,8 @@ class _RefundDialogState extends State<_RefundDialog> {
     super.dispose();
   }
 
-  bool get _canSubmit => _reasonController.text.trim().isNotEmpty && !_isProcessing;
+  bool get _canSubmit =>
+      _reasonController.text.trim().isNotEmpty && !_isProcessing;
 
   Future<void> _submit() async {
     setState(() => _isProcessing = true);
@@ -114,7 +115,11 @@ class _RefundDialogState extends State<_RefundDialog> {
           children: [
             Text(
               '${charge.displayName.isEmpty ? '(이름 없음)' : charge.displayName} · ${charge.uid}',
-              style: TextStyle(fontSize: 13, color: AdminColors.ivory, fontWeight: FontWeight.w700),
+              style: TextStyle(
+                fontSize: 13,
+                color: AdminColors.ivory,
+                fontWeight: FontWeight.w700,
+              ),
             ),
             const SizedBox(height: 4),
             Text(
@@ -126,7 +131,11 @@ class _RefundDialogState extends State<_RefundDialog> {
             Text(
               '최대 ${charge.refundableCoinsUpperBound}코인까지 환불 가능해요(단, 이미 사용해 지갑에 '
               '남아있지 않은 코인은 제외돼요 — 실제 환불 금액은 서버가 다시 계산해요).',
-              style: TextStyle(fontSize: 11.5, color: AdminColors.muted, height: 1.4),
+              style: TextStyle(
+                fontSize: 11.5,
+                color: AdminColors.muted,
+                height: 1.4,
+              ),
             ),
             const SizedBox(height: 16),
             LabeledField(
@@ -137,7 +146,9 @@ class _RefundDialogState extends State<_RefundDialog> {
                 maxLines: 2,
                 onChanged: (_) => setState(() {}),
                 style: TextStyle(color: AdminColors.ivory, fontSize: 13),
-                decoration: adminInputDecoration(hintText: '예: 고객 요청 — 미사용 코인 환불'),
+                decoration: adminInputDecoration(
+                  hintText: '예: 고객 요청 — 미사용 코인 환불',
+                ),
               ),
             ),
           ],
@@ -145,7 +156,9 @@ class _RefundDialogState extends State<_RefundDialog> {
       ),
       actions: [
         TextButton(
-          onPressed: _isProcessing ? null : () => Navigator.pop(context, const _RefundCancelled()),
+          onPressed: _isProcessing
+              ? null
+              : () => Navigator.pop(context, const _RefundCancelled()),
           child: Text('취소', style: TextStyle(color: AdminColors.muted)),
         ),
         TextButton(
@@ -154,7 +167,10 @@ class _RefundDialogState extends State<_RefundDialog> {
               ? SizedBox(
                   width: 16,
                   height: 16,
-                  child: CircularProgressIndicator(strokeWidth: 2, color: AdminColors.gold),
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2,
+                    color: AdminColors.gold,
+                  ),
                 )
               : const Text('환불하기', style: TextStyle(color: AdminColors.gold)),
         ),

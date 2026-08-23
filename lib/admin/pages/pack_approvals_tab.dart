@@ -1,22 +1,43 @@
 import 'package:flutter/material.dart';
 
+import '../data/activity_log_repository.dart';
+import '../data/admin_image_repository.dart';
 import '../data/admin_story_repository.dart';
+import '../models/activity_event.dart';
+import '../models/admin_image.dart';
+import '../models/admin_story_node_summary.dart';
 import '../models/admin_story_pack.dart';
 import '../widgets/admin_theme.dart';
+import 'approvals/approval_filter.dart' show formatWaitedLabel;
+import 'approvals/node_diff_view.dart' show promptRejectionReason;
+import 'pack_approvals/pack_approval_filter.dart';
+import 'pack_approvals/pack_approvals_filter_bar.dart';
+import 'pack_approvals/pack_pending_detail_pane.dart';
+import 'pack_approvals/pack_pending_list_pane.dart';
 
 /// "스토리팩 승인" — admin 전용. 팩 단위의 두 승인 요청을 검토한다: 신규
 /// 연재 요청(serializationStatus == pending)과 메타데이터 수정 요청
 /// (pendingMetadataAction == 'edit'). 개별 노드 콘텐츠 승인(ApprovalsTab)과는
 /// 완전히 별개의 검토 대상이지만, 둘 다 "AdminStoryPack 문서 하나를 검토하는"
 /// 같은 리뷰어 워크플로라 여기 한 화면에 묶는다.
+///
+/// 승인 대기함(ApprovalsTab)과 같은 목록(왼쪽) + 상세(오른쪽) 2단 구조다 —
+/// pack_approvals/ 아래 패턴은 approvals/의 것을 그대로 따른다(필터/정렬은
+/// 순수 로직으로 분리, 목록·상세 위젯은 프레젠테이션 전담).
 class PackApprovalsTab extends StatefulWidget {
   final AdminStoryRepository repository;
+  final AdminImageRepository imageRepository;
   final String reviewerUid;
+
+  /// 승인/반려를 개요의 "최근 활동"에 남긴다. null이면 기록하지 않는다.
+  final ActivityLogRepository? activityLog;
 
   const PackApprovalsTab({
     super.key,
     required this.repository,
+    required this.imageRepository,
     required this.reviewerUid,
+    this.activityLog,
   });
 
   @override
@@ -24,397 +45,282 @@ class PackApprovalsTab extends StatefulWidget {
 }
 
 class _PackApprovalsTabState extends State<PackApprovalsTab> {
+  /// State에 한 번만 만든다 — build()에서 매번 새로 구독하면 부모가 재빌드될
+  /// 때마다 목록이 나타났다 사라진다(ApprovalsTab에서 반복해 겪은 문제).
   late final Stream<List<AdminStoryPack>> _pendingSerializationStream = widget
       .repository
       .watchPendingSerializationRequests();
   late final Stream<List<AdminStoryPack>> _pendingMetadataStream = widget
       .repository
       .watchPendingMetadataEdits();
+  late final Stream<List<AdminImage>> _imagesStream = widget.imageRepository
+      .watchImages();
 
-  Future<void> _handleRejectSerialization(
-    BuildContext context,
-    AdminStoryPack pack,
-  ) async {
-    final reason = await _promptRejectionReason(
-      context,
-      title: '연재 시작 반려 사유 (선택)',
-    );
-    if (reason == null) return;
-    await widget.repository.rejectSerialization(
-      pack,
-      reviewerUid: widget.reviewerUid,
-      reason: reason.isEmpty ? null : reason,
+  /// 발행된 노드 개수(연재 시작 요청 상세)용 — 선택한 팩이 바뀔 때마다 새로
+  /// 구독하지 않도록 팩 id별로 캐시해 둔다.
+  final Map<String, Stream<List<AdminStoryNodeSummary>>> _nodeSummaryStreams =
+      {};
+
+  Stream<List<AdminStoryNodeSummary>> _nodeSummariesFor(String packId) {
+    return _nodeSummaryStreams.putIfAbsent(
+      packId,
+      () => widget.repository.watchNodeSummaries(packId),
     );
   }
 
-  Future<void> _handleRejectMetadataEdit(
-    BuildContext context,
-    AdminStoryPack pack,
-  ) async {
-    final reason = await _promptRejectionReason(
-      context,
-      title: '메타데이터 변경 반려 사유 (선택)',
+  PackApprovalFilter _filter = const PackApprovalFilter();
+  String? _selectedKey;
+  final Set<String> _processingKeys = {};
+
+  Future<void> _log({
+    required AdminStoryPack pack,
+    required ActivityKind kind,
+    required String action,
+  }) async {
+    final log = widget.activityLog;
+    if (log == null) return;
+    await log.log(
+      kind: kind,
+      actorUid: widget.reviewerUid,
+      message:
+          '${pack.authorName.isEmpty ? '(작가 이름 없음)' : pack.authorName} · '
+          '「${pack.title}」 $action',
+      packId: pack.id,
+      authorName: pack.authorName,
     );
-    if (reason == null) return;
-    await widget.repository.rejectMetadataEdit(
-      pack,
-      reviewerUid: widget.reviewerUid,
-      reason: reason.isEmpty ? null : reason,
-    );
+  }
+
+  Future<void> _approve(PendingPackRequest request) async {
+    final key = request.key;
+    if (_processingKeys.contains(key)) return;
+    setState(() => _processingKeys.add(key));
+    try {
+      if (request.kind == PackRequestKind.serialization) {
+        await widget.repository.approveSerialization(
+          request.pack,
+          reviewerUid: widget.reviewerUid,
+        );
+        await _log(
+          pack: request.pack,
+          kind: ActivityKind.packSerializationApproved,
+          action: '연재 시작 승인',
+        );
+      } else {
+        await widget.repository.approveMetadataEdit(
+          request.pack,
+          reviewerUid: widget.reviewerUid,
+        );
+        await _log(
+          pack: request.pack,
+          kind: ActivityKind.packMetadataApproved,
+          action: '작품정보 변경 승인',
+        );
+      }
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('승인에 실패했어요: $e')));
+    } finally {
+      if (mounted) setState(() => _processingKeys.remove(key));
+    }
+  }
+
+  Future<void> _reject(PendingPackRequest request) async {
+    final reason = await promptRejectionReason(context);
+    if (reason == null || !mounted) return;
+
+    final key = request.key;
+    setState(() => _processingKeys.add(key));
+    try {
+      if (request.kind == PackRequestKind.serialization) {
+        await widget.repository.rejectSerialization(
+          request.pack,
+          reviewerUid: widget.reviewerUid,
+          reason: reason,
+        );
+        await _log(
+          pack: request.pack,
+          kind: ActivityKind.packSerializationRejected,
+          action: '연재 시작 반려',
+        );
+      } else {
+        await widget.repository.rejectMetadataEdit(
+          request.pack,
+          reviewerUid: widget.reviewerUid,
+          reason: reason,
+        );
+        await _log(
+          pack: request.pack,
+          kind: ActivityKind.packMetadataRejected,
+          action: '작품정보 변경 반려',
+        );
+      }
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('반려에 실패했어요: $e')));
+    } finally {
+      if (mounted) setState(() => _processingKeys.remove(key));
+    }
+  }
+
+  String _summary(List<PendingPackRequest> requests) {
+    if (requests.isEmpty) return '대기 중인 요청이 없어요.';
+    DateTime? oldest;
+    for (final request in requests) {
+      final at = request.requestedAt;
+      if (at == null) continue;
+      if (oldest == null || at.isBefore(oldest)) oldest = at;
+    }
+    final waited = oldest == null
+        ? ''
+        : ' · 가장 오래 기다린 요청 ${formatWaitedLabel(oldest)}';
+    return '${requests.length}건 대기$waited';
   }
 
   @override
   Widget build(BuildContext context) {
-    return SingleChildScrollView(
-      padding: const EdgeInsets.all(24),
-      child: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: 720),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              '스토리팩 승인',
-              style: TextStyle(
-                fontSize: 16,
-                color: AdminColors.ivory,
-                fontWeight: FontWeight.w700,
-              ),
-            ),
-            const SizedBox(height: 6),
-            Text(
-              '팩이 독자 라이브러리에 노출되려면 먼저 "연재 시작 승인"을 받아야 해요. 승인 후에는 제목/장르/설명/표지 '
-              '같은 메타데이터를 바꿀 때마다 "메타데이터 수정 승인"을 따로 받아요 — 노드 콘텐츠 승인(승인 대기함)과는 별개예요.',
-              style: TextStyle(
-                fontSize: 12,
-                color: AdminColors.muted,
-                height: 1.5,
-              ),
-            ),
-            const SizedBox(height: 20),
-            Text(
-              '신규 연재 요청',
-              style: TextStyle(
-                fontSize: 14,
-                color: AdminColors.ivory,
-                fontWeight: FontWeight.w700,
-              ),
-            ),
-            const SizedBox(height: 10),
-            StreamBuilder<List<AdminStoryPack>>(
-              stream: _pendingSerializationStream,
-              builder: (context, snapshot) {
-                if (snapshot.hasError) {
-                  return SelectableText(
-                    '목록을 불러오지 못했어요: ${snapshot.error}',
-                    style: const TextStyle(
-                      fontSize: 12,
-                      color: AdminColors.danger,
-                    ),
-                  );
-                }
-                final packs = snapshot.data ?? const <AdminStoryPack>[];
-                if (packs.isEmpty) {
-                  return Text(
-                    '대기 중인 연재 시작 요청이 없어요.',
-                    style: TextStyle(fontSize: 13, color: AdminColors.muted),
-                  );
-                }
-                return Column(
-                  children: [
-                    for (final pack in packs)
-                      _PackRequestCard(
-                        pack: pack,
-                        kind: _RequestKind.serialization,
-                        onApprove: () => widget.repository.approveSerialization(
-                          pack,
-                          reviewerUid: widget.reviewerUid,
-                        ),
-                        onReject: () =>
-                            _handleRejectSerialization(context, pack),
-                      ),
-                  ],
-                );
-              },
-            ),
-            const SizedBox(height: 28),
-            Text(
-              '메타데이터 수정 요청',
-              style: TextStyle(
-                fontSize: 14,
-                color: AdminColors.ivory,
-                fontWeight: FontWeight.w700,
-              ),
-            ),
-            const SizedBox(height: 10),
-            StreamBuilder<List<AdminStoryPack>>(
-              stream: _pendingMetadataStream,
-              builder: (context, snapshot) {
-                if (snapshot.hasError) {
-                  return SelectableText(
-                    '목록을 불러오지 못했어요: ${snapshot.error}',
-                    style: const TextStyle(
-                      fontSize: 12,
-                      color: AdminColors.danger,
-                    ),
-                  );
-                }
-                final packs = snapshot.data ?? const <AdminStoryPack>[];
-                if (packs.isEmpty) {
-                  return Text(
-                    '대기 중인 메타데이터 수정 요청이 없어요.',
-                    style: TextStyle(fontSize: 13, color: AdminColors.muted),
-                  );
-                }
-                return Column(
-                  children: [
-                    for (final pack in packs)
-                      _PackRequestCard(
-                        pack: pack,
-                        kind: _RequestKind.metadata,
-                        onApprove: () => widget.repository.approveMetadataEdit(
-                          pack,
-                          reviewerUid: widget.reviewerUid,
-                        ),
-                        onReject: () =>
-                            _handleRejectMetadataEdit(context, pack),
-                      ),
-                  ],
-                );
-              },
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
+    return StreamBuilder<List<AdminImage>>(
+      stream: _imagesStream,
+      builder: (context, imageSnapshot) {
+        final imagesById = {
+          for (final img in imageSnapshot.data ?? const <AdminImage>[])
+            img.id: img,
+        };
 
-enum _RequestKind { serialization, metadata }
-
-class _PackRequestCard extends StatelessWidget {
-  final AdminStoryPack pack;
-  final _RequestKind kind;
-  final VoidCallback onApprove;
-  final VoidCallback onReject;
-
-  const _PackRequestCard({
-    required this.pack,
-    required this.kind,
-    required this.onApprove,
-    required this.onReject,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final submittedAt = kind == _RequestKind.serialization
-        ? pack.serializationSubmittedAt
-        : pack.metadataSubmittedAt;
-
-    return Container(
-      margin: const EdgeInsets.only(bottom: 12),
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-      decoration: BoxDecoration(
-        color: AdminColors.panel,
-        border: Border.all(color: AdminColors.border),
-        borderRadius: BorderRadius.circular(10),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      pack.title,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(
-                        fontWeight: FontWeight.w700,
-                        fontSize: 15,
-                        color: AdminColors.ivory,
-                      ),
-                    ),
-                    const SizedBox(height: 2),
-                    Text(
-                      pack.authorName.isEmpty ? '(작가 이름 없음)' : pack.authorName,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(fontSize: 12, color: AdminColors.muted),
-                    ),
-                    if (submittedAt != null) ...[
-                      const SizedBox(height: 2),
-                      Text(
-                        '${_formatDate(submittedAt)} 제출',
-                        style: TextStyle(
-                          fontSize: 11,
-                          color: AdminColors.muted,
-                        ),
-                      ),
-                    ],
-                  ],
+        return StreamBuilder<List<AdminStoryPack>>(
+          stream: _pendingSerializationStream,
+          builder: (context, serializationSnapshot) {
+            if (serializationSnapshot.hasError) {
+              return Padding(
+                padding: const EdgeInsets.all(24),
+                child: SelectableText(
+                  '연재 시작 요청을 불러오지 못했어요: ${serializationSnapshot.error}',
+                  style: const TextStyle(
+                    fontSize: 12,
+                    color: AdminColors.danger,
+                  ),
                 ),
-              ),
-              const SizedBox(width: 12),
-              _ActionButton(
-                label: '승인',
-                bg: AdminColors.approveBg,
-                fg: AdminColors.approveText,
-                border: AdminColors.approveBorder,
-                onTap: onApprove,
-              ),
-              const SizedBox(width: 8),
-              _ActionButton(
-                label: '반려',
-                bg: AdminColors.rejectBg,
-                fg: AdminColors.rejectText,
-                border: AdminColors.rejectBorder,
-                onTap: onReject,
-              ),
-            ],
-          ),
-          if (pack.genres.isNotEmpty) ...[
-            const SizedBox(height: 10),
-            Wrap(
-              spacing: 6,
-              runSpacing: 6,
-              children: [for (final g in pack.genres) _GenreTag(g)],
-            ),
-          ],
-          if (pack.description.isNotEmpty) ...[
-            const SizedBox(height: 10),
-            Text(
-              pack.description,
-              style: TextStyle(
-                fontSize: 13,
-                color: AdminColors.ivory,
-                height: 1.6,
-              ),
-            ),
-          ],
-          const SizedBox(height: 10),
-          Text(
-            pack.salePrice != null
-                ? '가격: ${pack.price}코인 → ${pack.salePrice}코인'
-                    '${_formatDiscountWindow(pack.discountStartAt, pack.discountEndAt)}'
-                : '가격: ${pack.price}코인',
-            style: TextStyle(
-              fontSize: 12,
-              color: pack.salePrice != null ? AdminColors.gold : AdminColors.muted,
-            ),
-          ),
-        ],
-      ),
+              );
+            }
+
+            return StreamBuilder<List<AdminStoryPack>>(
+              stream: _pendingMetadataStream,
+              builder: (context, metadataSnapshot) {
+                if (metadataSnapshot.hasError) {
+                  return Padding(
+                    padding: const EdgeInsets.all(24),
+                    child: SelectableText(
+                      '메타데이터 변경 요청을 불러오지 못했어요: ${metadataSnapshot.error}',
+                      style: const TextStyle(
+                        fontSize: 12,
+                        color: AdminColors.danger,
+                      ),
+                    ),
+                  );
+                }
+
+                final serializationPacks =
+                    serializationSnapshot.data ?? const <AdminStoryPack>[];
+                final metadataPacks =
+                    metadataSnapshot.data ?? const <AdminStoryPack>[];
+
+                final all = [
+                  for (final pack in serializationPacks)
+                    PendingPackRequest(
+                      pack: pack,
+                      kind: PackRequestKind.serialization,
+                    ),
+                  for (final pack in metadataPacks)
+                    PendingPackRequest(
+                      pack: pack,
+                      kind: PackRequestKind.metadataEdit,
+                    ),
+                ];
+
+                final visible = applyPackApprovalFilter(all, _filter);
+
+                var index = _selectedKey == null
+                    ? -1
+                    : visible.indexWhere((r) => r.key == _selectedKey);
+                if (index == -1 && visible.isNotEmpty) index = 0;
+                final selected = index >= 0 ? visible[index] : null;
+                final selectedKey = selected?.key;
+
+                return Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    PackApprovalsFilterBar(
+                      filter: _filter,
+                      summary: _summary(all),
+                      onChanged: (next) => setState(() => _filter = next),
+                    ),
+                    Expanded(
+                      child: Row(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          ConstrainedBox(
+                            constraints: const BoxConstraints(
+                              minWidth: 290,
+                              maxWidth: 400,
+                            ),
+                            child: SizedBox(
+                              width: 360,
+                              child: PackPendingListPane(
+                                requests: visible,
+                                selectedKey: selectedKey,
+                                onSelect: (request) =>
+                                    setState(() => _selectedKey = request.key),
+                              ),
+                            ),
+                          ),
+                          Expanded(
+                            child: PackPendingDetailPane(
+                              request: selected,
+                              imagesById: imagesById,
+                              nodeSummariesStream:
+                                  selected == null ||
+                                      selected.kind !=
+                                          PackRequestKind.serialization
+                                  ? null
+                                  : _nodeSummariesFor(selected.pack.id),
+                              processing:
+                                  selectedKey != null &&
+                                  _processingKeys.contains(selectedKey),
+                              index: index,
+                              total: visible.length,
+                              onApprove: selected == null
+                                  ? () {}
+                                  : () => _approve(selected),
+                              onReject: selected == null
+                                  ? () {}
+                                  : () => _reject(selected),
+                              onPrev: index > 0
+                                  ? () => setState(
+                                      () =>
+                                          _selectedKey = visible[index - 1].key,
+                                    )
+                                  : null,
+                              onNext: index >= 0 && index < visible.length - 1
+                                  ? () => setState(
+                                      () =>
+                                          _selectedKey = visible[index + 1].key,
+                                    )
+                                  : null,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                );
+              },
+            );
+          },
+        );
+      },
     );
   }
-}
-
-class _GenreTag extends StatelessWidget {
-  final String slug;
-
-  const _GenreTag(this.slug);
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-      decoration: BoxDecoration(
-        color: AdminColors.panel2,
-        borderRadius: BorderRadius.circular(999),
-      ),
-      child: Text(
-        slug,
-        style: TextStyle(fontSize: 11, color: AdminColors.muted),
-      ),
-    );
-  }
-}
-
-class _ActionButton extends StatelessWidget {
-  final String label;
-  final Color bg;
-  final Color fg;
-  final Color border;
-  final VoidCallback onTap;
-
-  const _ActionButton({
-    required this.label,
-    required this.bg,
-    required this.fg,
-    required this.border,
-    required this.onTap,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return InkWell(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(6),
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-        decoration: BoxDecoration(
-          color: bg,
-          border: Border.all(color: border),
-          borderRadius: BorderRadius.circular(6),
-        ),
-        child: Text(label, style: TextStyle(fontSize: 12, color: fg)),
-      ),
-    );
-  }
-}
-
-Future<String?> _promptRejectionReason(
-  BuildContext context, {
-  required String title,
-}) {
-  final controller = TextEditingController();
-  return showDialog<String>(
-    context: context,
-    builder: (dialogContext) => AlertDialog(
-      backgroundColor: AdminColors.panel,
-      title: Text(title, style: TextStyle(color: AdminColors.ivory)),
-      content: TextField(
-        controller: controller,
-        autofocus: true,
-        maxLines: 3,
-        style: TextStyle(color: AdminColors.ivory),
-        decoration: InputDecoration(
-          hintText: '작가에게 보여줄 사유를 적어주세요. 비워두면 사유 없이 반려돼요.',
-          hintStyle: TextStyle(color: AdminColors.muted, fontSize: 12),
-          enabledBorder: UnderlineInputBorder(
-            borderSide: BorderSide(color: AdminColors.border),
-          ),
-          focusedBorder: const UnderlineInputBorder(
-            borderSide: BorderSide(color: AdminColors.gold),
-          ),
-        ),
-      ),
-      actions: [
-        TextButton(
-          onPressed: () => Navigator.pop(dialogContext),
-          child: Text('취소', style: TextStyle(color: AdminColors.muted)),
-        ),
-        TextButton(
-          onPressed: () => Navigator.pop(dialogContext, controller.text.trim()),
-          child: const Text(
-            '반려하기',
-            style: TextStyle(color: AdminColors.rejectText),
-          ),
-        ),
-      ],
-    ),
-  );
-}
-
-String _formatDate(DateTime dt) =>
-    '${dt.year}.${dt.month.toString().padLeft(2, '0')}.${dt.day.toString().padLeft(2, '0')}';
-
-String _formatDiscountWindow(DateTime? start, DateTime? end) {
-  if (start == null && end == null) return '';
-  final startText = start == null ? '(없음)' : _formatDate(start);
-  final endText = end == null ? '(없음)' : _formatDate(end);
-  return ' ($startText ~ $endText)';
 }

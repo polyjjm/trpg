@@ -12,15 +12,19 @@ class AdminGlobalNoticeRepository {
 
   final FirebaseFirestore _firestore;
 
-  CollectionReference<Map<String, dynamic>> get _notices => _firestore.collection('notices');
+  CollectionReference<Map<String, dynamic>> get _notices =>
+      _firestore.collection('notices');
 
   /// 관리자 화면 전용 — 비활성 공지까지 전부, 최신순으로.
   Stream<List<AdminGlobalNotice>> watchAllNotices() {
-    return _notices.orderBy('createdAt', descending: true).snapshots().map(
-      (snapshot) => snapshot.docs
-          .map((doc) => AdminGlobalNotice.fromFirestore(doc.id, doc.data()))
-          .toList(),
-    );
+    return _notices
+        .orderBy('createdAt', descending: true)
+        .snapshots()
+        .map(
+          (snapshot) => snapshot.docs
+              .map((doc) => AdminGlobalNotice.fromFirestore(doc.id, doc.data()))
+              .toList(),
+        );
   }
 
   Future<void> createNotice({

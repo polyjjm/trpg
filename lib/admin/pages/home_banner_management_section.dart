@@ -27,13 +27,19 @@ class HomeBannerManagementSection extends StatefulWidget {
   });
 
   @override
-  State<HomeBannerManagementSection> createState() => _HomeBannerManagementSectionState();
+  State<HomeBannerManagementSection> createState() =>
+      _HomeBannerManagementSectionState();
 }
 
-class _HomeBannerManagementSectionState extends State<HomeBannerManagementSection> {
-  late final Stream<List<AdminHomeBanner>> _bannersStream = widget.repository.watchAllBanners();
+class _HomeBannerManagementSectionState
+    extends State<HomeBannerManagementSection> {
+  late final Stream<List<AdminHomeBanner>> _bannersStream = widget.repository
+      .watchAllBanners();
 
-  Future<void> _openCreateDialog(List<AdminStoryPack> packs, int nextSortOrder) async {
+  Future<void> _openCreateDialog(
+    List<AdminStoryPack> packs,
+    int nextSortOrder,
+  ) async {
     final result = await showDialog<_BannerFormResult>(
       context: context,
       builder: (_) => _BannerFormDialog(existing: null, packs: packs),
@@ -56,7 +62,10 @@ class _HomeBannerManagementSectionState extends State<HomeBannerManagementSectio
     );
   }
 
-  Future<void> _openEditDialog(AdminHomeBanner banner, List<AdminStoryPack> packs) async {
+  Future<void> _openEditDialog(
+    AdminHomeBanner banner,
+    List<AdminStoryPack> packs,
+  ) async {
     final result = await showDialog<_BannerFormResult>(
       context: context,
       builder: (_) => _BannerFormDialog(existing: banner, packs: packs),
@@ -83,7 +92,11 @@ class _HomeBannerManagementSectionState extends State<HomeBannerManagementSectio
     await widget.repository.deleteBanner(banner);
   }
 
-  Future<void> _reorder(List<AdminHomeBanner> banners, int oldIndex, int newIndex) async {
+  Future<void> _reorder(
+    List<AdminHomeBanner> banners,
+    int oldIndex,
+    int newIndex,
+  ) async {
     if (newIndex > oldIndex) newIndex -= 1;
     final reordered = [...banners];
     final moved = reordered.removeAt(oldIndex);
@@ -112,25 +125,44 @@ class _HomeBannerManagementSectionState extends State<HomeBannerManagementSectio
                     final banners = snapshot.data ?? const <AdminHomeBanner>[];
                     final nextSortOrder = banners.isEmpty
                         ? 0
-                        : banners.map((b) => b.sortOrder).reduce((a, b) => a > b ? a : b) + 1;
+                        : banners
+                                  .map((b) => b.sortOrder)
+                                  .reduce((a, b) => a > b ? a : b) +
+                              1;
 
                     return Row(
                       children: [
                         Expanded(
                           child: Text(
                             '홈 배너 관리',
-                            style: TextStyle(fontSize: 16, color: AdminColors.ivory, fontWeight: FontWeight.w700),
+                            style: TextStyle(
+                              fontSize: 16,
+                              color: AdminColors.ivory,
+                              fontWeight: FontWeight.w700,
+                            ),
                           ),
                         ),
                         ElevatedButton(
-                          onPressed: () => _openCreateDialog(packs, nextSortOrder),
+                          onPressed: () =>
+                              _openCreateDialog(packs, nextSortOrder),
                           style: ElevatedButton.styleFrom(
                             backgroundColor: AdminColors.gold,
                             foregroundColor: Colors.black,
-                            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 16,
+                              vertical: 10,
+                            ),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(8),
+                            ),
                           ),
-                          child: const Text('+ 새 배너', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700)),
+                          child: const Text(
+                            '+ 새 배너',
+                            style: TextStyle(
+                              fontSize: 13,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
                         ),
                       ],
                     );
@@ -140,7 +172,11 @@ class _HomeBannerManagementSectionState extends State<HomeBannerManagementSectio
                 Text(
                   '여기서 올린 이미지가 리더 홈 화면 상단의 히어로 배너로 순서대로 넘어가며 보여요(텍스트 없이 이미지 그대로). '
                   '드래그로 순서를 바꿀 수 있고, 기간을 정해두면 그 기간에만 노출돼요.',
-                  style: TextStyle(fontSize: 12, color: AdminColors.muted, height: 1.5),
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: AdminColors.muted,
+                    height: 1.5,
+                  ),
                 ),
                 const SizedBox(height: 16),
                 StreamBuilder<List<AdminHomeBanner>>(
@@ -149,18 +185,30 @@ class _HomeBannerManagementSectionState extends State<HomeBannerManagementSectio
                     if (snapshot.hasError) {
                       return SelectableText(
                         '배너 목록을 불러오지 못했어요: ${snapshot.error}',
-                        style: const TextStyle(fontSize: 12, color: AdminColors.danger),
+                        style: const TextStyle(
+                          fontSize: 12,
+                          color: AdminColors.danger,
+                        ),
                       );
                     }
                     if (snapshot.connectionState == ConnectionState.waiting) {
-                      return Text('불러오는 중...', style: TextStyle(fontSize: 13, color: AdminColors.muted));
+                      return Text(
+                        '불러오는 중...',
+                        style: TextStyle(
+                          fontSize: 13,
+                          color: AdminColors.muted,
+                        ),
+                      );
                     }
 
                     final banners = snapshot.data ?? const <AdminHomeBanner>[];
                     if (banners.isEmpty) {
                       return Text(
                         '등록된 배너가 없어요. "+ 새 배너"로 첫 배너를 만들어보세요.',
-                        style: TextStyle(fontSize: 13, color: AdminColors.muted),
+                        style: TextStyle(
+                          fontSize: 13,
+                          color: AdminColors.muted,
+                        ),
                       );
                     }
 
@@ -168,7 +216,8 @@ class _HomeBannerManagementSectionState extends State<HomeBannerManagementSectio
                       shrinkWrap: true,
                       physics: const NeverScrollableScrollPhysics(),
                       buildDefaultDragHandles: false,
-                      onReorder: (oldIndex, newIndex) => _reorder(banners, oldIndex, newIndex),
+                      onReorder: (oldIndex, newIndex) =>
+                          _reorder(banners, oldIndex, newIndex),
                       children: [
                         for (var i = 0; i < banners.length; i++)
                           _BannerRow(
@@ -228,7 +277,11 @@ class _BannerRow extends StatelessWidget {
           children: [
             ReorderableDragStartListener(
               index: index,
-              child: Icon(Icons.drag_indicator_rounded, color: AdminColors.muted, size: 20),
+              child: Icon(
+                Icons.drag_indicator_rounded,
+                color: AdminColors.muted,
+                size: 20,
+              ),
             ),
             const SizedBox(width: 10),
             ClipRRect(
@@ -240,7 +293,8 @@ class _BannerRow extends StatelessWidget {
                     ? Image.network(
                         banner.imageUrl,
                         fit: BoxFit.cover,
-                        errorBuilder: (_, _, _) => ColoredBox(color: AdminColors.panel2),
+                        errorBuilder: (_, _, _) =>
+                            ColoredBox(color: AdminColors.panel2),
                       )
                     : ColoredBox(color: AdminColors.panel2),
               ),
@@ -257,18 +311,31 @@ class _BannerRow extends StatelessWidget {
                           linkedPackTitle ?? '(연결된 팩 없음)',
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
-                          style: TextStyle(fontWeight: FontWeight.w700, fontSize: 14, color: AdminColors.ivory),
+                          style: TextStyle(
+                            fontWeight: FontWeight.w700,
+                            fontSize: 14,
+                            color: AdminColors.ivory,
+                          ),
                         ),
                       ),
                       if (dimmed) ...[
                         const SizedBox(width: 8),
                         Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 6,
+                            vertical: 2,
+                          ),
                           decoration: BoxDecoration(
                             color: AdminColors.statusDraftBg,
                             borderRadius: BorderRadius.circular(999),
                           ),
-                          child: const Text('비활성', style: TextStyle(fontSize: 9, color: AdminColors.statusDraftText)),
+                          child: const Text(
+                            '비활성',
+                            style: TextStyle(
+                              fontSize: 9,
+                              color: AdminColors.statusDraftText,
+                            ),
+                          ),
                         ),
                       ],
                     ],
@@ -289,14 +356,20 @@ class _BannerRow extends StatelessWidget {
               onTap: onEdit,
               child: const Padding(
                 padding: EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                child: Text('편집', style: TextStyle(fontSize: 12, color: AdminColors.accent)),
+                child: Text(
+                  '편집',
+                  style: TextStyle(fontSize: 12, color: AdminColors.accent),
+                ),
               ),
             ),
             InkWell(
               onTap: onDelete,
               child: const Padding(
                 padding: EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                child: Text('삭제', style: TextStyle(fontSize: 12, color: AdminColors.danger)),
+                child: Text(
+                  '삭제',
+                  style: TextStyle(fontSize: 12, color: AdminColors.danger),
+                ),
               ),
             ),
           ],
@@ -349,12 +422,15 @@ class _BannerFormDialogState extends State<_BannerFormDialog> {
   late bool _active = widget.existing?.active ?? true;
   late DateTime? _startAt = widget.existing?.startAt;
   late DateTime? _endAt = widget.existing?.endAt;
-  late final TextEditingController _eyebrowController =
-      TextEditingController(text: widget.existing?.eyebrow ?? '');
-  late final TextEditingController _titleController =
-      TextEditingController(text: widget.existing?.title ?? '');
-  late final TextEditingController _subtitleController =
-      TextEditingController(text: widget.existing?.subtitle ?? '');
+  late final TextEditingController _eyebrowController = TextEditingController(
+    text: widget.existing?.eyebrow ?? '',
+  );
+  late final TextEditingController _titleController = TextEditingController(
+    text: widget.existing?.title ?? '',
+  );
+  late final TextEditingController _subtitleController = TextEditingController(
+    text: widget.existing?.subtitle ?? '',
+  );
 
   bool get _isEditing => widget.existing != null;
 
@@ -371,7 +447,10 @@ class _BannerFormDialogState extends State<_BannerFormDialog> {
   }
 
   Future<void> _pickImage() async {
-    final result = await FilePicker.platform.pickFiles(type: FileType.image, withData: true);
+    final result = await FilePicker.platform.pickFiles(
+      type: FileType.image,
+      withData: true,
+    );
     final bytes = result?.files.firstOrNull?.bytes;
     if (bytes == null) return;
     setState(() => _pickedImageBytes = bytes);
@@ -423,7 +502,10 @@ class _BannerFormDialogState extends State<_BannerFormDialog> {
 
     return AlertDialog(
       backgroundColor: AdminColors.panel,
-      title: Text(_isEditing ? '배너 편집' : '새 배너', style: TextStyle(color: AdminColors.ivory)),
+      title: Text(
+        _isEditing ? '배너 편집' : '새 배너',
+        style: TextStyle(color: AdminColors.ivory),
+      ),
       content: SizedBox(
         width: 380,
         child: SingleChildScrollView(
@@ -484,14 +566,22 @@ class _BannerFormDialogState extends State<_BannerFormDialog> {
               LabeledField(
                 label: '연결할 스토리팩 (선택)',
                 child: DropdownButtonFormField<String>(
-                  initialValue: widget.packs.any((p) => p.id == _linkedPackId) ? _linkedPackId : null,
+                  initialValue: widget.packs.any((p) => p.id == _linkedPackId)
+                      ? _linkedPackId
+                      : null,
                   decoration: adminInputDecoration(hintText: '(선택 안 함)'),
                   dropdownColor: AdminColors.inputDropdownMenuBg,
                   style: TextStyle(color: AdminColors.inputText, fontSize: 13),
                   items: [
-                    const DropdownMenuItem<String>(value: null, child: Text('(선택 안 함)')),
+                    const DropdownMenuItem<String>(
+                      value: null,
+                      child: Text('(선택 안 함)'),
+                    ),
                     for (final pack in widget.packs)
-                      DropdownMenuItem<String>(value: pack.id, child: Text(pack.title)),
+                      DropdownMenuItem<String>(
+                        value: pack.id,
+                        child: Text(pack.title),
+                      ),
                   ],
                   onChanged: (value) => setState(() => _linkedPackId = value),
                 ),
@@ -525,7 +615,10 @@ class _BannerFormDialogState extends State<_BannerFormDialog> {
               const SizedBox(height: 16),
               Row(
                 children: [
-                  Text('활성', style: TextStyle(fontSize: 12, color: AdminColors.muted)),
+                  Text(
+                    '활성',
+                    style: TextStyle(fontSize: 12, color: AdminColors.muted),
+                  ),
                   const Spacer(),
                   Switch(
                     value: _active,
@@ -545,7 +638,10 @@ class _BannerFormDialogState extends State<_BannerFormDialog> {
         ),
         TextButton(
           onPressed: _canSubmit ? _submit : null,
-          child: Text(_isEditing ? '저장' : '만들기', style: const TextStyle(color: AdminColors.gold)),
+          child: Text(
+            _isEditing ? '저장' : '만들기',
+            style: const TextStyle(color: AdminColors.gold),
+          ),
         ),
       ],
     );
@@ -554,7 +650,11 @@ class _BannerFormDialogState extends State<_BannerFormDialog> {
   Widget _buildImagePreview(String? existingImageUrl) {
     final pickedBytes = _pickedImageBytes;
     if (pickedBytes != null) {
-      return Image.memory(pickedBytes, fit: BoxFit.cover, width: double.infinity);
+      return Image.memory(
+        pickedBytes,
+        fit: BoxFit.cover,
+        width: double.infinity,
+      );
     }
     if (existingImageUrl != null && existingImageUrl.isNotEmpty) {
       return Image.network(
@@ -586,7 +686,11 @@ class _DateField extends StatelessWidget {
   final VoidCallback onTap;
   final VoidCallback onClear;
 
-  const _DateField({required this.date, required this.onTap, required this.onClear});
+  const _DateField({
+    required this.date,
+    required this.onTap,
+    required this.onClear,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -608,13 +712,22 @@ class _DateField extends StatelessWidget {
                 date == null
                     ? '(선택 안 함)'
                     : '${date.year}.${date.month.toString().padLeft(2, '0')}.${date.day.toString().padLeft(2, '0')}',
-                style: TextStyle(fontSize: 13, color: date == null ? AdminColors.muted : AdminColors.inputText),
+                style: TextStyle(
+                  fontSize: 13,
+                  color: date == null
+                      ? AdminColors.muted
+                      : AdminColors.inputText,
+                ),
               ),
             ),
             if (date != null)
               InkWell(
                 onTap: onClear,
-                child: Icon(Icons.close_rounded, size: 16, color: AdminColors.muted),
+                child: Icon(
+                  Icons.close_rounded,
+                  size: 16,
+                  color: AdminColors.muted,
+                ),
               ),
           ],
         ),

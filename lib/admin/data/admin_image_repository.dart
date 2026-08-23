@@ -41,14 +41,21 @@ class AdminImageRepository {
     await ref.putData(bytes);
     final url = await ref.getDownloadURL();
 
-    await doc.set({'name': fileName, 'url': url, 'category': category.wireValue});
+    await doc.set({
+      'name': fileName,
+      'url': url,
+      'category': category.wireValue,
+    });
 
     return AdminImage(id: doc.id, name: fileName, url: url, category: category);
   }
 
   /// 카드의 "카테고리 변경"에서 쓴다 — 업로드 시 잘못 고른 분류나, 필드가
   /// 생기기 전에 올라와 기본값 '기타'로 읽히는 기존 이미지를 나중에 바로잡는다.
-  Future<void> updateCategory(String imageId, AdminImageCategory category) async {
+  Future<void> updateCategory(
+    String imageId,
+    AdminImageCategory category,
+  ) async {
     await _images.doc(imageId).update({'category': category.wireValue});
   }
 

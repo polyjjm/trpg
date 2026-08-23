@@ -24,11 +24,14 @@ class HomeBannerRepository {
   /// 노출 필터링은 HomeBannerRepository 리더 사본의 watchActiveBanners가
   /// 따로 한다).
   Stream<List<AdminHomeBanner>> watchAllBanners() {
-    return _banners.orderBy('sortOrder').snapshots().map(
-      (snapshot) => snapshot.docs
-          .map((doc) => AdminHomeBanner.fromFirestore(doc.id, doc.data()))
-          .toList(),
-    );
+    return _banners
+        .orderBy('sortOrder')
+        .snapshots()
+        .map(
+          (snapshot) => snapshot.docs
+              .map((doc) => AdminHomeBanner.fromFirestore(doc.id, doc.data()))
+              .toList(),
+        );
   }
 
   /// 새 배너를 만든다 — 이미지를 Storage(admin/home_banners/{bannerId}.jpg,
@@ -101,7 +104,10 @@ class HomeBannerRepository {
 
     if (imageBytes != null) {
       final ref = _storage.ref('admin/home_banners/$bannerId.jpg');
-      await ref.putData(imageBytes, SettableMetadata(contentType: 'image/jpeg'));
+      await ref.putData(
+        imageBytes,
+        SettableMetadata(contentType: 'image/jpeg'),
+      );
       updates['imageUrl'] = await ref.getDownloadURL();
     }
 

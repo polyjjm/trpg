@@ -101,8 +101,7 @@ class _TtsVoicePickerFieldState extends State<TtsVoicePickerField> {
 
   @override
   Widget build(BuildContext context) {
-    final canSample =
-        widget.sampleContext != null && widget.currentId != null;
+    final canSample = widget.sampleContext != null && widget.currentId != null;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -112,8 +111,8 @@ class _TtsVoicePickerFieldState extends State<TtsVoicePickerField> {
             Expanded(
               child: DropdownButtonFormField<String>(
                 initialValue:
-                widget.currentId != null &&
-                    widget.voices.any((v) => v.id == widget.currentId)
+                    widget.currentId != null &&
+                        widget.voices.any((v) => v.id == widget.currentId)
                     ? widget.currentId
                     : null,
                 decoration: adminInputDecoration(
@@ -127,7 +126,7 @@ class _TtsVoicePickerFieldState extends State<TtsVoicePickerField> {
                     child: Text(widget.noSelectionLabel),
                   ),
                   ...widget.voices.map(
-                        (v) => DropdownMenuItem<String>(
+                    (v) => DropdownMenuItem<String>(
                       value: v.id,
                       child: Text(v.name),
                     ),
@@ -143,26 +142,24 @@ class _TtsVoicePickerFieldState extends State<TtsVoicePickerField> {
                 height: 36,
                 child: IconButton(
                   padding: EdgeInsets.zero,
-                  tooltip: canSample
-                      ? '이 보이스로 샘플 듣기'
-                      : '먼저 보이스를 고르세요',
+                  tooltip: canSample ? '이 보이스로 샘플 듣기' : '먼저 보이스를 고르세요',
                   onPressed: (!canSample || _playing) ? null : _playSample,
                   icon: _playing
                       ? SizedBox(
-                    width: 16,
-                    height: 16,
-                    child: CircularProgressIndicator(
-                      strokeWidth: 2,
-                      color: AdminColors.muted,
-                    ),
-                  )
+                          width: 16,
+                          height: 16,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            color: AdminColors.muted,
+                          ),
+                        )
                       : Icon(
-                    Icons.play_circle_outline_rounded,
-                    size: 20,
-                    color: canSample
-                        ? AdminColors.gold
-                        : AdminColors.inputDisabledBorder,
-                  ),
+                          Icons.play_circle_outline_rounded,
+                          size: 20,
+                          color: canSample
+                              ? AdminColors.gold
+                              : AdminColors.inputDisabledBorder,
+                        ),
                 ),
               ),
             ],
@@ -176,18 +173,18 @@ class _TtsVoicePickerFieldState extends State<TtsVoicePickerField> {
                 onPressed: widget.refreshing ? null : widget.onRefresh,
                 icon: widget.refreshing
                     ? SizedBox(
-                  width: 16,
-                  height: 16,
-                  child: CircularProgressIndicator(
-                    strokeWidth: 2,
-                    color: AdminColors.muted,
-                  ),
-                )
+                        width: 16,
+                        height: 16,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          color: AdminColors.muted,
+                        ),
+                      )
                     : Icon(
-                  Icons.refresh_rounded,
-                  size: 20,
-                  color: AdminColors.muted,
-                ),
+                        Icons.refresh_rounded,
+                        size: 20,
+                        color: AdminColors.muted,
+                      ),
               ),
             ),
           ],

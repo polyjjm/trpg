@@ -30,7 +30,9 @@ class ImagePickerField extends StatelessWidget {
     final visibleImages = filterCategory == null
         ? images
         : images.where((img) => img.category == filterCategory).toList();
-    final selected = visibleImages.where((img) => img.id == currentId).firstOrNull;
+    final selected = visibleImages
+        .where((img) => img.id == currentId)
+        .firstOrNull;
 
     return Row(
       children: [

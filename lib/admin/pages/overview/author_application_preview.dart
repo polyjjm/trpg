@@ -108,9 +108,7 @@ class _AuthorApplicationPreviewState extends State<AuthorApplicationPreview> {
                   vertical: 12,
                 ),
                 decoration: BoxDecoration(
-                  border: Border(
-                    bottom: BorderSide(color: AdminColors.border),
-                  ),
+                  border: Border(bottom: BorderSide(color: AdminColors.border)),
                 ),
                 child: Row(
                   children: [
@@ -171,7 +169,7 @@ class _AuthorApplicationPreviewState extends State<AuthorApplicationPreview> {
                   ),
                 )
               else if (applications == null)
-                const Padding(
+                Padding(
                   padding: EdgeInsets.all(18),
                   child: Text(
                     '불러오는 중…',

@@ -21,7 +21,10 @@ class AdminRevenueSnapshot {
     required this.refundedCoins,
   });
 
-  factory AdminRevenueSnapshot.fromFirestore(String dateKey, Map<String, dynamic> json) {
+  factory AdminRevenueSnapshot.fromFirestore(
+    String dateKey,
+    Map<String, dynamic> json,
+  ) {
     return AdminRevenueSnapshot(
       dateKey: dateKey,
       revenueKRW: (json['revenueKRW'] as num?)?.toInt() ?? 0,

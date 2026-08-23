@@ -119,7 +119,8 @@ class AdminPurchaseTransaction {
       coins: ((data['amount'] as num?)?.toInt() ?? 0).abs(),
       packId: data['packId'] as String?,
       bundleId: data['bundleId'] as String?,
-      bundlePackIds: (data['packIds'] as List<dynamic>?)?.cast<String>() ?? const [],
+      bundlePackIds:
+          (data['packIds'] as List<dynamic>?)?.cast<String>() ?? const [],
       createdAt: (data['createdAt'] as Timestamp?)?.toDate(),
     );
   }

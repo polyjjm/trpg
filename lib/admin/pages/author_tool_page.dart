@@ -191,7 +191,7 @@ class _AuthorToolPageState extends State<AuthorToolPage> {
         builder: (context, snapshot) {
           final packs = snapshot.data ?? const <AdminStoryPack>[];
           final activePackId =
-          (_activePackId != null && packs.any((p) => p.id == _activePackId))
+              (_activePackId != null && packs.any((p) => p.id == _activePackId))
               ? _activePackId
               : (packs.isNotEmpty ? packs.first.id : null);
           final activePack = activePackId == null
@@ -581,11 +581,7 @@ class _AccountMenu extends StatelessWidget {
               ),
             ),
             const SizedBox(width: 7),
-            Icon(
-              Icons.expand_more_rounded,
-              size: 16,
-              color: AdminColors.muted,
-            ),
+            Icon(Icons.expand_more_rounded, size: 16, color: AdminColors.muted),
           ],
         ),
       ),
@@ -649,10 +645,10 @@ class _PackSelectorPill extends StatelessWidget {
                 items: packs
                     .map(
                       (p) => DropdownMenuItem<String>(
-                    value: p.id,
-                    child: Text(p.title, overflow: TextOverflow.ellipsis),
-                  ),
-                )
+                        value: p.id,
+                        child: Text(p.title, overflow: TextOverflow.ellipsis),
+                      ),
+                    )
                     .toList(),
                 onChanged: (id) {
                   if (id != null) onPackChanged(id);
@@ -707,10 +703,7 @@ class _PackSelectorPill extends StatelessWidget {
                 bottomRight: Radius.circular(7),
               ),
               child: Padding(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 9,
-                  vertical: 8,
-                ),
+                padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 8),
                 child: Icon(
                   Icons.tune_rounded,
                   size: 17,
@@ -919,9 +912,9 @@ class _NewPackDialogState extends State<_NewPackDialog> {
           onPressed: _titleController.text.trim().isEmpty
               ? null
               : () => Navigator.pop(context, (
-          _titleController.text.trim(),
-          _type,
-          )),
+                  _titleController.text.trim(),
+                  _type,
+                )),
           child: const Text('만들기', style: TextStyle(color: AdminColors.gold)),
         ),
       ],

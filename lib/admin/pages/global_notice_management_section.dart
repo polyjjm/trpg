@@ -25,11 +25,14 @@ class GlobalNoticeManagementSection extends StatefulWidget {
   });
 
   @override
-  State<GlobalNoticeManagementSection> createState() => _GlobalNoticeManagementSectionState();
+  State<GlobalNoticeManagementSection> createState() =>
+      _GlobalNoticeManagementSectionState();
 }
 
-class _GlobalNoticeManagementSectionState extends State<GlobalNoticeManagementSection> {
-  late final Stream<List<AdminGlobalNotice>> _noticesStream = widget.repository.watchAllNotices();
+class _GlobalNoticeManagementSectionState
+    extends State<GlobalNoticeManagementSection> {
+  late final Stream<List<AdminGlobalNotice>> _noticesStream = widget.repository
+      .watchAllNotices();
 
   Future<void> _openCreateDialog() async {
     final result = await showDialog<_NoticeFormResult>(
@@ -70,7 +73,10 @@ class _GlobalNoticeManagementSectionState extends State<GlobalNoticeManagementSe
   }
 
   Future<void> _delete(AdminGlobalNotice notice) async {
-    final confirmed = await showConfirmDialog(context, '"${notice.title}" 공지를 삭제할까요?');
+    final confirmed = await showConfirmDialog(
+      context,
+      '"${notice.title}" 공지를 삭제할까요?',
+    );
     if (!confirmed) return;
     await widget.repository.deleteNotice(notice.id);
   }
@@ -89,7 +95,11 @@ class _GlobalNoticeManagementSectionState extends State<GlobalNoticeManagementSe
                 Expanded(
                   child: Text(
                     '공지사항 관리',
-                    style: TextStyle(fontSize: 16, color: AdminColors.ivory, fontWeight: FontWeight.w700),
+                    style: TextStyle(
+                      fontSize: 16,
+                      color: AdminColors.ivory,
+                      fontWeight: FontWeight.w700,
+                    ),
                   ),
                 ),
                 ElevatedButton(
@@ -97,10 +107,18 @@ class _GlobalNoticeManagementSectionState extends State<GlobalNoticeManagementSe
                   style: ElevatedButton.styleFrom(
                     backgroundColor: AdminColors.gold,
                     foregroundColor: Colors.black,
-                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 16,
+                      vertical: 10,
+                    ),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(8),
+                    ),
                   ),
-                  child: const Text('+ 새 공지', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700)),
+                  child: const Text(
+                    '+ 새 공지',
+                    style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700),
+                  ),
                 ),
               ],
             ),
@@ -108,7 +126,11 @@ class _GlobalNoticeManagementSectionState extends State<GlobalNoticeManagementSe
             Text(
               '여기서 올린 공지가 앱 하단 "공지사항" 탭에 최신순으로 나타나요. '
               '비활성으로 바꾸면 목록에서 감추기만 하고 지우지는 않아요 — 나중에 다시 켤 수 있어요.',
-              style: TextStyle(fontSize: 12, color: AdminColors.muted, height: 1.5),
+              style: TextStyle(
+                fontSize: 12,
+                color: AdminColors.muted,
+                height: 1.5,
+              ),
             ),
             const SizedBox(height: 16),
             StreamBuilder<List<AdminGlobalNotice>>(
@@ -117,11 +139,17 @@ class _GlobalNoticeManagementSectionState extends State<GlobalNoticeManagementSe
                 if (snapshot.hasError) {
                   return SelectableText(
                     '공지사항 목록을 불러오지 못했어요: ${snapshot.error}',
-                    style: const TextStyle(fontSize: 12, color: AdminColors.danger),
+                    style: const TextStyle(
+                      fontSize: 12,
+                      color: AdminColors.danger,
+                    ),
                   );
                 }
                 if (snapshot.connectionState == ConnectionState.waiting) {
-                  return Text('불러오는 중...', style: TextStyle(fontSize: 13, color: AdminColors.muted));
+                  return Text(
+                    '불러오는 중...',
+                    style: TextStyle(fontSize: 13, color: AdminColors.muted),
+                  );
                 }
 
                 final notices = snapshot.data ?? const <AdminGlobalNotice>[];
@@ -193,7 +221,11 @@ class _NoticeRow extends StatelessWidget {
                           notice.title.isEmpty ? '(제목 없음)' : notice.title,
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
-                          style: TextStyle(fontWeight: FontWeight.w700, fontSize: 14, color: AdminColors.ivory),
+                          style: TextStyle(
+                            fontWeight: FontWeight.w700,
+                            fontSize: 14,
+                            color: AdminColors.ivory,
+                          ),
                         ),
                       ),
                       if (dimmed) ...[
@@ -212,7 +244,11 @@ class _NoticeRow extends StatelessWidget {
                     notice.body,
                     maxLines: 2,
                     overflow: TextOverflow.ellipsis,
-                    style: TextStyle(fontSize: 12.5, color: AdminColors.ivory, height: 1.4),
+                    style: TextStyle(
+                      fontSize: 12.5,
+                      color: AdminColors.ivory,
+                      height: 1.4,
+                    ),
                   ),
                 ],
               ),
@@ -227,14 +263,20 @@ class _NoticeRow extends StatelessWidget {
               onTap: onEdit,
               child: const Padding(
                 padding: EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                child: Text('편집', style: TextStyle(fontSize: 12, color: AdminColors.accent)),
+                child: Text(
+                  '편집',
+                  style: TextStyle(fontSize: 12, color: AdminColors.accent),
+                ),
               ),
             ),
             InkWell(
               onTap: onDelete,
               child: const Padding(
                 padding: EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                child: Text('삭제', style: TextStyle(fontSize: 12, color: AdminColors.danger)),
+                child: Text(
+                  '삭제',
+                  style: TextStyle(fontSize: 12, color: AdminColors.danger),
+                ),
               ),
             ),
           ],
@@ -263,7 +305,10 @@ class _Chip extends StatelessWidget {
         color: AdminColors.statusDraftBg,
         borderRadius: BorderRadius.circular(999),
       ),
-      child: Text(text, style: TextStyle(fontSize: 9, color: AdminColors.statusDraftText)),
+      child: Text(
+        text,
+        style: TextStyle(fontSize: 9, color: AdminColors.statusDraftText),
+      ),
     );
   }
 }
@@ -273,7 +318,11 @@ class _NoticeFormResult {
   final String body;
   final bool active;
 
-  const _NoticeFormResult({required this.title, required this.body, required this.active});
+  const _NoticeFormResult({
+    required this.title,
+    required this.body,
+    required this.active,
+  });
 }
 
 /// 새 공지 만들기/기존 공지 편집을 같은 폼으로 처리한다.
@@ -287,10 +336,12 @@ class _NoticeFormDialog extends StatefulWidget {
 }
 
 class _NoticeFormDialogState extends State<_NoticeFormDialog> {
-  late final TextEditingController _titleController =
-      TextEditingController(text: widget.existing?.title ?? '');
-  late final TextEditingController _bodyController =
-      TextEditingController(text: widget.existing?.body ?? '');
+  late final TextEditingController _titleController = TextEditingController(
+    text: widget.existing?.title ?? '',
+  );
+  late final TextEditingController _bodyController = TextEditingController(
+    text: widget.existing?.body ?? '',
+  );
   late bool _active = widget.existing?.active ?? true;
 
   @override
@@ -310,7 +361,8 @@ class _NoticeFormDialogState extends State<_NoticeFormDialog> {
   }
 
   bool get _canSubmit =>
-      _titleController.text.trim().isNotEmpty && _bodyController.text.trim().isNotEmpty;
+      _titleController.text.trim().isNotEmpty &&
+      _bodyController.text.trim().isNotEmpty;
 
   void _submit() {
     Navigator.pop(
@@ -329,7 +381,10 @@ class _NoticeFormDialogState extends State<_NoticeFormDialog> {
 
     return AlertDialog(
       backgroundColor: AdminColors.panel,
-      title: Text(isEditing ? '공지 편집' : '새 공지', style: TextStyle(color: AdminColors.ivory)),
+      title: Text(
+        isEditing ? '공지 편집' : '새 공지',
+        style: TextStyle(color: AdminColors.ivory),
+      ),
       content: SizedBox(
         width: 420,
         child: SingleChildScrollView(
@@ -361,7 +416,10 @@ class _NoticeFormDialogState extends State<_NoticeFormDialog> {
                 const SizedBox(height: 16),
                 Row(
                   children: [
-                    Text('활성', style: TextStyle(fontSize: 12, color: AdminColors.muted)),
+                    Text(
+                      '활성',
+                      style: TextStyle(fontSize: 12, color: AdminColors.muted),
+                    ),
                     const Spacer(),
                     Switch(
                       value: _active,
@@ -382,7 +440,10 @@ class _NoticeFormDialogState extends State<_NoticeFormDialog> {
         ),
         TextButton(
           onPressed: _canSubmit ? _submit : null,
-          child: Text(isEditing ? '저장' : '만들기', style: const TextStyle(color: AdminColors.gold)),
+          child: Text(
+            isEditing ? '저장' : '만들기',
+            style: const TextStyle(color: AdminColors.gold),
+          ),
         ),
       ],
     );

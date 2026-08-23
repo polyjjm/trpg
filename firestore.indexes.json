@@ -108,6 +108,14 @@
         { "fieldPath": "displayName", "order": "ASCENDING" },
         { "fieldPath": "createdAt", "order": "DESCENDING" }
       ]
+    },
+    {
+      "collectionGroup": "activityLog",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "kind", "order": "ASCENDING" },
+        { "fieldPath": "createdAt", "order": "DESCENDING" }
+      ]
     }
   ],
   "fieldOverrides": [
@@ -137,14 +145,6 @@
       "indexes": [
         { "order": "ASCENDING", "queryScope": "COLLECTION_GROUP" },
         { "order": "DESCENDING", "queryScope": "COLLECTION_GROUP" }
-      ]
-    },
-    {
-      "collectionGroup": "nodes",
-      "queryScope": "COLLECTION_GROUP",
-      "fields": [
-        { "fieldPath": "pendingAction", "order": "ASCENDING" },
-        { "fieldPath": "approvalRequestedAt", "order": "ASCENDING" }
       ]
     }
   ]

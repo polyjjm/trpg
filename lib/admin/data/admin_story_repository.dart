@@ -377,9 +377,9 @@ class AdminStoryRepository {
   /// 그 다음 스냅샷에서 AdminStoryNode.approvalRequestedAt이 이 값을 읽어
   /// 보존하므로(그 필드의 doc 참고), 이후 임시저장이 값을 지우지 않는다.
   Future<void> stampApprovalRequestedAt(String packId, String nodeId) async {
-    await _nodes(packId).doc(nodeId).update({
-      'approvalRequestedAt': FieldValue.serverTimestamp(),
-    });
+    await _nodes(
+      packId,
+    ).doc(nodeId).update({'approvalRequestedAt': FieldValue.serverTimestamp()});
   }
 
   /// 한 번도 발행된 적 없는 순수 초안을 즉시 삭제한다(승인 절차 불필요).

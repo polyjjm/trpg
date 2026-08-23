@@ -24,11 +24,14 @@ class HomeEventRepository {
   /// HomeEventRepository 리더 사본의 watchActiveEvents가 노출 필터링을
   /// 따로 한다).
   Stream<List<AdminHomeEvent>> watchAllEvents() {
-    return _events.orderBy('sortOrder').snapshots().map(
-      (snapshot) => snapshot.docs
-          .map((doc) => AdminHomeEvent.fromFirestore(doc.id, doc.data()))
-          .toList(),
-    );
+    return _events
+        .orderBy('sortOrder')
+        .snapshots()
+        .map(
+          (snapshot) => snapshot.docs
+              .map((doc) => AdminHomeEvent.fromFirestore(doc.id, doc.data()))
+              .toList(),
+        );
   }
 
   /// 새 이벤트를 만든다 — 이미지를 Storage(admin/home_events/{eventId}.jpg,
@@ -83,7 +86,10 @@ class HomeEventRepository {
 
     if (imageBytes != null) {
       final ref = _storage.ref('admin/home_events/$eventId.jpg');
-      await ref.putData(imageBytes, SettableMetadata(contentType: 'image/jpeg'));
+      await ref.putData(
+        imageBytes,
+        SettableMetadata(contentType: 'image/jpeg'),
+      );
       updates['imageUrl'] = await ref.getDownloadURL();
     }
 

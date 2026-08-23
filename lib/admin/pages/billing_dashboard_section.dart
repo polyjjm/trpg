@@ -30,12 +30,16 @@ class BillingDashboardSection extends StatefulWidget {
   });
 
   @override
-  State<BillingDashboardSection> createState() => _BillingDashboardSectionState();
+  State<BillingDashboardSection> createState() =>
+      _BillingDashboardSectionState();
 }
 
 class _BillingDashboardSectionState extends State<BillingDashboardSection>
     with SingleTickerProviderStateMixin {
-  late final TabController _tabController = TabController(length: 3, vsync: this);
+  late final TabController _tabController = TabController(
+    length: 3,
+    vsync: this,
+  );
 
   @override
   void dispose() {
@@ -52,7 +56,11 @@ class _BillingDashboardSectionState extends State<BillingDashboardSection>
           padding: const EdgeInsets.fromLTRB(24, 24, 24, 0),
           child: Text(
             '결제·정산 관리',
-            style: TextStyle(fontSize: 16, color: AdminColors.ivory, fontWeight: FontWeight.w700),
+            style: TextStyle(
+              fontSize: 16,
+              color: AdminColors.ivory,
+              fontWeight: FontWeight.w700,
+            ),
           ),
         ),
         TabBar(

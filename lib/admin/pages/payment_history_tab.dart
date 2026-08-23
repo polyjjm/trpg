@@ -28,8 +28,9 @@ class PaymentHistoryTab extends StatefulWidget {
 }
 
 class _PaymentHistoryTabState extends State<PaymentHistoryTab> {
-  late final Stream<List<AdminPointPackage>> _packagesStream =
-      widget.pointPackageRepository.watchAllPackages();
+  late final Stream<List<AdminPointPackage>> _packagesStream = widget
+      .pointPackageRepository
+      .watchAllPackages();
 
   AdminBillingFilter _filter = AdminBillingFilter.empty;
 
@@ -39,7 +40,9 @@ class _PaymentHistoryTabState extends State<PaymentHistoryTab> {
   // 페이지로 바로 점프할 수 없어서(건너뛴 페이지를 전부 읽어야 함),
   // 이전/다음만 지원한다 — "간단한 페이지 번호 버튼"의 가장 현실적인
   // 형태다.
-  final List<QueryDocumentSnapshot<Map<String, dynamic>>?> _cursorStack = [null];
+  final List<QueryDocumentSnapshot<Map<String, dynamic>>?> _cursorStack = [
+    null,
+  ];
   int _pageIndex = 0;
 
   BillingPage<AdminChargeTransaction>? _page;
@@ -107,7 +110,8 @@ class _PaymentHistoryTabState extends State<PaymentHistoryTab> {
       stream: _packagesStream,
       builder: (context, packagesSnapshot) {
         final packageNameById = {
-          for (final p in packagesSnapshot.data ?? const <AdminPointPackage>[]) p.id: p.name,
+          for (final p in packagesSnapshot.data ?? const <AdminPointPackage>[])
+            p.id: p.name,
         };
 
         return Padding(
@@ -135,12 +139,20 @@ class _PaymentHistoryTabState extends State<PaymentHistoryTab> {
       );
     }
     if (_isLoading && _page == null) {
-      return Center(child: Text('불러오는 중...', style: TextStyle(fontSize: 13, color: AdminColors.muted)));
+      return Center(
+        child: Text(
+          '불러오는 중...',
+          style: TextStyle(fontSize: 13, color: AdminColors.muted),
+        ),
+      );
     }
     final items = _page?.items ?? const <AdminChargeTransaction>[];
     if (items.isEmpty) {
       return Center(
-        child: Text('조건에 맞는 결제내역이 없어요.', style: TextStyle(fontSize: 13, color: AdminColors.muted)),
+        child: Text(
+          '조건에 맞는 결제내역이 없어요.',
+          style: TextStyle(fontSize: 13, color: AdminColors.muted),
+        ),
       );
     }
 
@@ -195,12 +207,12 @@ class _PaymentHistoryTabState extends State<PaymentHistoryTab> {
         ],
         if (tx.canRefund)
           TextButton(
-            onPressed: () => showRefundDialog(
-              context,
-              charge: tx,
-              onRefunded: _load,
+            onPressed: () =>
+                showRefundDialog(context, charge: tx, onRefunded: _load),
+            child: const Text(
+              '환불',
+              style: TextStyle(fontSize: 12, color: AdminColors.danger),
             ),
-            child: const Text('환불', style: TextStyle(fontSize: 12, color: AdminColors.danger)),
           ),
       ],
     );
@@ -210,17 +222,29 @@ class _PaymentHistoryTabState extends State<PaymentHistoryTab> {
     final page = _page;
     return Row(
       children: [
-        Text('페이지 ${_pageIndex + 1}', style: TextStyle(fontSize: 12, color: AdminColors.muted)),
+        Text(
+          '페이지 ${_pageIndex + 1}',
+          style: TextStyle(fontSize: 12, color: AdminColors.muted),
+        ),
         const Spacer(),
         TextButton(
           onPressed: _pageIndex > 0 && !_isLoading ? _prevPage : null,
-          child: Text('이전', style: TextStyle(color: _pageIndex > 0 ? AdminColors.gold : AdminColors.muted)),
+          child: Text(
+            '이전',
+            style: TextStyle(
+              color: _pageIndex > 0 ? AdminColors.gold : AdminColors.muted,
+            ),
+          ),
         ),
         TextButton(
           onPressed: (page?.hasMore ?? false) && !_isLoading ? _nextPage : null,
           child: Text(
             '다음',
-            style: TextStyle(color: (page?.hasMore ?? false) ? AdminColors.gold : AdminColors.muted),
+            style: TextStyle(
+              color: (page?.hasMore ?? false)
+                  ? AdminColors.gold
+                  : AdminColors.muted,
+            ),
           ),
         ),
       ],
@@ -246,7 +270,10 @@ class _UserCell extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.start,
       mainAxisSize: MainAxisSize.min,
       children: [
-        Text(displayName.isEmpty ? '(이름 없음)' : displayName, style: TextStyle(color: AdminColors.ivory, fontSize: 13)),
+        Text(
+          displayName.isEmpty ? '(이름 없음)' : displayName,
+          style: TextStyle(color: AdminColors.ivory, fontSize: 13),
+        ),
         Text(uid, style: TextStyle(color: AdminColors.muted, fontSize: 10.5)),
       ],
     );
@@ -269,7 +296,10 @@ class _StatusPill extends StatelessWidget {
       ),
       child: Text(
         text,
-        style: TextStyle(fontSize: 10.5, color: danger ? AdminColors.statusDraftText : AdminColors.gold),
+        style: TextStyle(
+          fontSize: 10.5,
+          color: danger ? AdminColors.statusDraftText : AdminColors.gold,
+        ),
       ),
     );
   }

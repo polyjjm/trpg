@@ -19,11 +19,14 @@ class AdminPackBundleRepository {
   /// 관리자 화면 전용 — 비활성 번들까지 전부 보여준다(리더 쪽 사본은
   /// active == true만 거른다).
   Stream<List<AdminPackBundle>> watchAllBundles() {
-    return _bundles.orderBy('sortOrder').snapshots().map(
-      (snapshot) => snapshot.docs
-          .map((doc) => AdminPackBundle.fromFirestore(doc.id, doc.data()))
-          .toList(),
-    );
+    return _bundles
+        .orderBy('sortOrder')
+        .snapshots()
+        .map(
+          (snapshot) => snapshot.docs
+              .map((doc) => AdminPackBundle.fromFirestore(doc.id, doc.data()))
+              .toList(),
+        );
   }
 
   Future<void> createBundle({

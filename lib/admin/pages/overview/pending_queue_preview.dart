@@ -73,13 +73,10 @@ class _PendingQueuePreviewState extends State<PendingQueuePreview> {
             onSeeAll: widget.onSeeAll,
             oldest: null,
             child: Padding(
-              padding: const EdgeInsets.all(18),
+              padding: const EdgeInsets.all(18), // 여기에 const
               child: SelectableText(
                 '승인 대기 목록을 불러오지 못했어요: ${snapshot.error}',
-                style: const TextStyle(
-                  fontSize: 12,
-                  color: AdminColors.danger,
-                ),
+                style: const TextStyle(fontSize: 12, color: AdminColors.danger),
               ),
             ),
           );
@@ -112,8 +109,9 @@ class _PendingQueuePreviewState extends State<PendingQueuePreview> {
             children: [
               const _HeaderRow(),
               if (all == null)
-                const Padding(
-                  padding: EdgeInsets.all(18),
+                Padding(
+                  // ← 여기 const 삭제
+                  padding: const EdgeInsets.all(18),
                   child: Text(
                     '불러오는 중…',
                     style: TextStyle(fontSize: 12, color: AdminColors.muted),
@@ -309,7 +307,8 @@ class _HeaderRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    const style = TextStyle(
+    final style = TextStyle(
+      // const → final
       fontSize: 11,
       color: AdminColors.muted,
       fontWeight: FontWeight.w500,
@@ -321,13 +320,26 @@ class _HeaderRow extends StatelessWidget {
         border: Border(bottom: BorderSide(color: AdminColors.border)),
       ),
       child: Row(
-        children: const [
-          Expanded(flex: _colNode, child: Text('작품 · 노드', style: style)),
-          SizedBox(width: 12),
-          Expanded(flex: _colAuthor, child: Text('작가', style: style)),
-          SizedBox(width: 12),
-          SizedBox(width: _colKind, child: Text('요청', style: style)),
-          SizedBox(width: _colStatus, child: Text('상태', style: style)),
+        children: [
+          // const [ → [
+          Expanded(
+            flex: _colNode,
+            child: Text('작품 · 노드', style: style),
+          ),
+          const SizedBox(width: 12), // 각 SizedBox에 const 추가
+          Expanded(
+            flex: _colAuthor,
+            child: Text('작가', style: style),
+          ),
+          const SizedBox(width: 12),
+          SizedBox(
+            width: _colKind,
+            child: Text('요청', style: style),
+          ),
+          SizedBox(
+            width: _colStatus,
+            child: Text('상태', style: style),
+          ),
           SizedBox(
             width: _colWaited,
             child: Text('대기', style: style, textAlign: TextAlign.right),

@@ -48,7 +48,10 @@ class AdminPointPackage {
     required this.platform,
   });
 
-  factory AdminPointPackage.fromFirestore(String id, Map<String, dynamic> json) {
+  factory AdminPointPackage.fromFirestore(
+    String id,
+    Map<String, dynamic> json,
+  ) {
     return AdminPointPackage(
       id: id,
       name: json['name'] as String? ?? '',
