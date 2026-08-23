@@ -54,3 +54,7 @@ export {
   maintainPublishedNodeCount,
   backfillPublishedNodeCounts,
 } from "./secure_reader_nodes";
+
+// 층 5 (#7) — draft/live 분리 백필. PR #7의 draft_live_entrypoint.ts도 같은
+// 이유로 지웠다(그 파일 역시 `export * from "./index"`로 시작했다).
+export {backfillNodeDraftDocuments} from "./draft_live_migration";

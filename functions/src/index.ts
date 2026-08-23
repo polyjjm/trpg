@@ -8,6 +8,8 @@ import {getStorage} from "firebase-admin/storage";
 import {getAuth} from "firebase-admin/auth";
 import {createHash, randomUUID} from "crypto";
 
+import {draftNodeRef, resolveEditorNodeDoc} from "./node_docs";
+
 // =============================================================================
 // ⚠️ 이 파일의 모든 함수는 firestore.rules를 **우회한다**.
 // =============================================================================
@@ -1619,12 +1621,17 @@ export const previewNodeTts = onCall(
       );
     }
 
-    const nodeRef = db.collection("storyPacks").doc(packId).collection("nodes").doc(nodeId);
-    const nodeSnap = await nodeRef.get();
-    if (!nodeSnap.exists) {
+    // 미리듣기 캐시는 **편집기 상태**라 draftNodes에 산다(PR #7의 draft/live
+    // 분리). 예전엔 live 문서(nodes/{nodeId})만 봤는데, 분리 이후 **한 번도
+    // 발행된 적 없는 신규 초안에는 live 문서가 의도적으로 없어서** 새 노드를
+    // 쓰고 내레이션을 미리 들어 보는 지극히 평범한 흐름이 not-found로
+    // 깨졌다. resolveEditorNodeDoc이 draft 우선 + legacy 폴백으로 찾는다.
+    const editorDoc = await resolveEditorNodeDoc(packId, nodeId);
+    if (!editorDoc) {
       throw new HttpsError("not-found", "존재하지 않는 노드예요.");
     }
-    const nodeData = nodeSnap.data()!;
+    const nodeRef = editorDoc.ref;
+    const nodeData = editorDoc.data;
     const cachedUrl =
       typeof nodeData.ttsPreviewAudioUrl === "string" ? nodeData.ttsPreviewAudioUrl : null;
     const cachedHash =
@@ -1740,12 +1747,25 @@ export const onNodeApprovedGenerateTts = onDocumentWritten(
       return;
     }
 
+    // 미리듣기 캐시 승격 — 작가가 승인 직전에 들어 본 파일의 해시가 승인된
+    // 콘텐츠와 같으면 Typecast를 **다시 부르지 않고** 그 파일을 그대로
+    // 독자용 ttsAudioUrl로 올린다. 유료 API 호출을 통째로 아끼는 지점이다.
+    //
+    // PR #7 이후 미리듣기 캐시는 draftNodes에 있다(previewNodeTts 참고).
+    // 그래서 draft 문서를 먼저 보고, 없으면 마이그레이션 이전 데이터를 위해
+    // live 문서 자신의 필드로 폴백한다. **쓰기 대상은 계속 live 문서다** —
+    // ttsAudioUrl은 독자용 캐시라 승인본과 같은 자리에 있어야 한다.
+    const draftSnap = await draftNodeRef(packId, nodeId).get();
+    const previewSource = draftSnap.exists ? draftSnap.data()! : afterData;
+
     const previewHash =
-      typeof afterData.ttsPreviewAudioGeneratedForBodyHash === "string" ?
-        afterData.ttsPreviewAudioGeneratedForBodyHash :
+      typeof previewSource.ttsPreviewAudioGeneratedForBodyHash === "string" ?
+        previewSource.ttsPreviewAudioGeneratedForBodyHash :
         null;
     const previewUrl =
-      typeof afterData.ttsPreviewAudioUrl === "string" ? afterData.ttsPreviewAudioUrl : null;
+      typeof previewSource.ttsPreviewAudioUrl === "string" ?
+        previewSource.ttsPreviewAudioUrl :
+        null;
     if (previewHash === hash && previewUrl) {
       console.log(
         `onNodeApprovedGenerateTts: 미리듣기 캐시 재사용 (packId=${packId}, nodeId=${nodeId}).`

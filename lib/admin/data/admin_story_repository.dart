@@ -9,12 +9,15 @@ import '../models/pending_action.dart';
 import '../models/pending_node_ref.dart';
 import '../models/story_pack_type.dart';
 
-/// storyPacks / storyPacks/{packId}/nodes 컬렉션을 다루는 저장소.
+/// storyPacks의 팩 메타데이터와 노드 draft/live 저장소를 다룬다.
 ///
-/// 승인 전(draft, pendingAction 대기 중) 콘텐츠까지 그대로 문서에 들어있고,
-/// 게임 클라이언트는 이 문서를 직접 읽지 않는다(아직은 데이터 마이그레이션 전
-/// 단계라 게임은 여전히 하드코딩된 story_nodes.dart를 쓴다) — 이 저장소는
-/// 편집기 전용이다.
+/// 노드 콘텐츠는 두 컬렉션으로 분리한다.
+/// - draftNodes: 작가가 편집 중인 전체 문서 + 승인 상태/반려 사유
+/// - nodes: 마지막 승인된 liveSnapshot과 서버 캐시(TTS 등), reader-facing 호환 문서
+///
+/// 작가의 임시저장은 draftNodes만 갱신하고, admin 승인 시에만 nodes가 바뀐다.
+/// 따라서 이미 발행된 노드를 수정하는 동안 미승인 초안이 reader-facing
+/// nodes 문서에 덮어써지는 구조적 누출을 끊는다.
 class AdminStoryRepository {
   AdminStoryRepository({FirebaseFirestore? firestore})
     : _firestore = firestore ?? FirebaseFirestore.instance;
@@ -24,8 +27,13 @@ class AdminStoryRepository {
   CollectionReference<Map<String, dynamic>> get _packs =>
       _firestore.collection('storyPacks');
 
+  /// reader/TTS가 보는 승인본 호환 컬렉션.
   CollectionReference<Map<String, dynamic>> _nodes(String packId) =>
       _packs.doc(packId).collection('nodes');
+
+  /// author/admin editor가 보는 편집본 컬렉션.
+  CollectionReference<Map<String, dynamic>> _draftNodes(String packId) =>
+      _packs.doc(packId).collection('draftNodes');
 
   /// 모든 스토리팩(작가 구분 없이) — admin 시점 목록.
   Stream<List<AdminStoryPack>> watchPacks() {
@@ -383,65 +391,58 @@ class AdminStoryRepository {
     'defaultTtsVoiceId': pack.defaultTtsVoiceId,
   };
 
+  /// 편집기/관리자 대기함은 reader-facing nodes가 아니라 draftNodes를 본다.
   Stream<List<AdminStoryNodeSummary>> watchNodeSummaries(String packId) {
-    return _nodes(packId).snapshots().map(
+    return _draftNodes(packId).snapshots().map(
       (snapshot) => snapshot.docs
           .map((doc) => AdminStoryNodeSummary.fromFirestore(doc.id, doc.data()))
           .toList(),
     );
   }
 
+  /// 마이그레이션 직후 혹은 백필 전 개발 환경을 위해 draftNodes가 없으면
+  /// 기존 nodes를 fallback으로 읽는다. 저장하는 순간부터 draftNodes가 생긴다.
   Future<AdminStoryNode?> fetchNode(String packId, String nodeId) async {
-    final doc = await _nodes(packId).doc(nodeId).get();
-    final data = doc.data();
-    if (data == null) return null;
-    return AdminStoryNode.fromFirestore(doc.id, data);
+    final draft = await _draftNodes(packId).doc(nodeId).get();
+    final draftData = draft.data();
+    if (draftData != null) {
+      return AdminStoryNode.fromFirestore(draft.id, draftData);
+    }
+
+    final legacy = await _nodes(packId).doc(nodeId).get();
+    final legacyData = legacy.data();
+    if (legacyData == null) return null;
+    return AdminStoryNode.fromFirestore(legacy.id, legacyData);
   }
 
-  /// 노드를 통째로 덮어쓴다 — 신규 생성과 임시저장/승인요청 모두 이 메서드
-  /// 하나로 처리한다(문서 전체가 항상 로컬 편집 상태를 그대로 반영하기 때문에
-  /// 부분 업데이트보다 전체 set이 더 안전하다).
+  /// 임시저장/승인요청은 draftNodes만 갱신한다. 이미 공개 중인 nodes는
+  /// approveNode가 실행되기 전까지 전혀 변경되지 않는다.
   Future<void> saveNode(String packId, AdminStoryNode node) async {
-    await _nodes(packId).doc(node.id).set(node.toFirestoreJson());
+    await _draftNodes(packId).doc(node.id).set(node.toFirestoreJson());
   }
 
-  /// 일괄 쓰기("한 번에 쓰기", 선형 스토리 페이지 분할)가 여러 노드를 한 번에
-  /// 만들 때 쓴다 — saveNode()를 N번 부르는 것과 달리 하나의 배치로 묶여서
-  /// 중간에 실패해도 부분 반영되지 않는다.
   Future<void> saveNodesBatch(String packId, List<AdminStoryNode> nodes) async {
     final batch = _firestore.batch();
     for (final node in nodes) {
-      batch.set(_nodes(packId).doc(node.id), node.toFirestoreJson());
+      batch.set(_draftNodes(packId).doc(node.id), node.toFirestoreJson());
     }
     await batch.commit();
   }
 
-  /// 승인 요청 직후 요청 시각을 서버 시계로 찍는다 — saveNode()/
-  /// saveNodesBatch() 다음에 제출한 노드마다 부른다.
-  ///
-  /// 클라이언트 시계를 믿지 않으려고 모델 값이 아니라 serverTimestamp로 쓴다.
-  /// 그 다음 스냅샷에서 AdminStoryNode.approvalRequestedAt이 이 값을 읽어
-  /// 보존하므로(그 필드의 doc 참고), 이후 임시저장이 값을 지우지 않는다.
   Future<void> stampApprovalRequestedAt(String packId, String nodeId) async {
-    await _nodes(
+    await _draftNodes(
       packId,
     ).doc(nodeId).update({'approvalRequestedAt': FieldValue.serverTimestamp()});
   }
 
-  /// 한 번도 발행된 적 없는 순수 초안을 즉시 삭제한다(승인 절차 불필요).
+  /// 한 번도 발행되지 않은 순수 초안은 draft 문서만 지운다.
   Future<void> deleteNodeDoc(String packId, String nodeId) async {
-    await _nodes(packId).doc(nodeId).delete();
+    await _draftNodes(packId).doc(nodeId).delete();
   }
 
-  /// 모든 스토리팩을 통틀어 승인 대기 중인 노드를 감시한다.
-  ///
-  /// 관리자 개요의 대기함 미리보기가 "얼마나 오래 기다렸나"로 정렬하므로,
-  /// 문서의 approvalRequestedAt을 [PendingNodeRef]에 같이 담아 넘긴다 —
-  /// 정렬/표시는 화면 쪽에서 한다(대기 건수가 수백 건대가 되기 전까지는
-  /// 서버 정렬 + 복합 색인을 붙일 이유가 없다).
   Stream<List<PendingNodeRef>> watchPendingNodes() {
     return _firestore
-        .collectionGroup('nodes')
+        .collectionGroup('draftNodes')
         .where('pendingAction', whereIn: ['create', 'edit', 'delete'])
         .snapshots()
         .map(
@@ -457,51 +458,69 @@ class AdminStoryRepository {
         );
   }
 
-  /// 승인: 삭제 요청이면 실제로 문서를 지우고, 등록/수정 요청이면 지금 draft
-  /// 내용을 liveSnapshot으로 복사하고 published로 바꾼다. rejectionReason도
-  /// 같이 지운다 — 방어적 처리다(정상 흐름에서는 재제출 시점에 이미
-  /// requestApprovalForNode가 지우지만, 혹시 그 경로를 안 거치고 옛 반려
-  /// 사유가 남은 채로 승인되는 경우에도 승인된 버전에는 안 남아야 한다).
-  ///
-  /// approvalRequestedAt은 일부러 지우지 않는다 — "마지막으로 언제 요청됐던
-  /// 노드인가"를 나중에 되짚을 수 있어야 하고, pendingAction이 비면 대기함
-  /// 목록에서 어차피 빠진다.
+  /// 승인만 live 문서를 갱신한다. draft와 live를 같은 batch로 바꿔 중간 상태가
+  /// 남지 않게 한다. live 쪽은 merge로 써서 TTS 서버 캐시 필드를 보존한다.
   Future<void> approveNode(String packId, AdminStoryNode node) async {
+    final draftRef = _draftNodes(packId).doc(node.id);
+    final liveRef = _nodes(packId).doc(node.id);
+    final batch = _firestore.batch();
+
     if (node.pendingAction == PendingAction.delete) {
-      await deleteNodeDoc(packId, node.id);
+      batch.delete(draftRef);
+      batch.delete(liveRef);
+      await batch.commit();
       return;
     }
 
-    await _nodes(packId).doc(node.id).update({
-      'liveSnapshot': node.contentSnapshot(),
+    final liveSnapshot = node.contentSnapshot();
+    batch.set(
+      liveRef,
+      {
+        'status': 'published',
+        'liveSnapshot': liveSnapshot,
+        'pendingAction': null,
+        'rejectionReason': null,
+      },
+      SetOptions(merge: true),
+    );
+    batch.update(draftRef, {
+      'liveSnapshot': liveSnapshot,
       'status': 'published',
       'pendingAction': null,
       'rejectionReason': null,
     });
+    await batch.commit();
   }
 
-  /// 반려: 삭제 요청이면 요청만 취소하고, 등록/수정 요청이면 draft 상태로
-  /// 되돌려 작가가 다시 손볼 수 있게 한다 — liveSnapshot(이미 연재 중인 버전)은
-  /// 건드리지 않는다. [reason]을 rejectionReason에 저장해서 작가가 노드
-  /// 목록/편집 화면에서 왜 반려됐는지 볼 수 있게 한다(approvals_tab.dart가
-  /// 반려 사유 입력을 필수로 강제한다).
+  /// 반려는 draft 상태만 바꾼다. 기존 live 문서는 절대 건드리지 않는다.
+  /// 이미 발행된 노드의 수정 반려라면 editor 상태는 published를 유지하고,
+  /// 신규 등록 반려만 draft로 돌아간다.
   Future<void> rejectNode(
     String packId,
     AdminStoryNode node, {
     required String reason,
   }) async {
+    final draftRef = _draftNodes(packId).doc(node.id);
     if (node.pendingAction == PendingAction.delete) {
-      await _nodes(
-        packId,
-      ).doc(node.id).update({'pendingAction': null, 'rejectionReason': reason});
+      await draftRef.update({
+        'pendingAction': null,
+        'rejectionReason': reason,
+      });
       return;
     }
 
-    await _nodes(packId).doc(node.id).update({
-      // 한 번도 승인된 적 없는 신규 노드는 다시 draft로 돌리되, 이미
-      // liveSnapshot이 있는 수정 요청은 published 상태를 유지해야 한다.
-      // 그렇지 않으면 리더의 status == 'published' 쿼리에서 빠져 기존
-      // 공개 노드까지 독자에게서 사라진다.
+    await draftRef.update({
+      // PR #1의 수정을 draft/live 분리 이후에도 그대로 유지한다 — 한 번도
+      // 승인된 적 없는 신규 노드만 draft로 되돌리고, 이미 liveSnapshot이 있는
+      // 수정 요청은 published를 유지한다.
+      //
+      // 분리 전에는 이 값이 리더가 보는 문서에 그대로 쓰여서, draft로
+      // 되돌리면 `status == 'published'` 쿼리에서 빠져 **이미 공개된 화가
+      // 독자에게서 사라지는** 실제 장애였다. 지금은 live 문서를 아예 안
+      // 건드리므로 독자에게는 영향이 없지만, 이 값은 여전히 편집기의 상태
+      // 표시(watchNodeSummaries는 draftNodes를 본다)와 다음 승인 요청의
+      // 기준이 되므로 똑같이 유지해야 한다 — 이미 연재 중인 노드를 "미발행"
+      // 으로 보여주면 작가가 상태를 오해한다.
       'status': node.liveSnapshot == null ? 'draft' : 'published',
       'pendingAction': null,
       'rejectionReason': reason,

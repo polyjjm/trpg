@@ -6,6 +6,7 @@ import {DocumentReference, FieldValue, getFirestore} from "firebase-admin/firest
 import {getStorage} from "firebase-admin/storage";
 
 import * as legacy from "./index";
+import {resolveEditorNodeDoc} from "./node_docs";
 
 // 이 파일은 배포 엔트리포인트다. 기존 index.ts의 비-TTS 함수는 그대로
 // 재노출하고, 영구 Firebase download token URL을 만들던 TTS 함수 셋만
@@ -213,13 +214,15 @@ export const previewNodeTts = onCall(
       throw new HttpsError("internal", "미리듣기 파일 경로가 올바르지 않아요.");
     }
 
-    const nodeRef = db
-      .collection("storyPacks")
-      .doc(requestData.packId)
-      .collection("nodes")
-      .doc(requestData.nodeId);
-    const snap = await nodeRef.get();
-    if (snap.exists) await normalizeNodeTtsRefs(nodeRef, snap.data()!);
+    // legacy previewNodeTts가 방금 캐시를 써 넣은 **바로 그 문서**를 정규화해야
+    // 한다. PR #7 이후 미리듣기 캐시는 draftNodes에 있으므로(신규 초안에는
+    // live 문서가 아예 없다) 같은 draft-우선 규칙으로 찾는다 — 여기서 live
+    // 문서만 보면 신규 초안의 장기 token URL이 그대로 남는다.
+    const editorDoc = await resolveEditorNodeDoc(
+      requestData.packId,
+      requestData.nodeId
+    );
+    if (editorDoc) await normalizeNodeTtsRefs(editorDoc.ref, editorDoc.data);
 
     return {
       audioUrl: await shortLivedTtsUrl(storagePath),

@@ -130,6 +130,16 @@
       ]
     },
     {
+      "collectionGroup": "draftNodes",
+      "fieldPath": "pendingAction",
+      "indexes": [
+        { "order": "ASCENDING", "queryScope": "COLLECTION" },
+        { "order": "DESCENDING", "queryScope": "COLLECTION" },
+        { "order": "ASCENDING", "queryScope": "COLLECTION_GROUP" },
+        { "order": "DESCENDING", "queryScope": "COLLECTION_GROUP" }
+      ]
+    },
+    {
       "collectionGroup": "nodes",
       "fieldPath": "status",
       "indexes": [
