@@ -41,6 +41,8 @@ import 'pack_bundle_management_section.dart';
 import '../data/pack_bundle_repository.dart';
 import 'point_package_management_section.dart';
 import '../data/point_package_repository.dart';
+import 'maintenance_section.dart';
+import '../data/maintenance_service.dart';
 import 'user_management_page.dart';
 
 enum _AdminSection {
@@ -58,6 +60,7 @@ enum _AdminSection {
   pointPackages,
   packBundles,
   billing,
+  maintenance,
 }
 
 /// 플랫폼 운영 전용 페이지 — author 도구(AuthorToolPage)와 별개다. 콘텐츠
@@ -207,6 +210,7 @@ class _AdminDashboardShellState extends State<_AdminDashboardShell> {
       AdminGlobalNoticeRepository();
   final AdminImageRepository _imageRepository = AdminImageRepository();
   final ActivityLogRepository _activityLogRepository = ActivityLogRepository();
+  final MaintenanceService _maintenanceService = MaintenanceService();
 
   _AdminSection _activeSection = _AdminSection.overview;
 
@@ -404,6 +408,8 @@ class _AdminDashboardShellState extends State<_AdminDashboardShell> {
           storyRepository: _storyRepository,
           bundleRepository: _packBundleRepository,
         );
+      case _AdminSection.maintenance:
+        return MaintenanceSection(service: _maintenanceService);
     }
   }
 }
@@ -607,6 +613,13 @@ class _Sidebar extends StatelessWidget {
             label: '공지사항 관리',
             selected: active == _AdminSection.globalNotices,
             onTap: () => onSelected(_AdminSection.globalNotices),
+          ),
+          const _SidebarSectionHeader('시스템'),
+          _SidebarItem(
+            icon: Icons.build_rounded,
+            label: '유지보수',
+            selected: active == _AdminSection.maintenance,
+            onTap: () => onSelected(_AdminSection.maintenance),
           ),
         ],
       ),
