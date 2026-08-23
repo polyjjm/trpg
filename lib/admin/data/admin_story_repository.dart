@@ -498,7 +498,11 @@ class AdminStoryRepository {
     }
 
     await _nodes(packId).doc(node.id).update({
-      'status': 'draft',
+      // 한 번도 승인된 적 없는 신규 노드는 다시 draft로 돌리되, 이미
+      // liveSnapshot이 있는 수정 요청은 published 상태를 유지해야 한다.
+      // 그렇지 않으면 리더의 status == 'published' 쿼리에서 빠져 기존
+      // 공개 노드까지 독자에게서 사라진다.
+      'status': node.liveSnapshot == null ? 'draft' : 'published',
       'pendingAction': null,
       'rejectionReason': reason,
     });
