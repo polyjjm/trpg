@@ -1,0 +1,57 @@
+rules_version = '2';
+
+service firebase.storage {
+  match /b/{bucket}/o {
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function myRole() {
+      return isSignedIn()
+        ? firestore.get(/databases/(default)/documents/users/$(request.auth.uid)).data.role
+        : 'reader';
+    }
+
+    function isAuthorOrAdmin() {
+      return myRole() == 'author' || myRole() == 'admin';
+    }
+
+    // 작가용 공유 라이브러리 원본. 독자에게는 Cloud Function이 별도
+    // private/story_media 경로의 짧은 signed URL을 발급하므로 직접 읽기를
+    // 허용하지 않는다. 기존 Firebase download-token URL은 Storage Rules를
+    // 우회할 수 있으므로 #16 마이그레이션에서 별도로 폐기한다.
+    match /admin/story_images/{fileName} {
+      allow read, write: if isAuthorOrAdmin();
+    }
+
+    match /admin/story_sfx/{fileName} {
+      allow read, write: if isAuthorOrAdmin();
+    }
+
+    match /admin/story_bgm/{fileName} {
+      allow read, write: if isAuthorOrAdmin();
+    }
+
+    // TTS는 Cloud Functions(Admin SDK)만 생성/서명한다. 클라이언트 SDK의
+    // 직접 접근은 작가 미리듣기 포함 전부 막고 callable 함수만 사용한다.
+    match /admin/story_tts/{allPaths=**} {
+      allow read, write: if false;
+    }
+
+    match /admin/story_tts_preview/{allPaths=**} {
+      allow read, write: if false;
+    }
+
+    // 유료 스토리 미디어의 reader용 private 복사본. resolveStoryMedia가
+    // Admin SDK로 복사/서명하므로 Storage Rules를 통과할 클라이언트 요청은 없다.
+    match /private/story_media/{allPaths=**} {
+      allow read, write: if false;
+    }
+
+    // 명시되지 않은 새 경로는 기본 거부. 새 업로드 기능을 추가할 때 반드시
+    // 이 파일에 권한 모델을 같이 추가해야 한다.
+    match /{allPaths=**} {
+      allow read, write: if false;
+    }
+  }
+}
