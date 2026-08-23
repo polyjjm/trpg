@@ -418,6 +418,67 @@ Part 1(페이월 구멍 수정) + Part 2(문서화 패스) 작업 중 새로 나
 
 ---
 
+### 2026-08-24 PR #4/#5(미디어 보안) 머지 중 발견
+
+#### 23. 🔴 signed URL 만료로 세션 5분 뒤 배경/BGM/SFX가 조용히 죽는다 — ✅ **[해결됨]**
+
+- **위치**: `lib/reader/shared/data/story_reader_repository.dart`,
+  두 리더의 `_load()`, `lib/reader/shared/scene_frame.dart`
+- **문제**: PR #4의 `resolveStoryMedia`는 **5분짜리** V4 signed URL을 준다
+  (`secure_story_media.ts`의 `signedUrlTtlMs`). 그런데 리더는 `initState`에서
+  딱 한 번 `_load()`로 모든 URL을 받아 `ResolvedStoryNode`에 박아 두고 세션
+  내내 재사용했다 — **갱신 경로가 아예 없었다**(`lib/reader/` 전체에
+  retry/refresh/reload/expire 검색 결과 0건, `precache`도 없음).
+  실제 독서 시간은 5분을 훌쩍 넘기므로, 그 이후 이동하는 **모든** 노드에서:
+  - 배경 → `errorBuilder` → fallback 배너, **에러 표시 없음**
+  - BGM/SFX → `AudioService`가 예외를 삼켜 **무음**
+
+  증상이 "원래 배경 없는 이야기"와 구분되지 않아서 더 나빴다.
+- **해결**: `StoryMediaSession`(`lib/reader/shared/story_media_session.dart`)
+  을 새로 두고 두 겹으로 막는다.
+  - **(A) 선제 갱신** — `ensureFresh()`를 노드 이동 경로
+    (`_handleChoice`/`_goToNext`)에서 `await`한다. 마지막 해결로부터 4분
+    (TTL 5분 − 여유 1분)이 지났으면 **화면에 그려지기 전에** 새 URL을 받는다.
+    타이머 없이 lazy하게 동작해서 idle 상태에서는 함수를 부르지 않는다.
+  - **(B) 실패 시 갱신** — `Image.network`의 errorBuilder가 SceneFrame의 새
+    `onBackgroundLoadFailed`로 올려 보내면 즉시 재해결한다. 새 URL은 서명이
+    달라 Flutter의 실패 캐시에 안 걸려 실제로 재요청된다. 파일이 진짜로 없어서
+    실패하는 경우 무한 루프가 되지 않도록 10초 쿨다운을 뒀다.
+  - 두 경로는 in-flight future 하나로 합쳐지고, 갱신 실패 시 기존 URL을
+    지우지 않는다(깨진 이미지가 빈 화면보다 낫다).
+  - 갱신 시 BGM은 일부러 다시 트리거하지 않는다 — URL은 재생 **시작**할 때만
+    쓰이므로 `visitNode`를 다시 부르면 멀쩡히 나오던 곡이 처음부터 재시작한다.
+- **남은 틈(의도)**: `_restart()`(처음부터)는 (A)를 안 타고 (B)로만 복구된다 —
+  드문 경로이고 실패 즉시 갱신되므로 그대로 뒀다.
+
+#### 24. 🟡 인라인 이미지 블록 URL은 서버 게이트를 안 탄다
+
+- **위치**: `lib/reader/shared/models/node_block.dart`의 `NodeBlock.url`,
+  `scene_frame.dart`의 `_ImageBlockView`
+- **문제**: 본문 중간에 넣는 image 블록은 `liveSnapshot.blocks[].url`에
+  **URL 문자열이 그대로** 저장된다 — `imageId` 참조가 아니라서
+  `resolveStoryMedia`를 아예 거치지 않는다. 즉 이 이미지들은 여전히 예전
+  방식의 장기 download-token URL이고, PR #4/#5의 보호 밖에 있다.
+- **영향**: 만료가 없으니 #23과는 무관하지만(그래서 (B) 배선도 안 했다),
+  **유료 팩의 본문 삽화가 토큰 URL로 그대로 새는** 경로다. `images` 라이브러리
+  참조로 바꾸고 배경과 같은 게이트를 태워야 닫힌다.
+
+#### 25. 🟠 legacy 토큰 폐기를 이미지로 확장하면 독자 표지가 깨진다
+
+- **위치**: `functions/src/secure_entrypoint.ts`의 `migrateLegacyTtsTokens*`,
+  `storage.rules`, `StoryPackRepository._fetchImageUrls()`
+- **문제**: TTS 토큰 폐기 로직을 `admin/story_images/**`로 **그대로 확장하면
+  안 된다.** 독자 카탈로그의 표지는 `images` 문서의 토큰 URL로 로드되는데,
+  PR #5의 `storage.rules`가 그 경로의 직접 읽기를 author/admin으로 막았다.
+  토큰이 사라지면 독자에게는 표지를 받을 수단이 아예 없어진다.
+- **선행 조건**: 표지도 `resolveStoryMedia` 같은 서버 게이트를 타게 하거나,
+  표지 URL을 `storyPacks.liveMetadata`에 비정규화해 카탈로그가 `images`를
+  안 읽게 만든 뒤에야 이미지 토큰을 폐기할 수 있다.
+  (`admin/story_sfx`/`admin/story_bgm`은 독자가 `resolveStoryMedia`로만
+  접근하므로 지금 바로 확장해도 안전하다.)
+
+---
+
 ### 확인했고 문제 없던 것 (참고)
 
 기왕 본 김에, 의심스러워 보이지만 실제로는 제대로 돼 있는 것들:
