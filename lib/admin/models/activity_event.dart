@@ -19,6 +19,24 @@ enum ActivityKind {
   packMetadataRejected,
   authorApproved,
   authorRejected,
+
+  /// 스토리팩 강제 내리기/복원 — approve/reject 계열이 아니라 별도 분류
+  /// (moderation/enforcement)다. serializationStatus 승인 흐름과 무관하게
+  /// 언제든 걸 수 있는 조치라서(AdminStoryPack.suspended 문서 참고) "심사
+  /// 결과"가 아니라 "제재 조치"로 취급한다.
+  packSuspended,
+  packRestored,
+
+  /// 이미 승인된 작가의 자격을 회수하는 조치 — authorApproved/authorRejected
+  /// (신규 신청서 심사 결과)와는 완전히 다른 시점의 다른 행위라 별도
+  /// kind로 둔다.
+  authorRevoked,
+
+  /// Firebase Auth 계정 자체를 정지/재개(disabled 플래그) — 되돌릴 수 있는
+  /// 조치다(functions/src/index.ts의 setAuthorAccountDisabled 참고).
+  authorAccountDisabled,
+  authorAccountReenabled,
+
   productChanged,
   bannerChanged,
   noticeChanged,
@@ -40,12 +58,15 @@ extension ActivityKindJson on ActivityKind {
 /// 여러 곳을 같이 고쳐야 하고, 하나라도 빠뜨리면 화면마다 다른 색/라벨이
 /// 나오는 어긋남이 생긴다.
 ///
-/// [dotColor]는 요청 사양이 지정한 세 계열 그대로다: 승인계열은
-/// [AdminColors.ok], 반려계열은 [AdminColors.danger], 상품/배너/공지는
-/// [AdminColors.accent]. [badgeBg]/[badgeText]는 status_tag.dart의 "파스텔
-/// bg + 진한 텍스트" 배지 관례를 따르되, 새 색을 만들지 않고 기존
-/// [AdminColors] 값만 쓴다 — 승인은 이미 있는 파스텔 쌍(approveBg/Text,
-/// 승인 버튼과 같은 색)을 그대로 재사용하고, 상품/배너/공지는 accent와 같은
+/// [dotColor]는 네 계열이다: 승인계열은 [AdminColors.ok], 반려계열은
+/// [AdminColors.danger], 제재 조치(강제 내리기/복원, 작가 자격 회수, 계정
+/// 정지/해제)는 [AdminColors.dirtyBannerText](팔레트에 있던 유일한 앰버
+/// 톤 — "미저장 변경" 배너에 쓰던 것과 같은 값을 재사용한다, 새 색을
+/// 만들지 않는다), 상품/배너/공지는 [AdminColors.accent]. [badgeBg]/
+/// [badgeText]는 status_tag.dart의 "파스텔 bg + 진한 텍스트" 배지 관례를
+/// 따르되, 새 색을 만들지 않고 기존 [AdminColors] 값만 쓴다 — 승인은 이미
+/// 있는 파스텔 쌍(approveBg/Text, 승인 버튼과 같은 색)을 그대로 재사용하고,
+/// 제재 조치는 dirtyBannerBg/Text 쌍을, 상품/배너/공지는 accent와 같은
 /// 파란 계열의 기존 파스텔 쌍(imageCategoryBackgroundBg/Text)을 재사용한다.
 /// 반려만 예외 — 팔레트에 "파스텔 빨강 + 진한 빨강 텍스트" 쌍이 아예 없어서
 /// (rejectBg/Text는 반대로 어두운 배경 + 밝은 텍스트라 배지가 아니라 버튼용),
@@ -62,12 +83,21 @@ extension ActivityKindDisplay on ActivityKind {
     ActivityKind.packMetadataRejected => '작품정보 반려',
     ActivityKind.authorApproved => '작가 승인',
     ActivityKind.authorRejected => '작가 반려',
+    ActivityKind.packSuspended => '강제 내리기',
+    ActivityKind.packRestored => '복원',
+    ActivityKind.authorRevoked => '작가 자격 회수',
+    ActivityKind.authorAccountDisabled => '계정 정지',
+    ActivityKind.authorAccountReenabled => '정지 해제',
     ActivityKind.productChanged => '상품',
     ActivityKind.bannerChanged => '배너',
     ActivityKind.noticeChanged => '공지',
   };
 
-  bool get _isApprovalFamily => switch (this) {
+  /// 공개 — "처리 이력" 상세 화면(approvals/history_detail_pane.dart)이
+  /// "승인됨"/"반려됨" 배지를 결정할 때, 특정 kind(예: nodeApproved) 하나만
+  /// 보고 판정하지 않고 이 계열 판정을 그대로 재사용한다(승인 대기함/
+  /// 스토리팩 승인/작가 신청이 전부 같은 화면을 같이 쓴다).
+  bool get isApprovalFamily => switch (this) {
     ActivityKind.nodeApproved ||
     ActivityKind.packSerializationApproved ||
     ActivityKind.packMetadataApproved ||
@@ -83,21 +113,37 @@ extension ActivityKindDisplay on ActivityKind {
     _ => false,
   };
 
+  /// 심사 결과(승인/반려)가 아니라 제재 조치 — 강제 내리기/복원, 작가 자격
+  /// 회수, 계정 정지/정지 해제. 방향(내리기 vs 복원, 정지 vs 해제)과 무관하게
+  /// 하나의 계열로 묶는다 — "이 작가/팩에 관리자가 뭔가 조치를 취했다"라는
+  /// 같은 종류의 사건이라는 게 요청 사양의 판단이었다.
+  bool get _isEnforcementFamily => switch (this) {
+    ActivityKind.packSuspended ||
+    ActivityKind.packRestored ||
+    ActivityKind.authorRevoked ||
+    ActivityKind.authorAccountDisabled ||
+    ActivityKind.authorAccountReenabled => true,
+    _ => false,
+  };
+
   Color get dotColor {
-    if (_isApprovalFamily) return AdminColors.ok;
+    if (isApprovalFamily) return AdminColors.ok;
     if (_isRejectionFamily) return AdminColors.danger;
+    if (_isEnforcementFamily) return AdminColors.dirtyBannerText;
     return AdminColors.accent;
   }
 
   Color get badgeBg {
-    if (_isApprovalFamily) return AdminColors.approveBg;
+    if (isApprovalFamily) return AdminColors.approveBg;
     if (_isRejectionFamily) return AdminColors.danger.withOpacity(0.14);
+    if (_isEnforcementFamily) return AdminColors.dirtyBannerBg;
     return AdminColors.imageCategoryBackgroundBg;
   }
 
   Color get badgeText {
-    if (_isApprovalFamily) return AdminColors.approveText;
+    if (isApprovalFamily) return AdminColors.approveText;
     if (_isRejectionFamily) return AdminColors.danger;
+    if (_isEnforcementFamily) return AdminColors.dirtyBannerText;
     return AdminColors.imageCategoryBackgroundText;
   }
 }

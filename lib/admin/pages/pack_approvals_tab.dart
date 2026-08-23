@@ -8,7 +8,9 @@ import '../models/admin_image.dart';
 import '../models/admin_story_node_summary.dart';
 import '../models/admin_story_pack.dart';
 import '../widgets/admin_theme.dart';
-import 'approvals/approval_filter.dart' show formatWaitedLabel;
+import 'approvals/approval_filter.dart'
+    show ApprovalStatusFilter, applyHistoryFilter, formatWaitedLabel;
+import 'approvals/history_detail_pane.dart';
 import 'approvals/node_diff_view.dart' show promptRejectionReason;
 import 'pack_approvals/pack_approval_filter.dart';
 import 'pack_approvals/pack_approvals_filter_bar.dart';
@@ -29,14 +31,23 @@ class PackApprovalsTab extends StatefulWidget {
   final AdminImageRepository imageRepository;
   final String reviewerUid;
 
-  /// 승인/반려를 개요의 "최근 활동"에 남긴다. null이면 기록하지 않는다.
+  /// 승인/반려를 개요의 "최근 활동"에 남기고, "처리됨"/"전체" 상태에서
+  /// 처리 이력을 읽어온다. null이면 기록도, 이력 조회도 하지 않는다.
   final ActivityLogRepository? activityLog;
+
+  /// packId → 작품 제목/작가 이름 — 전체 스토리팩 목록 기준(대기 중인 것만이
+  /// 아니라)이다. 처리 이력에 뜨는 팩은 이미 승인/반려가 끝나 대기 목록에서
+  /// 빠진 것들이라, 대기 스트림만으로 만든 맵으로는 검색/표시가 안 된다.
+  final Map<String, String> packTitles;
+  final Map<String, String> packAuthors;
 
   const PackApprovalsTab({
     super.key,
     required this.repository,
     required this.imageRepository,
     required this.reviewerUid,
+    required this.packTitles,
+    required this.packAuthors,
     this.activityLog,
   });
 
@@ -55,6 +66,29 @@ class _PackApprovalsTabState extends State<PackApprovalsTab> {
       .watchPendingMetadataEdits();
   late final Stream<List<AdminImage>> _imagesStream = widget.imageRepository
       .watchImages();
+
+  /// "처리됨"/"전체" 상태에서만 쓰인다 — 연재 시작/메타데이터 변경 승인·반려
+  /// 네 가지 kind를 전부 묶어서 하나의 이력으로 보여준다(요청 사양 화면에는
+  /// 유형 구분이 배지로만 남고, 별도 스트림으로 쪼개지 않는다).
+  late final Stream<List<ActivityEvent>> _historyStream =
+      widget.activityLog?.watchApprovalHistory(
+        kinds: const [
+          ActivityKind.packSerializationApproved,
+          ActivityKind.packSerializationRejected,
+          ActivityKind.packMetadataApproved,
+          ActivityKind.packMetadataRejected,
+          // 강제 내리기/복원(all_story_packs_section.dart)도 팩 단위 조치라
+          // 여기 같이 묶는다 — 별도 화면을 새로 만들지 않고 이미 있는
+          // "스토리팩 승인" 처리 이력에 얹는다. applyHistoryFilter는 kind로
+          // 걸러내지 않으므로(검색/기간만) 유형 필터(연재 시작/정보 변경)와도
+          // 안 얽힌다.
+          ActivityKind.packSuspended,
+          ActivityKind.packRestored,
+        ],
+      ) ??
+      Stream.value(const <ActivityEvent>[]);
+
+  String _titleOf(String packId) => widget.packTitles[packId] ?? packId;
 
   /// 발행된 노드 개수(연재 시작 요청 상세)용 — 선택한 팩이 바뀔 때마다 새로
   /// 구독하지 않도록 팩 id별로 캐시해 둔다.
@@ -240,81 +274,163 @@ class _PackApprovalsTabState extends State<PackApprovalsTab> {
                     ),
                 ];
 
-                final visible = applyPackApprovalFilter(all, _filter);
+                // 상태 필터가 "처리됨"이면 대기 목록 자체를 비운다 — 목록
+                // 왼쪽엔 이력만 보인다. "전체"는 둘 다, "대기중"(기본)은
+                // 대기만(approvals_tab.dart와 같은 규칙).
+                final showPending =
+                    _filter.status != ApprovalStatusFilter.handled;
+                final showHistory =
+                    _filter.status != ApprovalStatusFilter.pending;
 
-                var index = _selectedKey == null
-                    ? -1
-                    : visible.indexWhere((r) => r.key == _selectedKey);
-                if (index == -1 && visible.isNotEmpty) index = 0;
-                final selected = index >= 0 ? visible[index] : null;
-                final selectedKey = selected?.key;
+                final visible = showPending
+                    ? applyPackApprovalFilter(all, _filter)
+                    : const <PendingPackRequest>[];
 
-                return Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    PackApprovalsFilterBar(
-                      filter: _filter,
-                      summary: _summary(all),
-                      onChanged: (next) => setState(() => _filter = next),
-                    ),
-                    Expanded(
-                      child: Row(
-                        crossAxisAlignment: CrossAxisAlignment.stretch,
-                        children: [
-                          ConstrainedBox(
-                            constraints: const BoxConstraints(
-                              minWidth: 290,
-                              maxWidth: 400,
-                            ),
-                            child: SizedBox(
-                              width: 360,
-                              child: PackPendingListPane(
-                                requests: visible,
-                                selectedKey: selectedKey,
-                                onSelect: (request) =>
-                                    setState(() => _selectedKey = request.key),
+                return StreamBuilder<List<ActivityEvent>>(
+                  stream: _historyStream,
+                  builder: (context, historySnapshot) {
+                    final historyEvents =
+                        historySnapshot.data ?? const <ActivityEvent>[];
+                    final visibleHistory = showHistory
+                        ? applyHistoryFilter(
+                            historyEvents,
+                            query: _filter.query,
+                            range: _filter.range,
+                            from: _filter.from,
+                            to: _filter.to,
+                            sort: _filter.sort,
+                            packTitles: widget.packTitles,
+                            packAuthors: widget.packAuthors,
+                          )
+                        : const <ActivityEvent>[];
+
+                    // 대기 목록 뒤에 이력이 이어 붙는 순서 그대로 하나의 키
+                    // 목록을 만든다 — PackPendingListPane이 그리는 순서와
+                    // 같아야 이전/다음 이동이 화면과 어긋나지 않는다.
+                    final combinedKeys = [
+                      for (final request in visible) request.key,
+                      for (final event in visibleHistory)
+                        PackPendingListPane.historyKeyFor(event),
+                    ];
+
+                    var index = _selectedKey == null
+                        ? -1
+                        : combinedKeys.indexOf(_selectedKey!);
+                    if (index == -1 && combinedKeys.isNotEmpty) index = 0;
+
+                    PendingPackRequest? selected;
+                    ActivityEvent? selectedHistory;
+                    if (index >= 0) {
+                      if (index < visible.length) {
+                        selected = visible[index];
+                      } else {
+                        selectedHistory =
+                            visibleHistory[index - visible.length];
+                      }
+                    }
+
+                    final selectedKey = index >= 0 ? combinedKeys[index] : null;
+
+                    void goTo(int target) {
+                      setState(() => _selectedKey = combinedKeys[target]);
+                    }
+
+                    return Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        PackApprovalsFilterBar(
+                          filter: _filter,
+                          summary: _summary(all),
+                          onChanged: (next) => setState(() => _filter = next),
+                        ),
+                        Expanded(
+                          child: Row(
+                            crossAxisAlignment: CrossAxisAlignment.stretch,
+                            children: [
+                              ConstrainedBox(
+                                constraints: const BoxConstraints(
+                                  minWidth: 290,
+                                  maxWidth: 400,
+                                ),
+                                child: SizedBox(
+                                  width: 360,
+                                  child: PackPendingListPane(
+                                    requests: visible,
+                                    selectedKey: selectedKey,
+                                    onSelect: (request) => setState(
+                                      () => _selectedKey = request.key,
+                                    ),
+                                    historyEntries: visibleHistory,
+                                    selectedHistoryKey: selectedHistory == null
+                                        ? null
+                                        : selectedKey,
+                                    onSelectHistory: (event) => setState(
+                                      () => _selectedKey =
+                                          PackPendingListPane.historyKeyFor(
+                                            event,
+                                          ),
+                                    ),
+                                  ),
+                                ),
                               ),
-                            ),
+                              Expanded(
+                                child: selectedHistory != null
+                                    ? HistoryDetailPane(
+                                        event: selectedHistory,
+                                        packTitle:
+                                            selectedHistory.packId == null
+                                            ? ''
+                                            : _titleOf(selectedHistory.packId!),
+                                        index: index,
+                                        total: combinedKeys.length,
+                                        onPrev: index > 0
+                                            ? () => goTo(index - 1)
+                                            : null,
+                                        onNext: index < combinedKeys.length - 1
+                                            ? () => goTo(index + 1)
+                                            : null,
+                                      )
+                                    : PackPendingDetailPane(
+                                        request: selected,
+                                        imagesById: imagesById,
+                                        nodeSummariesStream:
+                                            selected == null ||
+                                                selected.kind !=
+                                                    PackRequestKind
+                                                        .serialization
+                                            ? null
+                                            : _nodeSummariesFor(
+                                                selected.pack.id,
+                                              ),
+                                        processing:
+                                            selectedKey != null &&
+                                            _processingKeys.contains(
+                                              selectedKey,
+                                            ),
+                                        index: index,
+                                        total: combinedKeys.length,
+                                        onApprove: selected == null
+                                            ? () {}
+                                            : () => _approve(selected!),
+                                        onReject: selected == null
+                                            ? () {}
+                                            : () => _reject(selected!),
+                                        onPrev: index > 0
+                                            ? () => goTo(index - 1)
+                                            : null,
+                                        onNext:
+                                            index >= 0 &&
+                                                index < combinedKeys.length - 1
+                                            ? () => goTo(index + 1)
+                                            : null,
+                                      ),
+                              ),
+                            ],
                           ),
-                          Expanded(
-                            child: PackPendingDetailPane(
-                              request: selected,
-                              imagesById: imagesById,
-                              nodeSummariesStream:
-                                  selected == null ||
-                                      selected.kind !=
-                                          PackRequestKind.serialization
-                                  ? null
-                                  : _nodeSummariesFor(selected.pack.id),
-                              processing:
-                                  selectedKey != null &&
-                                  _processingKeys.contains(selectedKey),
-                              index: index,
-                              total: visible.length,
-                              onApprove: selected == null
-                                  ? () {}
-                                  : () => _approve(selected),
-                              onReject: selected == null
-                                  ? () {}
-                                  : () => _reject(selected),
-                              onPrev: index > 0
-                                  ? () => setState(
-                                      () =>
-                                          _selectedKey = visible[index - 1].key,
-                                    )
-                                  : null,
-                              onNext: index >= 0 && index < visible.length - 1
-                                  ? () => setState(
-                                      () =>
-                                          _selectedKey = visible[index + 1].key,
-                                    )
-                                  : null,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ],
+                        ),
+                      ],
+                    );
+                  },
                 );
               },
             );

@@ -320,6 +320,52 @@ class AdminStoryRepository {
         );
   }
 
+  /// 강제 내리기 — [AdminStoryPack.suspended] 문서 참고: serializationStatus/
+  /// liveMetadata와 완전히 독립된 게이트라 이 필드들은 건드리지 않는다.
+  Future<void> suspendPack(
+    AdminStoryPack pack, {
+    required String reviewerUid,
+    required String reason,
+  }) async {
+    await _packs.doc(pack.id).update({
+      'suspended': true,
+      'suspendedReason': reason,
+      'suspendedAt': FieldValue.serverTimestamp(),
+      'suspendedBy': reviewerUid,
+    });
+  }
+
+  /// 복원 — suspended만 false로 되돌리고 suspendedReason/At/By는 그대로
+  /// 남긴다. 지워버리면 "이 팩이 예전에 왜/언제/누가 내렸었는지"를 나중에
+  /// 되짚을 방법이 없어진다 — 마지막 내림 기록으로 남겨 두는 편이 admin이
+  /// 팩 이력을 살필 때 더 쓸모 있다는 판단.
+  Future<void> unsuspendPack(AdminStoryPack pack) async {
+    await _packs.doc(pack.id).update({'suspended': false});
+  }
+
+  /// 작가 자격 회수/계정 정지에서 "작품도 함께 비공개 처리" 체크를 했을 때
+  /// 쓴다 — 그 작가의 모든 팩을 한 배치로 강제 내린다. 이미 suspended인
+  /// 팩도 그냥 다시 덮어쓴다(사유/시각만 최신으로 갱신될 뿐이라 해가 없다).
+  Future<void> suspendPacksForAuthor(
+    String authorId, {
+    required String reviewerUid,
+    required String reason,
+  }) async {
+    final snapshot = await _packs.where('authorId', isEqualTo: authorId).get();
+    if (snapshot.docs.isEmpty) return;
+
+    final batch = _firestore.batch();
+    for (final doc in snapshot.docs) {
+      batch.update(doc.reference, {
+        'suspended': true,
+        'suspendedReason': reason,
+        'suspendedAt': FieldValue.serverTimestamp(),
+        'suspendedBy': reviewerUid,
+      });
+    }
+    await batch.commit();
+  }
+
   Map<String, dynamic> _metadataSnapshot(AdminStoryPack pack) => {
     'title': pack.title,
     'genres': pack.genres,

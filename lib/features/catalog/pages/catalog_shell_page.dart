@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../../core/auth/auth_scope.dart';
 import '../../../reader/shared/data/reader_prefs_repository.dart';
+import '../../auth/pages/sign_in_page.dart';
 import '../data/notice_repository.dart';
 import '../widgets/catalog_desktop_nav_bar.dart';
 import '../widgets/home_desktop_layout.dart';
@@ -21,9 +22,17 @@ const Color _gold = Color(0xFFF0E68C);
 /// - 좁은 폭: 기존 하단 탭바([_CatalogBottomNav]). Material의 기본
 ///   NavigationBar 대신 직접 만든 것을 쓴다 — 이 앱은 커스텀 골드/아이보리
 ///   팔레트를 쓰고 Material3 colorScheme을 별도로 설정하지 않아서, 기본
-///   NavigationBar를 그대로 쓰면 엉뚱한 기본 보라색 계열로 나온다.
+///   NavigationBar를 그대로 쓰면 엉뚱한 기본 보라색 계열로 나온다. 네 탭
+///   (홈/내 서재/공지사항/설정) 그대로다.
 /// - 데스크톱 폭([homeDesktopBreakpoint] 이상): 화면 맨 위의
 ///   [CatalogDesktopNavBar]. 검색창과 코인/충전 버튼도 여기로 올라간다.
+///   "설정" 탭은 데스크톱에는 없다 — 상단 바 오른쪽의 아바타 드롭다운으로
+///   접었다(알림/계정/로그아웃 + 작가 도구로). 그래도 아래 [tabs]
+///   IndexedStack은 여전히 4칸이고 index == 3은 여전히 [SettingsTab]이다
+///   — 모바일 하단 탭바가 계속 그 칸을 쓰기 때문에 지우지 않았다. 데스크톱
+///   쪽만 그 칸으로 가는 버튼이 없어졌을 뿐이다(자세한 이유는
+///   CatalogDesktopNavBar 문서 참고) — 데스크톱/모바일이 "설정" 위치를
+///   비대칭으로 다루는 걸 알고 한 선택이다.
 ///
 /// 데스크톱 검색창은 이 셸이 소유한다([_searchController],
 /// [_desktopQuery]) — 입력창은 상단 바에, 결과는 홈 탭 안에 있어서 둘을
@@ -38,7 +47,11 @@ class CatalogShellPage extends StatefulWidget {
   /// 걷어낸다.
   final VoidCallback? onContentReady;
 
-  const CatalogShellPage({super.key, this.showAuthorModeLink = false, this.onContentReady});
+  const CatalogShellPage({
+    super.key,
+    this.showAuthorModeLink = false,
+    this.onContentReady,
+  });
 
   @override
   State<CatalogShellPage> createState() => _CatalogShellPageState();
@@ -49,7 +62,8 @@ class _CatalogShellPageState extends State<CatalogShellPage> {
 
   final NoticeRepository _noticeRepository = NoticeRepository();
   final ReaderPrefsRepository _readerPrefsRepository = ReaderPrefsRepository();
-  late final Stream<DateTime?> _latestNoticeAtStream = _noticeRepository.watchLatestNoticeAt();
+  late final Stream<DateTime?> _latestNoticeAtStream = _noticeRepository
+      .watchLatestNoticeAt();
 
   // 데스크톱 상단 바 검색 — 입력 상태와 확정된 검색어를 셸이 들고 있는다.
   final TextEditingController _searchController = TextEditingController();
@@ -71,7 +85,9 @@ class _CatalogShellPageState extends State<CatalogShellPage> {
     _uid = AuthScope.of(context).userId;
     final uid = _uid;
     if (uid != null) {
-      _lastNoticeReadAtStream = _readerPrefsRepository.watch(uid).map((prefs) => prefs.lastNoticeReadAt);
+      _lastNoticeReadAtStream = _readerPrefsRepository
+          .watch(uid)
+          .map((prefs) => prefs.lastNoticeReadAt);
     }
     // 게스트(uid == null)는 서버에 읽음 상태를 남길 계정이 없다 — 공지가
     // 하나라도 있으면 항상 안 읽음으로 취급한다.
@@ -102,6 +118,19 @@ class _CatalogShellPageState extends State<CatalogShellPage> {
     _searchController.clear();
     _desktopQuery.value = '';
     if (_index != 0) _handleNavChanged(0);
+  }
+
+  /// 아바타 드롭다운의 "로그아웃" — admin_dashboard_page.dart의
+  /// _handleSignOut과 같은 이유로 pop이 아니라 pushAndRemoveUntil을 쓴다:
+  /// 그냥 pop하면 로그인된 상태로 남아있던 이 화면이 뒤로 가기로 다시
+  /// 보일 수 있다. 로그인 화면까지 스택을 통째로 비운다.
+  Future<void> _handleSignOut() async {
+    await AuthScope.of(context).signOut();
+    if (!mounted) return;
+    Navigator.of(context).pushAndRemoveUntil(
+      MaterialPageRoute(builder: (_) => const SignInPage()),
+      (route) => false,
+    );
   }
 
   @override
@@ -138,6 +167,8 @@ class _CatalogShellPageState extends State<CatalogShellPage> {
                     searchFocusNode: _searchFocusNode,
                     onSearchSubmitted: (query) => _desktopQuery.value = query,
                     onLogoTap: _handleLogoTap,
+                    showAuthorModeLink: widget.showAuthorModeLink,
+                    onSignOut: _handleSignOut,
                   ),
                   Expanded(child: tabs),
                 ],
@@ -184,7 +215,9 @@ class _UnreadNoticeBuilder extends StatelessWidget {
           builder: (context, readSnapshot) {
             final latest = latestSnapshot.data;
             final lastRead = readSnapshot.data;
-            final hasUnreadNotice = latest != null && (lastRead == null || latest.isAfter(lastRead));
+            final hasUnreadNotice =
+                latest != null &&
+                (lastRead == null || latest.isAfter(lastRead));
             return builder(context, hasUnreadNotice);
           },
         );
@@ -212,13 +245,25 @@ class _CatalogBottomNav extends StatelessWidget {
         padding: const EdgeInsets.symmetric(vertical: 6),
         decoration: BoxDecoration(
           color: const Color(0xFF141414),
-          border: Border(top: BorderSide(color: Colors.white.withOpacity(0.10))),
+          border: Border(
+            top: BorderSide(color: Colors.white.withOpacity(0.10)),
+          ),
         ),
         child: Row(
           mainAxisAlignment: MainAxisAlignment.spaceEvenly,
           children: [
-            _NavItem(icon: Icons.home_rounded, label: '홈', selected: index == 0, onTap: () => onChanged(0)),
-            _NavItem(icon: Icons.bookmark_rounded, label: '내 서재', selected: index == 1, onTap: () => onChanged(1)),
+            _NavItem(
+              icon: Icons.home_rounded,
+              label: '홈',
+              selected: index == 0,
+              onTap: () => onChanged(0),
+            ),
+            _NavItem(
+              icon: Icons.bookmark_rounded,
+              label: '내 서재',
+              selected: index == 1,
+              onTap: () => onChanged(1),
+            ),
             _NavItem(
               icon: Icons.campaign_rounded,
               label: '공지사항',
@@ -226,7 +271,12 @@ class _CatalogBottomNav extends StatelessWidget {
               onTap: () => onChanged(2),
               showBadge: hasUnreadNotice,
             ),
-            _NavItem(icon: Icons.settings_rounded, label: '설정', selected: index == 3, onTap: () => onChanged(3)),
+            _NavItem(
+              icon: Icons.settings_rounded,
+              label: '설정',
+              selected: index == 3,
+              onTap: () => onChanged(3),
+            ),
           ],
         ),
       ),
@@ -274,14 +324,24 @@ class _NavItem extends StatelessWidget {
                       decoration: BoxDecoration(
                         color: Colors.redAccent,
                         shape: BoxShape.circle,
-                        border: Border.all(color: const Color(0xFF141414), width: 1.5),
+                        border: Border.all(
+                          color: const Color(0xFF141414),
+                          width: 1.5,
+                        ),
                       ),
                     ),
                   ),
               ],
             ),
             const SizedBox(height: 3),
-            Text(label, style: TextStyle(color: color, fontSize: 11, fontWeight: FontWeight.w600)),
+            Text(
+              label,
+              style: TextStyle(
+                color: color,
+                fontSize: 11,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
           ],
         ),
       ),

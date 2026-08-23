@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>카카오 로그인 처리 중</title>
+  <style>
+    html, body {
+      margin: 0;
+      padding: 0;
+      background: #000;
+      color: #E2D4BF;
+      font-family: Arial, sans-serif;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      height: 100%;
+    }
+  </style>
+</head>
+<body>
+<p>로그인 처리 중이에요. 창이 자동으로 닫혀요...</p>
+<script>
+  // 카카오가 /oauth/authorize 요청에 대해 이 페이지로 돌려보낼 때 붙이는
+  // 쿼리 파라미터 — 성공하면 code, 사용자가 동의 화면에서 취소/거부하면
+  // error(+ error_description)가 붙는다.
+  var params = new URLSearchParams(window.location.search);
+  var code = params.get('code');
+  var error = params.get('error');
+  var errorDescription = params.get('error_description');
+
+  // 문자열(JSON)로 보낸다 — payment_popup_return.html과 같은 이유(Dart 쪽이
+  // 임의의 JS 객체 마셜링에 기대지 않고 jsonDecode로 확실하게 푼다).
+  var payload = JSON.stringify({
+    type: 'KAKAO_LOGIN_RESULT',
+    code: code,
+    error: error ? (errorDescription || error) : null,
+  });
+
+  if (window.opener) {
+    // targetOrigin을 '*'가 아니라 우리 자신의 오리진으로 명시한다 —
+    // payment_popup_return.html과 같은 이중 방어(opener 쪽도 event.origin을
+    // 다시 검증한다).
+    window.opener.postMessage(payload, window.location.origin);
+  }
+  window.close();
+</script>
+</body>
+</html>

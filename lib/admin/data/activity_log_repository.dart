@@ -63,21 +63,21 @@ class ActivityLogRepository {
         );
   }
 
-  /// 승인 대기함 "처리 이력" 탭 전용 — 노드 승인/반려로 종류를 좁혀서 최근
-  /// [limit]건을 읽는다(요청 사양: "activityLog에서 kind가 nodeApproved/
-  /// nodeRejected인 문서를 최근 100건 읽어"). `where(kind, whereIn:)` +
+  /// "처리 이력" 탭 공용 — [kinds]로 종류를 좁혀서 최근 [limit]건을 읽는다.
+  /// 승인 대기함(노드)/스토리팩 승인/작가 신청 세 화면이 각자 자기 종류
+  /// 목록만 넘겨서 그대로 재사용한다. `where(kind, whereIn:)` +
   /// `orderBy(createdAt)` 조합이라 복합 색인이 필요하다 —
   /// firestore.indexes.json의 activityLog(kind ASC, createdAt DESC) 항목
-  /// 참고, 배포 전까지는 이 스트림이 FAILED_PRECONDITION으로 실패한다.
-  Stream<List<ActivityEvent>> watchNodeApprovalHistory({int limit = 100}) {
+  /// 참고. 이 색인은 `kind` 필드 하나만 보고 `createdAt`으로 정렬하므로
+  /// whereIn에 어떤 kind 값이 들어가든(4개짜리 pack 승인/반려든, 노드 2개든)
+  /// 같은 색인 하나로 전부 커버된다 — kinds 조합마다 새 색인이 필요한 게
+  /// 아니다. 배포 전까지는 이 스트림이 FAILED_PRECONDITION으로 실패한다.
+  Stream<List<ActivityEvent>> watchApprovalHistory({
+    required List<ActivityKind> kinds,
+    int limit = 100,
+  }) {
     return _collection
-        .where(
-          'kind',
-          whereIn: [
-            ActivityKind.nodeApproved.wireValue,
-            ActivityKind.nodeRejected.wireValue,
-          ],
-        )
+        .where('kind', whereIn: kinds.map((k) => k.wireValue).toList())
         .orderBy('createdAt', descending: true)
         .limit(limit)
         .snapshots()
@@ -86,5 +86,14 @@ class ActivityLogRepository {
               .map((doc) => ActivityEvent.fromFirestore(doc.id, doc.data()))
               .toList(),
         );
+  }
+
+  /// 승인 대기함(노드) "처리 이력" 탭 전용 — [watchApprovalHistory]의 얇은
+  /// 래퍼. 기존 호출부를 그대로 두기 위해 남겨 뒀다.
+  Stream<List<ActivityEvent>> watchNodeApprovalHistory({int limit = 100}) {
+    return watchApprovalHistory(
+      kinds: const [ActivityKind.nodeApproved, ActivityKind.nodeRejected],
+      limit: limit,
+    );
   }
 }

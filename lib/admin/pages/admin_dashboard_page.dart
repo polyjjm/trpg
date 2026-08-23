@@ -3,8 +3,6 @@ import 'package:flutter_svg/flutter_svg.dart';
 
 import '../../core/auth/google_auth_service.dart';
 import '../../core/constants/asset_paths.dart';
-import '../../core/constants/external_links.dart';
-import '../../core/platform/open_external_link.dart';
 import '../../core/user/user_profile.dart';
 import '../../core/user/user_profile_repository.dart';
 import '../data/activity_log_repository.dart';
@@ -16,6 +14,7 @@ import '../models/activity_event.dart';
 import '../models/admin_story_pack.dart';
 import '../models/author_application.dart';
 import '../models/pending_node_ref.dart';
+import '../widgets/account_menu.dart';
 import '../widgets/admin_theme.dart';
 import '../widgets/coming_soon_placeholder.dart';
 import '../widgets/metric_card.dart';
@@ -23,7 +22,6 @@ import 'admin_gate_page.dart';
 import 'all_story_packs_section.dart';
 import 'approvals_tab.dart';
 import 'author_applications_tab.dart';
-import 'author_management_section.dart';
 import '../data/admin_image_repository.dart';
 import 'genre_management_section.dart';
 import 'global_notice_management_section.dart';
@@ -43,6 +41,7 @@ import 'pack_bundle_management_section.dart';
 import '../data/pack_bundle_repository.dart';
 import 'point_package_management_section.dart';
 import '../data/point_package_repository.dart';
+import 'user_management_page.dart';
 
 enum _AdminSection {
   overview,
@@ -51,7 +50,7 @@ enum _AdminSection {
   reports,
   allWorks,
   authorApplications,
-  authorManagement,
+  userManagement,
   genreManagement,
   homeBanners,
   homeEvents,
@@ -333,11 +332,19 @@ class _AdminDashboardShellState extends State<_AdminDashboardShell> {
           },
         );
       case _AdminSection.packApprovals:
-        return PackApprovalsTab(
-          repository: _storyRepository,
-          imageRepository: _imageRepository,
-          activityLog: _activityLogRepository,
-          reviewerUid: widget.authService.userId ?? '',
+        return StreamBuilder<List<AdminStoryPack>>(
+          stream: _packTitlesStream,
+          builder: (context, snapshot) {
+            final packs = snapshot.data ?? const <AdminStoryPack>[];
+            return PackApprovalsTab(
+              repository: _storyRepository,
+              imageRepository: _imageRepository,
+              activityLog: _activityLogRepository,
+              reviewerUid: widget.authService.userId ?? '',
+              packTitles: {for (final p in packs) p.id: p.title},
+              packAuthors: {for (final p in packs) p.id: p.authorName},
+            );
+          },
         );
       case _AdminSection.reports:
         return const ComingSoonPlaceholder(
@@ -348,16 +355,21 @@ class _AdminDashboardShellState extends State<_AdminDashboardShell> {
         return AllStoryPacksSection(
           storyRepository: _storyRepository,
           userProfileRepository: _userProfileRepository,
+          activityLog: _activityLogRepository,
+          reviewerUid: widget.authService.userId ?? '',
         );
       case _AdminSection.authorApplications:
         return AuthorApplicationsTab(
           repository: _authorApplicationRepository,
+          activityLog: _activityLogRepository,
           reviewerUid: widget.authService.userId ?? '',
         );
-      case _AdminSection.authorManagement:
-        return AuthorManagementSection(
+      case _AdminSection.userManagement:
+        return UserManagementPage(
           userProfileRepository: _userProfileRepository,
           storyRepository: _storyRepository,
+          activityLog: _activityLogRepository,
+          reviewerUid: widget.authService.userId ?? '',
         );
       case _AdminSection.genreManagement:
         return GenreManagementSection(repository: _genreRepository);
@@ -440,28 +452,16 @@ class _DashboardTopBar extends StatelessWidget {
             ),
           ),
           const Spacer(),
-          InkWell(
-            onTap: onBackToAuthorTool,
-            child: Text(
-              '작가 도구로',
-              style: TextStyle(fontSize: 12, color: AdminColors.muted),
-            ),
-          ),
-          const SizedBox(width: 14),
-          InkWell(
-            onTap: () => openExternalLink(ExternalLinks.readerAppUrl),
-            child: Text(
-              '독자로 보기',
-              style: TextStyle(fontSize: 12, color: AdminColors.muted),
-            ),
-          ),
-          const SizedBox(width: 14),
-          InkWell(
-            onTap: onSignOut,
-            child: Text(
-              '로그아웃',
-              style: TextStyle(fontSize: 12, color: AdminColors.muted),
-            ),
+          const ThemeModeToggle(),
+          const SizedBox(width: 8),
+          AccountMenu(
+            email: email,
+            isAdmin: true,
+            // 이미 관리자 페이지에 있으므로 "관리자 페이지" 항목은 자기
+            // 자신을 가리키는 중복 링크다 — 숨긴다.
+            showAdminLink: false,
+            onBackToAuthorTool: onBackToAuthorTool,
+            onSignOut: onSignOut,
           ),
         ],
       ),
@@ -496,7 +496,7 @@ class _Sidebar extends StatelessWidget {
         children: [
           _SidebarItem(
             icon: Icons.dashboard_rounded,
-            label: '개요',
+            label: '대시보드',
             selected: active == _AdminSection.overview,
             onTap: () => onSelected(_AdminSection.overview),
           ),
@@ -558,9 +558,9 @@ class _Sidebar extends StatelessWidget {
           ),
           _SidebarItem(
             icon: Icons.groups_rounded,
-            label: '작가 관리',
-            selected: active == _AdminSection.authorManagement,
-            onTap: () => onSelected(_AdminSection.authorManagement),
+            label: '회원 관리',
+            selected: active == _AdminSection.userManagement,
+            onTap: () => onSelected(_AdminSection.userManagement),
           ),
           const SizedBox(height: 14),
           const _SidebarSectionHeader('돈 관리'),
@@ -750,7 +750,7 @@ class _OverviewSection extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
-            '개요',
+            '대시보드',
             style: TextStyle(
               fontSize: 18,
               color: AdminColors.ivory,

@@ -16,6 +16,7 @@ import '../data/node_edit_session_cache.dart';
 import '../models/admin_story_pack.dart';
 import '../models/pack_submit_state.dart';
 import '../models/story_pack_type.dart';
+import '../widgets/account_menu.dart';
 import '../widgets/admin_theme.dart';
 import 'admin_dashboard_page.dart';
 import 'admin_gate_page.dart';
@@ -357,9 +358,9 @@ class _TopBar extends StatelessWidget {
           ),
           _VerticalRule(),
           const SizedBox(width: 8),
-          const _ThemeModeToggle(),
+          const ThemeModeToggle(),
           const SizedBox(width: 8),
-          _AccountMenu(
+          AccountMenu(
             email: email,
             isAdmin: isAdmin,
             onOpenAdminDashboard: onOpenAdminDashboard,
@@ -427,161 +428,6 @@ class _SubmitAllButton extends StatelessWidget {
                 ),
               ),
             ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-/// 라이트/다크 토글 — admin_theme.dart 상단 doc에 적어 둔 대로, 지금은
-/// MaterialApp.themeMode만 바꾼다(기본 Material 위젯에만 반영, AdminColors로
-/// 직접 칠한 화면 대부분은 아직 반응하지 않는다).
-class _ThemeModeToggle extends StatelessWidget {
-  const _ThemeModeToggle();
-
-  @override
-  Widget build(BuildContext context) {
-    return ValueListenableBuilder<ThemeMode>(
-      valueListenable: AdminTheme.mode,
-      builder: (context, mode, _) {
-        final isDark = mode == ThemeMode.dark;
-        return InkWell(
-          onTap: () => AdminTheme.toggle(),
-          borderRadius: BorderRadius.circular(999),
-          child: Padding(
-            padding: const EdgeInsets.all(8),
-            child: Icon(
-              // 다크 모드일 때 "라이트로 바꾸는 버튼"이므로 해 아이콘이 맞다.
-              isDark ? Icons.light_mode_rounded : Icons.dark_mode_rounded,
-              size: 18,
-              color: AdminColors.muted,
-            ),
-          ),
-        );
-      },
-    );
-  }
-}
-
-/// 아바타 + 닉네임 + 드롭다운 — 이메일, 관리자 페이지, 로그아웃이 이 안에
-/// 들어간다. 닉네임 수정은 프로필에 속하는 일이라 상단 바에 입력칸을 상시
-/// 띄우지 않는다.
-class _AccountMenu extends StatelessWidget {
-  final String email;
-  final bool isAdmin;
-  final VoidCallback onOpenAdminDashboard;
-  final VoidCallback onSignOut;
-
-  const _AccountMenu({
-    required this.email,
-    required this.isAdmin,
-    required this.onOpenAdminDashboard,
-    required this.onSignOut,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final initial = email.isEmpty ? '?' : email.characters.first.toUpperCase();
-
-    return PopupMenuButton<String>(
-      tooltip: '',
-      color: AdminColors.panel2,
-      offset: const Offset(0, 44),
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(10),
-        side: BorderSide(color: AdminColors.border),
-      ),
-      onSelected: (value) {
-        switch (value) {
-          case 'reader':
-            openExternalLink(ExternalLinks.readerAppUrl);
-          case 'admin':
-            onOpenAdminDashboard();
-          case 'signout':
-            onSignOut();
-        }
-      },
-      itemBuilder: (context) => [
-        PopupMenuItem<String>(
-          enabled: false,
-          height: 40,
-          child: Text(
-            email,
-            style: TextStyle(fontSize: 11.5, color: AdminColors.muted),
-          ),
-        ),
-        PopupMenuItem<String>(
-          value: 'reader',
-          height: 42,
-          child: Row(
-            children: [
-              Text(
-                '독자로 보기',
-                style: TextStyle(fontSize: 13, color: AdminColors.ivory),
-              ),
-              const SizedBox(width: 6),
-              Icon(
-                Icons.open_in_new_rounded,
-                size: 14,
-                color: AdminColors.muted,
-              ),
-            ],
-          ),
-        ),
-        if (isAdmin)
-          PopupMenuItem<String>(
-            value: 'admin',
-            height: 42,
-            child: Row(
-              children: [
-                Text(
-                  '관리자 페이지',
-                  style: TextStyle(fontSize: 13, color: AdminColors.ivory),
-                ),
-                const SizedBox(width: 6),
-                Icon(
-                  Icons.open_in_new_rounded,
-                  size: 14,
-                  color: AdminColors.muted,
-                ),
-              ],
-            ),
-          ),
-        PopupMenuItem<String>(
-          value: 'signout',
-          height: 42,
-          child: Text(
-            '로그아웃',
-            style: TextStyle(fontSize: 13, color: AdminColors.ivory),
-          ),
-        ),
-      ],
-      child: Container(
-        height: 36,
-        padding: const EdgeInsets.only(left: 5, right: 8),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Container(
-              width: 26,
-              height: 26,
-              alignment: Alignment.center,
-              decoration: BoxDecoration(
-                color: AdminColors.badgeBg,
-                shape: BoxShape.circle,
-              ),
-              child: Text(
-                initial,
-                style: const TextStyle(
-                  fontSize: 12,
-                  fontWeight: FontWeight.w800,
-                  color: AdminColors.gold,
-                ),
-              ),
-            ),
-            const SizedBox(width: 7),
-            Icon(Icons.expand_more_rounded, size: 16, color: AdminColors.muted),
           ],
         ),
       ),

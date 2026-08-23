@@ -1,6 +1,9 @@
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 
 import '../../../core/auth/auth_scope.dart';
+import '../../../core/constants/external_links.dart';
+import '../../../core/platform/open_external_link.dart';
 import '../../wallet/data/wallet_repository.dart';
 import '../../wallet/pages/charge_page.dart';
 import 'home_desktop_layout.dart';
@@ -14,11 +17,15 @@ const Color _amber = Color(0xFFFFB35C);
 ///
 /// 하단 탭바는 엄지로 누르는 모바일 관용구다 — 1440px 브라우저에서 그걸
 /// 그대로 쓰면 화면 아래쪽에 붙은 아이콘 네 개만 남고 위쪽 폭이 비어서
-/// "모바일 앱을 늘려놓은" 인상이 된다. 탭 네 개(홈/내 서재/공지사항/설정)는
-/// 그대로 두고 위치만 올린다.
+/// "모바일 앱을 늘려놓은" 인상이 된다. 탭 세 개(홈/내 서재/공지사항)는
+/// 그대로 두고 위치만 올린다 — "설정"은 여기 없다, 오른쪽 아바타
+/// 드롭다운([_AccountAvatarMenu])으로 접었다(모바일 하단 탭바는 폭이 좁아
+/// 아바타 드롭다운이 안 맞아서 예전 그대로 "설정" 탭을 유지한다 — 그래서
+/// catalog_shell_page.dart의 IndexedStack은 여전히 4칸이고 SettingsTab도
+/// 그대로 남아 있다, 데스크톱에서만 그 칸으로 가는 버튼이 없어졌을 뿐이다).
 ///
-/// 검색 입력창과 코인/충전 버튼도 이 바의 오른쪽에 놓는다 — 예전엔 홈 탭
-/// 본문 맨 위에 있어서 배너 위에 떠 있는 것처럼 보였다.
+/// 검색 입력창과 코인/충전 버튼, 아바타 드롭다운도 이 바의 오른쪽에 놓는다
+/// — 예전엔 홈 탭 본문 맨 위에 있어서 배너 위에 떠 있는 것처럼 보였다.
 class CatalogDesktopNavBar extends StatelessWidget {
   final int index;
   final ValueChanged<int> onChanged;
@@ -33,6 +40,18 @@ class CatalogDesktopNavBar extends StatelessWidget {
   /// 로고를 눌렀을 때 — 홈 탭으로 돌아가고 검색을 접는다.
   final VoidCallback onLogoTap;
 
+  /// 웹에서 author/admin 계정으로 로그인했을 때만 true — 아바타 드롭다운의
+  /// "작가 도구로" 항목을 보여줄지 결정한다. CatalogShellPage가 로그인
+  /// 시점에 이미 한 번 계산해 둔 값을 그대로 받는다(hasUnreadNotice와 같은
+  /// "부모가 계산해서 내려준다" 관례 — 이 바 자체는 Firestore를 직접 읽지
+  /// 않는다).
+  final bool showAuthorModeLink;
+
+  /// 아바타 드롭다운의 "로그아웃" — 실제 로그아웃 처리(AuthScope.signOut() +
+  /// 로그인 화면으로 스택 비우기)는 CatalogShellPage가 한다, onLogoTap과
+  /// 같은 이유(이 바는 액션을 직접 실행하지 않고 콜백만 위로 올린다).
+  final VoidCallback onSignOut;
+
   static const double height = 64;
 
   const CatalogDesktopNavBar({
@@ -44,6 +63,8 @@ class CatalogDesktopNavBar extends StatelessWidget {
     required this.searchFocusNode,
     required this.onSearchSubmitted,
     required this.onLogoTap,
+    required this.showAuthorModeLink,
+    required this.onSignOut,
   });
 
   @override
@@ -75,7 +96,11 @@ class CatalogDesktopNavBar extends StatelessWidget {
           const SizedBox(width: 34),
           _NavLink(label: '홈', selected: index == 0, onTap: () => onChanged(0)),
           const SizedBox(width: 26),
-          _NavLink(label: '내 서재', selected: index == 1, onTap: () => onChanged(1)),
+          _NavLink(
+            label: '내 서재',
+            selected: index == 1,
+            onTap: () => onChanged(1),
+          ),
           const SizedBox(width: 26),
           _NavLink(
             label: '공지사항',
@@ -83,8 +108,6 @@ class CatalogDesktopNavBar extends StatelessWidget {
             showBadge: hasUnreadNotice,
             onTap: () => onChanged(2),
           ),
-          const SizedBox(width: 26),
-          _NavLink(label: '설정', selected: index == 3, onTap: () => onChanged(3)),
           const Spacer(),
           if (index == 0) ...[
             DesktopSearchField(
@@ -95,6 +118,11 @@ class CatalogDesktopNavBar extends StatelessWidget {
             const SizedBox(width: 10),
           ],
           const CoinChargeButton(),
+          const SizedBox(width: 14),
+          _AccountAvatarMenu(
+            showAuthorModeLink: showAuthorModeLink,
+            onSignOut: onSignOut,
+          ),
         ],
       ),
     );
@@ -150,7 +178,10 @@ class _NavLink extends StatelessWidget {
                 child: Container(
                   width: 6,
                   height: 6,
-                  decoration: const BoxDecoration(color: Color(0xFFFF5252), shape: BoxShape.circle),
+                  decoration: const BoxDecoration(
+                    color: Color(0xFFFF5252),
+                    shape: BoxShape.circle,
+                  ),
                 ),
               ),
           ],
@@ -198,10 +229,20 @@ class DesktopSearchField extends StatelessWidget {
           decoration: InputDecoration(
             isDense: true,
             hintText: '제목 또는 작가로 검색',
-            hintStyle: TextStyle(color: Colors.white.withOpacity(0.38), fontSize: 14),
-            prefixIcon: Icon(Icons.search_rounded, color: _ivory.withOpacity(0.60), size: 20),
+            hintStyle: TextStyle(
+              color: Colors.white.withOpacity(0.38),
+              fontSize: 14,
+            ),
+            prefixIcon: Icon(
+              Icons.search_rounded,
+              color: _ivory.withOpacity(0.60),
+              size: 20,
+            ),
             border: InputBorder.none,
-            contentPadding: const EdgeInsets.symmetric(vertical: 8, horizontal: 4),
+            contentPadding: const EdgeInsets.symmetric(
+              vertical: 8,
+              horizontal: 4,
+            ),
           ),
         ),
       ),
@@ -264,7 +305,11 @@ class _CoinChargeButtonState extends State<CoinChargeButton> {
             if (stream == null)
               Text(
                 '충전',
-                style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: _ivory.withOpacity(0.9)),
+                style: TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w700,
+                  color: _ivory.withOpacity(0.9),
+                ),
               )
             else
               StreamBuilder<int>(
@@ -273,11 +318,146 @@ class _CoinChargeButtonState extends State<CoinChargeButton> {
                   final balance = snapshot.data;
                   return Text(
                     balance == null ? '충전' : '$balance',
-                    style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: _ivory.withOpacity(0.9)),
+                    style: TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w700,
+                      color: _ivory.withOpacity(0.9),
+                    ),
                   );
                 },
               ),
           ],
+        ),
+      ),
+    );
+  }
+}
+
+/// 아바타 + 드롭다운 — 예전에 "설정" 탭(SettingsTab)에 있던 알림/계정/
+/// 로그아웃을 여기로 접었다. admin 도구의 `AccountMenu`
+/// (lib/admin/widgets/account_menu.dart)와 같은 상호작용 패턴(아바타를
+/// 누르면 PopupMenuButton이 열린다)이지만, 이 파일의 이미 정해진 팔레트
+/// (검정 배경 + _ivory/_coral/_amber)로 다시 칠했다 — AdminColors를
+/// 끌어오지 않는다(이 화면은 lib/admin/을 아예 참조하지 않는다, 두 앱은
+/// 완전히 별개로 빌드/배포된다).
+///
+/// "작가 도구로"는 새 창으로 연다(openExternalLink) — 독자 앱과 작가
+/// 편집기(lib/main_admin.dart)는 서로 다른 진입점으로 따로 빌드/배포되는
+/// 별도의 웹 앱이라 인앱 네비게이션이 불가능하다(admin 쪽의 "독자로 보기"/
+/// "관리자 페이지로"와 정확히 같은 이유 — ExternalLinks 문서 참고). 예전
+/// LibraryHeader(지금은 아무 데서도 안 쓰이는 죽은 코드)가 이 링크의
+/// onTap을 콜백으로만 받고 실제 동작을 구현한 적이 없어서, 이게 이
+/// 프로젝트에서 처음으로 실제 동작하는 구현이다.
+///
+/// 알림/계정은 아직 실제 기능이 없다 — SettingsTab이 하던 것과 똑같이
+/// "아직 준비 중인 기능이에요" 스낵바 스텁을 그대로 유지한다(요청 사양,
+/// 이 작업 범위 밖).
+class _AccountAvatarMenu extends StatelessWidget {
+  final bool showAuthorModeLink;
+  final VoidCallback onSignOut;
+
+  const _AccountAvatarMenu({
+    required this.showAuthorModeLink,
+    required this.onSignOut,
+  });
+
+  void _showComingSoon(BuildContext context) {
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(const SnackBar(content: Text('아직 준비 중인 기능이에요.')));
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    // CoinChargeButton과 같은 방식 — 이 바 자체는 상태를 안 들고, 필요한
+    // 값을 그때그때 AuthScope/FirebaseAuth에서 직접 읽는다. 스트림 구독이
+    // 없어서(email/displayName은 세션 중 바뀌지 않는다) didChangeDependencies
+    // 가드 없이 build()에서 바로 읽어도 안전하다.
+    final user = FirebaseAuth.instance.currentUser;
+    final email = user?.email ?? '';
+    final displayName = user?.displayName ?? '';
+    // 이메일이 없으면 표시 이름으로 — sign_in_page.dart가 ensureProfile에
+    // email/displayName을 넘길 때 쓰는 것과 같은 폴백 순서.
+    final label = email.isNotEmpty ? email : displayName;
+    final initial = label.isEmpty ? '?' : label.characters.first.toUpperCase();
+
+    return PopupMenuButton<String>(
+      tooltip: '',
+      color: const Color(0xFF1A1A18),
+      offset: const Offset(0, 44),
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(10),
+        side: BorderSide(color: Colors.white.withOpacity(0.10)),
+      ),
+      onSelected: (value) {
+        switch (value) {
+          case 'authorTool':
+            openExternalLink(ExternalLinks.authorToolUrl);
+          case 'notifications':
+            _showComingSoon(context);
+          case 'account':
+            _showComingSoon(context);
+          case 'signout':
+            onSignOut();
+        }
+      },
+      itemBuilder: (context) => [
+        PopupMenuItem<String>(
+          enabled: false,
+          height: 40,
+          child: Text(
+            label.isEmpty ? '계정' : label,
+            style: TextStyle(fontSize: 11.5, color: _ivory.withOpacity(0.6)),
+          ),
+        ),
+        if (showAuthorModeLink)
+          PopupMenuItem<String>(
+            value: 'authorTool',
+            height: 42,
+            child: Row(
+              children: [
+                Text('작가 도구로', style: TextStyle(fontSize: 13, color: _ivory)),
+                const SizedBox(width: 6),
+                Icon(
+                  Icons.open_in_new_rounded,
+                  size: 14,
+                  color: _ivory.withOpacity(0.5),
+                ),
+              ],
+            ),
+          ),
+        PopupMenuItem<String>(
+          value: 'notifications',
+          height: 42,
+          child: Text('알림', style: TextStyle(fontSize: 13, color: _ivory)),
+        ),
+        PopupMenuItem<String>(
+          value: 'account',
+          height: 42,
+          child: Text('계정', style: TextStyle(fontSize: 13, color: _ivory)),
+        ),
+        PopupMenuItem<String>(
+          value: 'signout',
+          height: 42,
+          child: Text('로그아웃', style: TextStyle(fontSize: 13, color: _ivory)),
+        ),
+      ],
+      child: Container(
+        width: 36,
+        height: 36,
+        alignment: Alignment.center,
+        decoration: BoxDecoration(
+          color: Colors.white.withOpacity(0.06),
+          shape: BoxShape.circle,
+          border: Border.all(color: Colors.white.withOpacity(0.10)),
+        ),
+        child: Text(
+          initial,
+          style: const TextStyle(
+            fontSize: 13,
+            fontWeight: FontWeight.w800,
+            color: _coral,
+          ),
         ),
       ),
     );

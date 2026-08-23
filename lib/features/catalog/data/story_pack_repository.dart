@@ -32,7 +32,15 @@ class StoryPackRepository {
 
     final publishedNodeCounts = await _fetchPublishedNodeCounts();
     final candidates = snapshot.docs
-        .where((doc) => publishedNodeCounts.containsKey(doc.id))
+        .where(
+          (doc) =>
+              publishedNodeCounts.containsKey(doc.id) &&
+              // admin이 강제로 내린 팩(lib/admin/models/admin_story_pack.dart의
+              // suspended 문서 참고) — serializationStatus == approved라도
+              // 여기서 걸러낸다. 이미 불러온 스냅샷에 대한 클라이언트 필터라
+              // 새 색인이 필요 없다(publishedNodeCounts 필터와 같은 방식).
+              doc.data()['suspended'] != true,
+        )
         .toList();
     if (candidates.isEmpty) return const [];
 

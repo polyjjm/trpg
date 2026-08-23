@@ -354,6 +354,20 @@ service cloud.firestore {
         && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['viewCount'])
         && request.resource.data.viewCount == resource.data.get('viewCount', 0) + 1;
 
+      // admin의 강제 내리기/복원(suspendPack/unsuspendPack/
+      // suspendPacksForAuthor) — suspended/suspendedReason/suspendedAt/
+      // suspendedBy 네 필드만 바뀔 수 있다. serializationStatus/liveMetadata
+      // 승인 흐름과 완전히 독립된 게이트라서(AdminStoryPack.suspended 문서
+      // 참고) 이 액션이 그 필드들을 같이 건드릴 이유가 없다. 위 승인/반려
+      // 규칙처럼 필드를 하나하나 get(key, null)로 나열하는 대신, 바로 위
+      // viewCount 규칙과 같은 방식으로 "이 키들만 바뀔 수 있다" 화이트
+      // 리스트를 쓴다 — 나열식 잠금은 나중에 새 필드가 추가될 때마다 이
+      // 규칙도 같이 안 고치면 그 필드가 이 액션을 통해 몰래 바뀔 수 있는
+      // 구멍이 생기지만, 화이트리스트는 그럴 일이 없다.
+      allow update: if isAdmin()
+        && request.resource.data.diff(resource.data).affectedKeys()
+              .hasOnly(['suspended', 'suspendedReason', 'suspendedAt', 'suspendedBy']);
+
       allow delete: if isAdmin();
 
       match /nodes/{nodeId} {

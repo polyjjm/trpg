@@ -23,6 +23,14 @@ import 'story_pack_type.dart';
 class AdminStoryPack {
   final String id;
   final String title;
+
+  /// 생성 시각(`FieldValue.serverTimestamp()`) — 이 필드가 생기기 전에
+  /// 만들어진 팩에는 없다(백필하지 않는다). 날짜 필터가 있는 화면(전체 작품
+  /// 목록 등)은 이 필드가 null인 팩을 "전체" 범위에서는 보여주고, 특정
+  /// 기간을 선택하면 제외한다 — approvals/approval_filter.dart가
+  /// approvalRequestedAt 없는 노드를 다루는 것과 같은 규칙.
+  final DateTime? createdAt;
+
   final String authorId;
 
   /// 생성 시점의 작가 표시 이름 스냅샷. 리더 앱이 매 조회마다 users 컬렉션을
@@ -86,9 +94,22 @@ class AdminStoryPack {
   final DateTime? metadataReviewedAt;
   final String? metadataRejectionReason;
 
+  /// 강제 내리기 — [serializationStatus]와 완전히 독립된 별도 게이트다.
+  /// serializationStatus는 "이 팩이 독자 라이브러리에 존재하도록 한 번이라도
+  /// 승인됐는가"를 답하고, suspended는 "그 승인과 무관하게 지금 당장
+  /// 숨겨져 있는가"를 답한다 — 그래서 serializationStatus == approved인
+  /// 채로 suspended == true인 상태(승인은 유효하지만 지금은 내려간 상태)가
+  /// 정상적으로 존재한다. 리더 쪽(story_pack_repository.dart)은 이 필드가
+  /// true인 팩을 목록에서 뺀다.
+  final bool suspended;
+  final String? suspendedReason;
+  final DateTime? suspendedAt;
+  final String? suspendedBy;
+
   const AdminStoryPack({
     required this.id,
     required this.title,
+    this.createdAt,
     required this.authorId,
     required this.authorName,
     required this.type,
@@ -113,12 +134,17 @@ class AdminStoryPack {
     this.metadataReviewedBy,
     this.metadataReviewedAt,
     this.metadataRejectionReason,
+    this.suspended = false,
+    this.suspendedReason,
+    this.suspendedAt,
+    this.suspendedBy,
   });
 
   factory AdminStoryPack.fromFirestore(String id, Map<String, dynamic> json) {
     return AdminStoryPack(
       id: id,
       title: json['title'] as String? ?? '(제목 없음)',
+      createdAt: (json['createdAt'] as Timestamp?)?.toDate(),
       authorId: json['authorId'] as String? ?? '',
       authorName: json['authorName'] as String? ?? '',
       type: StoryPackTypeJson.fromWire(json['type'] as String?),
@@ -149,6 +175,10 @@ class AdminStoryPack {
       metadataReviewedBy: json['metadataReviewedBy'] as String?,
       metadataReviewedAt: (json['metadataReviewedAt'] as Timestamp?)?.toDate(),
       metadataRejectionReason: json['metadataRejectionReason'] as String?,
+      suspended: json['suspended'] as bool? ?? false,
+      suspendedReason: json['suspendedReason'] as String?,
+      suspendedAt: (json['suspendedAt'] as Timestamp?)?.toDate(),
+      suspendedBy: json['suspendedBy'] as String?,
     );
   }
 
@@ -156,6 +186,7 @@ class AdminStoryPack {
   /// 필요한 필드만 담아 직접 쓴다(saveDraftPackSettings/requestSerialization 등).
   Map<String, dynamic> toJson() => {
     'title': title,
+    'createdAt': FieldValue.serverTimestamp(),
     'authorId': authorId,
     'authorName': authorName,
     'type': type.wireValue,
@@ -201,4 +232,11 @@ class AdminStoryPack {
   bool get canRequestMetadataEdit =>
       serializationStatus == PackSerializationStatus.approved &&
       pendingMetadataAction == null;
+
+  /// 강제 내리기를 걸 수 있는 상태인지 — 한 번도 연재 시작 승인을 못 받은
+  /// 팩은 애초에 독자에게 보인 적이 없어 "내릴" 대상이 아니다.
+  bool get canForceTakedown =>
+      serializationStatus == PackSerializationStatus.approved && !suspended;
+
+  bool get canRestore => suspended;
 }

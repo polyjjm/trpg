@@ -1,7 +1,14 @@
 import 'package:flutter/material.dart';
 
 import '../../widgets/admin_theme.dart';
-import '../approvals/approval_filter.dart' show formatRequestedDate;
+import '../approvals/approval_filter.dart'
+    show
+        ApprovalDateRange,
+        ApprovalDateRangeLabel,
+        ApprovalSort,
+        ApprovalStatusFilter,
+        ApprovalStatusFilterLabel,
+        formatRequestedDate;
 import 'pack_approval_filter.dart';
 
 /// 스토리팩 승인 화면 상단의 검색 + 요청 유형 + 기간 + 정렬 바 — 승인
@@ -86,6 +93,20 @@ class PackApprovalsFilterBar extends StatelessWidget {
             runSpacing: 10,
             crossAxisAlignment: WrapCrossAlignment.center,
             children: [
+              for (final status in ApprovalStatusFilter.values)
+                _Chip(
+                  label: status.label,
+                  selected: filter.status == status,
+                  onTap: () => onChanged(filter.copyWith(status: status)),
+                ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          Wrap(
+            spacing: 10,
+            runSpacing: 10,
+            crossAxisAlignment: WrapCrossAlignment.center,
+            children: [
               SizedBox(
                 width: 240,
                 child: TextField(
@@ -116,14 +137,20 @@ class PackApprovalsFilterBar extends StatelessWidget {
                   ),
                 ),
               ),
-              for (final type in PackRequestTypeFilter.values)
-                _Chip(
-                  label: type.label,
-                  selected: filter.type == type,
-                  onTap: () => onChanged(filter.copyWith(type: type)),
-                ),
-              _Divider(),
-              for (final range in PackApprovalDateRange.values)
+              // 요청 유형(연재 시작/정보 변경)은 대기 목록에만 있는 개념이라
+              // "처리됨" 전용 모드에서는 숨긴다(approvals_filter_bar.dart와
+              // 같은 이유 — applyHistoryFilter가 유형 필터를 적용하지
+              // 않는다) — "전체"는 대기 목록도 같이 보이므로 그대로 둔다.
+              if (filter.status != ApprovalStatusFilter.handled) ...[
+                for (final type in PackRequestTypeFilter.values)
+                  _Chip(
+                    label: type.label,
+                    selected: filter.type == type,
+                    onTap: () => onChanged(filter.copyWith(type: type)),
+                  ),
+                _Divider(),
+              ],
+              for (final range in ApprovalDateRange.values)
                 _Chip(
                   label: range.label,
                   selected: filter.range == range,
@@ -131,21 +158,21 @@ class PackApprovalsFilterBar extends StatelessWidget {
                 ),
               _Divider(),
               _Chip(
-                label: filter.sort == PackApprovalSort.oldestFirst
+                label: filter.sort == ApprovalSort.oldestFirst
                     ? '오래된 순 ↑'
                     : '최신 순 ↓',
                 selected: false,
                 onTap: () => onChanged(
                   filter.copyWith(
-                    sort: filter.sort == PackApprovalSort.oldestFirst
-                        ? PackApprovalSort.newestFirst
-                        : PackApprovalSort.oldestFirst,
+                    sort: filter.sort == ApprovalSort.oldestFirst
+                        ? ApprovalSort.newestFirst
+                        : ApprovalSort.oldestFirst,
                   ),
                 ),
               ),
             ],
           ),
-          if (filter.range == PackApprovalDateRange.custom) ...[
+          if (filter.range == ApprovalDateRange.custom) ...[
             const SizedBox(height: 10),
             Row(
               children: [

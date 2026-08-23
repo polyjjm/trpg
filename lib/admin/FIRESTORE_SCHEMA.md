@@ -21,6 +21,11 @@ Firestore 문서 모양은 같아도 서로 import하지 않는 별개 Dart 클�
 
 ```
 title: string                     // "지금 편집 중인" 값 — draft 콘텐츠와 같은 성격.
+createdAt: timestamp?             // 생성 시각(FieldValue.serverTimestamp()). 이 필드가
+                                   // 생기기 전에 만들어진 팩에는 없다 — 백필하지 않는다.
+                                   // "전체 작품 목록" 화면의 날짜 필터가 이 필드를 쓴다
+                                   // (null인 팩은 "전체" 범위에서만 보이고, 특정 기간을
+                                   // 고르면 빠진다).
 authorId: string                  // 소유 작가의 Firebase Auth uid. users/{uid} 참조.
 authorName: string                // 생성 시점 작가 표시 이름 스냅샷(users/{uid}.displayName
                                    // 조인이 아니다 — 리더는 다른 사람의 users 문서를 읽을
@@ -111,6 +116,25 @@ defaultTtsVoiceId: string?        // Typecast 보이스 id(`tc_...`). 노드가
                                    // liveMetadata를 직접 읽는다)에서만 일어나고,
                                    // 클라이언트는 packId/nodeId만 넘기면 되기
                                    // 때문이다(아래 "TTS 내레이션" 절 참고).
+
+// 강제 내리기 — 위 serializationStatus/liveMetadata 두 승인 레이어와 완전히
+// 독립된 세 번째 게이트다. serializationStatus는 "이 팩이 한 번이라도 연재
+// 승인을 받았는가", suspended는 "그 승인과 무관하게 지금 당장 숨겨져 있는가"를
+// 답한다 — serializationStatus == 'approved'인 채로 suspended == true인
+// 상태(승인은 유효하지만 지금은 내려간 상태)가 정상적으로 존재한다.
+suspended: bool                   // 기본 false. true면 독자 라이브러리에서 빠진다
+                                   // (아래 "독자 라이브러리 노출 조건" 참고). 전체
+                                   // 작품 목록(lib/admin/pages/all_story_packs_section.dart)의
+                                   // "강제 내리기"/"복원" 버튼이 쓴다
+                                   // (AdminStoryRepository.suspendPack/unsuspendPack/
+                                   // suspendPacksForAuthor).
+suspendedReason: string?          // 내릴 때 admin이 입력한 사유(필수 입력 —
+                                   // approvals/node_diff_view.dart의
+                                   // promptRejectionReason 재사용). 복원해도
+                                   // 지우지 않는다 — "이 팩이 예전에 왜/언제/누가
+                                   // 내렸었는지"를 나중에 되짚을 수 있어야 한다.
+suspendedAt: timestamp?
+suspendedBy: string?              // 내린 admin의 uid.
 ```
 
 `authorId`/`authorName`/`type`/`genres`/`description`/`coverImageId`/승인 관련
@@ -131,6 +155,13 @@ defaultTtsVoiceId: string?        // Typecast 보이스 id(`tc_...`). 노드가
 케이스에 대비한 방어적 이중 체크로 유지한다. 리더 쪽 `StoryPackRepository`
 (lib/features/catalog/data/story_pack_repository.dart)가 이 AND 조건을
 클라이언트에서 조합한다.
+
+**세 번째 조건 — `suspended != true`.** admin이 강제로 내린 팩은
+serializationStatus/발행 노드 조건을 둘 다 만족해도 라이브러리에서 빠진다.
+`watchVisiblePacks()`가 이미 `serializationStatus == 'approved'`로 서버
+쿼리한 스냅샷을 `_toVisiblePacks()`가 클라이언트에서 다시 거르는 자리이므로
+(발행 노드 개수 필터와 정확히 같은 자리), suspended 필터도 새 Firestore
+쿼리/색인 없이 그 자리에 한 줄만 추가해서 끝난다.
 
 ### effectivePrice — 지금 실제로 적용되는 가격
 
@@ -1034,12 +1065,38 @@ createdAt, 전부 `queryScope: COLLECTION_GROUP`)의 복합 색인과, `createdA
 참고)와는 별개의, 같은 uid 아래 놓이는 최상위 문서다 — 하나는 세이브 데이터, 이건
 신원/권한 데이터로 목적이 다르다.
 
+**uid는 로그인 공급자마다 출처가 다르다.** Google 로그인은 Firebase
+Authentication이 발급하는 임의 문자열 uid를 그대로 쓴다. 카카오 로그인은
+Firebase에 카카오 공급자가 없어서(아래 "카카오 로그인" 절 참고)
+`kakaoSignIn` Cloud Function이 `kakao_{카카오 유저 id}` 형태로 uid를
+직접 만들어 Firebase Auth 유저를 생성한다 — 접두어를 붙여서 Google이
+발급하는 uid와 절대 겹치지 않는다. `users/{uid}` 문서 자체의 스키마/규칙은
+uid의 출처와 무관하게 완전히 같다(로그인 공급자를 이 문서에 별도로
+기록하지 않는다 — 필요해지면 나중에 추가).
+
 ```
 displayName: string
 email: string
 role: 'reader' | 'author' | 'admin'                          // 최초 로그인 시 기본값 'reader'
 authorApplicationStatus: 'none' | 'pending' | 'approved' | 'rejected'
-createdAt: timestamp
+createdAt: timestamp?              // ensureProfile()이 최초 로그인 때
+                                   // FieldValue.serverTimestamp()로 찍는다.
+                                   // 이 필드가 생기기 전에 만들어진 계정에는
+                                   // 없다 — 백필하지 않는다(nullable로
+                                   // 읽는다, 다른 컬렉션의 같은 관례와
+                                   // 동일). "회원 관리" 화면(아래 참고)의
+                                   // 가입일 표시/최신순 정렬에 쓴다.
+accountDisabled: bool?            // 기본 false(필드 자체가 없으면 false로 읽는다).
+                                   // Firebase Auth 계정의 disabled 플래그를 그대로
+                                   // 거울에 비춘 값 — setAuthorAccountDisabled Cloud
+                                   // Function(Admin SDK)만 쓴다. 클라이언트는 Auth
+                                   // Admin API를 직접 조회할 수 없어서, "회원 관리"
+                                   // 화면(lib/admin/pages/user_management_page.dart,
+                                   // 작가/회원 두 탭 다)의 "정지됨" 배지는 이 거울
+                                   // 필드를 읽는 것으로 대신한다(아래 "작가 계정
+                                   // 정지" 절 참고). 이 필드에 대한 클라이언트 write
+                                   // 규칙은 없다 — Admin SDK 쓰기라 firestore.rules를
+                                   // 우회하므로 규칙이 필요 없다.
 ```
 
 - `role`이 접근 권한의 단일 기준이다. `'author'`/`'admin'` 둘 다 작가 편집기
@@ -1051,6 +1108,120 @@ createdAt: timestamp
   필드 하나만 보고 분기할 수 있게 하기 위한 비정규화다.
 - 이 컬렉션에서 스스로를 `'admin'`으로 만들 방법은 없다 — 최초 admin 계정은
   Firebase 콘솔(또는 1회성 스크립트)로 수동 생성해야 한다.
+- **작가 자격 회수**(`role: 'author' -> 'reader'`)는 `UserProfileRepository.updateRole()`이
+  직접 쓴다 — 이 문서의 admin update 규칙(`allow update: if isAdmin();`, 아래
+  "보안 규칙" 절)이 이미 role을 포함해 넓게 허용하고 있어서 별도 규칙 변경이
+  필요 없었다. 같은 쓰기에서 `authorApplicationStatus`도 반드시 `'none'`으로
+  같이 되돌린다 — role만 바꾸고 이 필드를 이전 값(`'approved'`)으로 남겨
+  두면 `AdminGatePage.canApply`가 계속 false로 평가돼(그 필드가
+  none/rejected일 때만 재신청 폼을 보여준다) 회수된 계정이 재신청 자체를
+  할 수 없는 버그가 있었다(고쳤다) — `rejected`가 아니라 `none`인 이유는,
+  이건 신청 반려가 아니라 관리자가 이미 부여했던 자격을 거둬들이는
+  것이기 때문이다.
+
+## 카카오 로그인 (`kakaoSignIn` Cloud Function)
+
+리더 앱(`lib/features/auth/pages/sign_in_page.dart`)은 Google 로그인 옆에
+카카오 로그인 버튼도 제공한다(관리자/작가 로그인 화면 `admin_sign_in_page.dart`는
+Google 전용으로 남겨 뒀다 — 신뢰된 소수만 쓰는 화면이라 카카오를 추가할
+필요가 없다는 판단). Firebase Authentication에는 카카오 공급자가 아예 없어서
+(Google과 달리), 카카오 자체 OAuth 흐름 + 이 Cloud Function으로 대신한다.
+
+**클라이언트 흐름**(`lib/core/auth/kakao_auth_service.dart`,
+`kakao_login_popup.dart`, `web/kakao_login_return.html`) — 결제 팝업
+(`lib/core/payment/toss_payments_web.dart`)과 정확히 같은
+팝업+`postMessage` 패턴을 그대로 재사용한다:
+1. 클릭 핸들러가 곧장(await 없이) `kauth.kakao.com/oauth/authorize`를
+   팝업으로 연다 — 카카오 JS SDK는 안 쓴다(이 URL 자체가 이미 순수한 OAuth
+   요청이라 SDK를 불러와 초기화할 이유가 없다, 외부 스크립트를 하나 덜 싣는
+   쪽을 택했다).
+2. 사용자가 카카오에서 로그인/동의를 마치면, 카카오가 팝업을 우리 오리진의
+   `web/kakao_login_return.html`(카카오 개발자 콘솔의 "카카오 로그인 >
+   Redirect URI"에 미리 등록해 둬야 하는 값 — 배포 도메인과 로컬 개발
+   주소 둘 다)로 돌려보낸다. 그 페이지가 인가 코드를 `postMessage`로
+   opener(메인 탭)에 전달하고 스스로 닫힌다.
+3. 메인 탭이 그 코드를 `kakaoSignIn`에 넘긴다.
+
+**서버 흐름**(`functions/src/index.ts`의 `kakaoSignIn`):
+1. 카카오 토큰 엔드포인트(`kauth.kakao.com/oauth/token`)에 REST API 키 +
+   클라이언트 시크릿으로 그 코드를 액세스 토큰과 교환한다.
+2. 그 액세스 토큰으로 `kapi.kakao.com/v2/user/me`를 직접 불러 카카오
+   유저 id/닉네임/프로필사진을 확인한다 — 클라이언트가 보낸 값은 아무것도
+   믿지 않는다, 오직 카카오에 직접 물어본 응답만 신뢰한다.
+3. `uid = 'kakao_' + 카카오유저id`로 Firebase Auth 유저를 찾고, 없으면
+   새로 만든다(있으면 그대로 — 재로그인마다 프로필을 다시 안 덮어쓴다).
+4. Firebase 커스텀 토큰을 발급해 돌려준다. 클라이언트가
+   `signInWithCustomToken`으로 로그인을 마치면, 그 순간부터
+   `FirebaseAuth.currentUser`는 Google 로그인과 완전히 똑같이 동작한다.
+   `SignInPage`의 로그인 이후 처리(`_completeSignIn` — 클라우드 세이브
+   불러오기, `UserProfileRepository.ensureProfile()`로 `users/{uid}` 문서
+   생성)는 Google/카카오 두 버튼이 완전히 같은 코드를 공유한다.
+
+관리자 승인 확인이 없다 — Firebase 자체의 Google 로그인과 같은 신뢰
+수준의 공개 로그인 엔드포인트이기 때문이다.
+
+**키 세 개, 전부 용도가 다르다** — 절대 서로 바꿔 쓰면 안 된다:
+- **JavaScript 키**: 카카오 설계상 공개 키. `KakaoAuthService`에
+  하드코딩돼 있다(웹 자산에 그대로 노출돼도 안전한 값이라는 게 카카오
+  문서의 명시적 구분이다). `/oauth/authorize` 요청의 `client_id`로 쓴다.
+- **REST API 키**·**클라이언트 시크릿**: 둘 다 비밀 값. Cloud Functions
+  시크릿(`defineSecret`, `tossSecretKey`/`typecastApiKey`와 같은 패턴)으로만
+  존재한다 — `firebase functions:secrets:set KAKAO_REST_API_KEY`/
+  `KAKAO_CLIENT_SECRET`으로 값을 채워야 `kakaoSignIn`이 동작한다. 카카오
+  개발자 콘솔의 "카카오 로그인 > 보안" 탭에서 확인/발급한다.
+
+## 계정 정지 (`setAuthorAccountDisabled` Cloud Function)
+
+완전한 계정 삭제 대신 Firebase Auth의 `disabled` 플래그를 쓴다 — 로그인을
+막아 실질적으로 삭제와 같은 효과를 내면서도(지갑/거래/작품 등 데이터는 전혀
+안 건드린다), 되돌릴 수 있다. 클라이언트 SDK는 다른 유저의 Auth 계정을
+건드릴 수 없어서(Admin SDK 전용 API) 반드시 이 Cloud Function을 거쳐야 한다
+— `refundCoinCharge`와 같은 원칙으로 admin 여부도 클라이언트 주장을 믿지
+않고 서버가 `users/{uid}.role`을 직접 다시 읽어 확인한다.
+
+**함수 이름은 "작가 계정 정지" 기능으로 처음 만들어진 그대로지만, 지금은
+role과 무관하게 어떤 계정에도 쓴다** — "회원 관리" 화면
+(`user_management_page.dart`)의 회원 탭이 독자/관리자 계정에도 이 함수를
+그대로 부른다. 이름을 바꾸면 배포된 함수가 재배포돼야 하고
+`ActivityKind`(`authorAccountDisabled` 등)의 wire value는 이미 실제
+activityLog 문서에 그 문자열로 저장돼 있어서(과거 기록을 지키려면 마이그레이션이
+필요하다), 바꿀 실익보다 손이 더 들어 이름은 그대로 두고 동작만 일반화했다.
+
+인자: `{ uid, disabled, suspendPacks?, reason? }`. 동작:
+1. `admin.auth().updateUser(uid, { disabled })`로 로그인을 막거나 푼다.
+2. `users/{uid}.accountDisabled`에 같은 값을 거울로 남긴다(위 users/{uid}
+   필드 목록 참고).
+3. `disabled == true && suspendPacks == true`일 때만 그 uid가 `authorId`인
+   `storyPacks`를 전부 `suspended: true`로 일괄 내린다(위 storyPacks의
+   suspended 필드와 완전히 같은 필드를 쓴다 — 전체 작품 목록의 "강제
+   내리기"와 같은 조치를 서버에서 배치로 한 것뿐이다). role과 무관하게
+   그 uid 소유 팩이 없으면 그냥 아무 일도 안 한다 — 독자/관리자 계정은
+   애초에 팩이 없어 자연히 no-op이다("회원 관리" 화면의 회원 탭은 대상이
+   작가일 때만 이 옵션의 체크박스를 보여준다). 재활성화(`disabled: false`)할
+   때는 절대 자동으로 팩을 복원하지 않는다 — admin이 계정은 다시 열어주면서도
+   특정 팩은 계속 내려 두고 싶을 수 있어서, 팩 복원은 항상 전체 작품
+   목록에서 admin이 직접 누르는 별도의 명시적 조치로만 이뤄진다.
+4. `activityLog`에 `authorAccountDisabled`/`authorAccountReenabled`를
+   서버에서 직접 기록한다(아래 "관리자 활동 타임라인" 절 — 클라이언트가
+   중복으로 다시 기록하지 않는다).
+
+진짜 계정 삭제(예: 법적/개인정보 요청)는 이 기능이 다루지 않는다 — 이
+정지/재개 흐름이 통상적인 운영 필요는 대부분 커버하고, 진짜 삭제는 필요해지면
+훨씬 무겁게 게이트한 별도 기능으로 나중에 추가한다.
+
+## 회원 관리 (`user_management_page.dart`)
+
+admin 사이드바의 "회원 관리" 항목 — 예전엔 "작가 관리"로 role == 'author'인
+계정만 보여줬는데, 일반 독자 계정을 찾아볼 방법이 아예 없었다. 지금은 작가
+탭(예전 "작가 관리" 화면을 그대로 옮긴 것 — `AuthorManagementSection`,
+role==author 목록 + 자격 회수/계정 정지)과 회원 탭(모든 role을 아우르는
+가벼운 검색/조회 — `UserProfileRepository.watchAllUsers()`로 `users`
+컬렉션 전체를 필터 없이 읽어 이름/이메일/UID 검색과 역할 필터를 클라이언트
+쪽에서 한다, 이 admin 도구의 다른 화면들과 같은 "유한한 내부 데이터셋" 전제)
+두 탭으로 나뉜다(`billing_dashboard_section.dart`와 같은 TabBar/TabBarView
+패턴). 회원 탭은 조회 + 계정 정지/해제만 다루는 가벼운 도구다 — "일반 유저
+검색 목적"이라는 요청 그대로, 자격 회수 같은 작가 전용 조치는 작가 탭에만
+남겨 두고 여기서는 다시 구현하지 않는다.
 
 ## authorApplications/{uid} — 작가 신청서
 
@@ -1397,11 +1568,86 @@ Toss 결제 취소(`POST /v1/payments/{paymentKey}/cancel`)를 `cancelAmount`
 - **반려는 사유 입력이 필수**다(빈 채로 못 보낸다) — 그 사유가
   `rejectionReason`에 저장돼 작가에게 그대로 전달된다(위 필드 설명 참고).
 
+## activityLog/{autoId} — 관리자 활동 타임라인
+
+`lib/admin/data/activity_log_repository.dart`(`ActivityLogRepository`)가 다루는
+컬렉션. Cloud Functions 트리거가 아니라 **admin 클라이언트가 승인/반려 등 자기
+행동을 직접 기록**한다 — 기록 대상 자체가 이미 admin 클라이언트에서 일어나는
+쓰기라 서버가 다시 감지할 이유가 없다. `log()`는 절대 예외를 위로 던지지
+않는다(실패해도 원래 하려던 승인/반려는 이미 끝났거나 끝나야 하는 일이라, 로그
+한 줄이 빠지는 것과 승인 자체가 실패한 것처럼 보이는 것 중 전자가 낫다).
+
+문서 필드:
+
+- `kind` (string, `ActivityKind.wireValue`): `nodeApproved`/`nodeRejected`,
+  `packSerializationApproved`/`packSerializationRejected`,
+  `packMetadataApproved`/`packMetadataRejected`, `authorApproved`/
+  `authorRejected`, `productChanged`/`bannerChanged`/`noticeChanged`, 그리고
+  심사 결과가 아니라 **제재 조치**인 다섯 가지 — `packSuspended`(강제
+  내리기)/`packRestored`(복원), `authorRevoked`(작가 자격 회수),
+  `authorAccountDisabled`/`authorAccountReenabled`(계정 정지/해제).
+- `message` (string): 이미 완성된 한 줄 — 화면은 이 문장을 그대로 보여줄 뿐
+  조립하지 않는다(예: `'조민서 · 「기억을 파는 가게」 시즌 2 연재 승인'`).
+- `actorUid` (string, nullable): 처리한 관리자 uid.
+- `createdAt` (Timestamp, `serverTimestamp()`).
+- `packId`/`nodeId`/`authorName` (string, nullable): "처리 이력" 검색(작가/
+  작품/노드 ID)이 쓰는 구조화된 필드 — `message`는 이미 완성된 문장이라
+  파싱해서 되짚을 수 없어서 따로 남긴다. 셋 다 `log()` 호출부가 넘긴 경우만
+  채워진다(예: 작가 신청 처리는 packId/nodeId를 넘기지 않는다) — 이 필드들이
+  생기기 전에 기록된 옛 문서에는 없을 수 있으니 항상 nullable로 읽는다.
+
+`ActivityKind`별 라벨/색 판정(`ActivityKindDisplay` extension,
+`lib/admin/models/activity_event.dart`)은 화면마다 switch를 복사하지 않고 한
+곳에 모아 둔다 — 승인계열 4종(`isApprovalFamily`)/반려계열 4종/제재 조치
+5종(`packSuspended`/`packRestored`/`authorRevoked`/`authorAccountDisabled`/
+`authorAccountReenabled`)은 각각 같은 색·배지 규칙을 따른다. 제재 조치는
+심사 결과(승인/반려)가 아니라서 그 두 계열에 안 섞이고, 팔레트의 유일한
+앰버 톤(`AdminColors.dirtyBannerBg/Text`, 원래 "미저장 변경" 배너용)을
+재사용한다 — 방향(내리기 vs 복원, 정지 vs 해제)과 무관하게 "관리자가 이
+팩/작가에 조치를 취했다"라는 하나의 계열로 묶는다.
+
+### 읽는 화면 넷
+
+- **개요 "최근 활동" 카드**(`RecentActivityCard`): `watchRecent(limit: 6)` —
+  종류 무관 최신순. 전체/승인·반려/상품·운영 필터 칩은 클라이언트 필터일 뿐
+  쿼리를 늘리지 않는다.
+- **승인 대기함**(`approvals_tab.dart`, 노드 승인/반려): 대기중(기본)/처리됨/
+  전체 상태 필터. "처리됨"은 `watchApprovalHistory(kinds: [nodeApproved,
+  nodeRejected])`로 최근 100건을 읽어 `PendingListPane`의 대기 목록 아래
+  이어 붙이고, 상세는 `HistoryDetailPane`으로 연다.
+- **스토리팩 승인**(`pack_approvals_tab.dart`, 연재 시작/메타데이터 변경):
+  같은 대기중/처리됨/전체 패턴 — `kinds: [packSerializationApproved,
+  packSerializationRejected, packMetadataApproved, packMetadataRejected,
+  packSuspended, packRestored]` 여섯 가지를 한 이력 목록으로 합쳐서
+  보여준다(유형 구분은 배지로만 남는다). 강제 내리기/복원은 전체 작품
+  목록에서 하는 조치지만, 별도 처리 이력 화면을 새로 만들지 않고 이미 있는
+  "스토리팩" 이력에 얹었다.
+- **작가 신청**(`author_applications_tab.dart`): 목록+상세 2단 구조까지는
+  아니고, 대기 카드 목록 위에 대기중/처리됨/전체 칩만 얹은 가벼운 버전 —
+  `kinds: [authorApproved, authorRejected, authorRevoked,
+  authorAccountDisabled, authorAccountReenabled]`로 읽은 이력을 읽기 전용
+  카드로 보여준다(체크박스·승인/반려 버튼 없음). 자격 회수/계정 정지·해제는
+  "회원 관리" 화면(`user_management_page.dart`)의 조치지만(자격 회수는 작가
+  탭 전용, 계정 정지·해제는 작가/회원 두 탭 다 — 아래 "작가 계정 정지" 절
+  참고), 그 화면은 목록+상세 구조가 아니라서 별도 처리 이력을 새로 만들지
+  않고 여기 얹었다. 개요의 "작가 신청" 카드(`author_application_preview.dart`)도 승인/반려를
+  처리할 때 정확히 같은 문구로 기록한다 — 두 진입점이 "같은 일을 하는"
+  것이라 로그 문장이 갈리면 안 된다.
+
+이 넷 모두 `watchApprovalHistory({required List<ActivityKind> kinds, int
+limit = 100})`(공용 메서드) 하나를 서로 다른 `kinds` 조합으로 부른다.
+`watchNodeApprovalHistory()`는 `[nodeApproved, nodeRejected]`로 미리 채워진
+얇은 래퍼로 남아 있다. 검색/기간 필터 적용은 `applyHistoryFilter`
+(`approvals/approval_filter.dart`) 하나를 공유한다 — `ApprovalFilter`
+전체가 아니라 `query`/`range`/`from`/`to`/`sort` 다섯 값만 받아서, 노드 전용
+`ApprovalFilter`와 팩 전용 `PackApprovalFilter`가 서로 다른 클래스여도 같은
+함수를 그대로 쓸 수 있다.
+
 ## 복합 색인이 필요한 쿼리 (`firestore.indexes.json`)
 
 동등 필터(`where(field, isEqualTo: ...)`)와 다른 필드의 `orderBy`를 함께 쓰는
 쿼리는 Firestore 자동 단일 필드 색인만으로는 안 되고 복합 색인이 필요하다.
-지금 코드베이스에서 여기 해당하는 쿼리 둘을 저장소 루트의 `firestore.indexes.json`에
+지금 코드베이스에서 여기 해당하는 쿼리들을 저장소 루트의 `firestore.indexes.json`에
 정의해 뒀다:
 
 - `genres`: `GenreRepository.watchActiveGenres()` — `where('active', isEqualTo: true).orderBy('sortOrder')`
@@ -1426,6 +1672,13 @@ Toss 결제 취소(`POST /v1/payments/{paymentKey}/cancel`)를 `cancelAmount`
   전부 — `type`+`createdAt`(기본 조회), `type`+`uid`+`createdAt`(uid 검색),
   `type`+`displayName`+`createdAt`(이름 검색). 왜 세 개로 나뉘는지는 위
   "admin 결제·정산 화면" 절 참고.
+- `activityLog`: `ActivityLogRepository.watchApprovalHistory(kinds: [...])` —
+  `where('kind', whereIn: [...]).orderBy('createdAt', descending: true)`.
+  `kind` 필드 하나 + `createdAt` 정렬이라는 모양만 같으면 색인 하나로
+  충분하다 — `whereIn`에 어떤 kind 조합이 들어가든(노드 2종, 팩 4종, 작가
+  2종) 같은 색인을 공유한다. 승인 대기함/스토리팩 승인/작가 신청 세 화면의
+  "처리 이력"이 전부 이 색인 하나에 얹힌다(위 "activityLog/{autoId}" 절
+  참고).
 
 `fieldOverrides`에는 별도로 두 개 더 있다 — `nodes` 컬렉션의 `pendingAction`
 필드를 `COLLECTION_GROUP` 범위에서도 쿼리할 수 있게 하는 오버라이드,

@@ -248,9 +248,20 @@ String formatRequestedDate(DateTime? requestedAt) {
 ///
 /// [packId]/[authorName]이 없는(이 필드들이 생기기 전에 기록된) 옛 문서는
 /// 검색어로 못 찾는다 — 되짚어 채울 원본 데이터가 없으니 어쩔 수 없다.
+///
+/// 필터를 통째로(`ApprovalFilter`) 받지 않고 [query]/[range]/[from]/[to]/
+/// [sort] 다섯 값만 받는다 — 승인 대기함(노드) 전용 `ApprovalFilter`뿐
+/// 아니라 스토리팩 승인(`PackApprovalFilter`)/작가 신청도 이 함수를 그대로
+/// 재사용한다. 필터 클래스마다 [ApprovalDateRange]/[ApprovalSort] 타입은
+/// 공유하지만 클래스 자체는 서로 다르므로(kind/type 등 나머지 필드가 다르다),
+/// 다섯 값만 뽑아서 넘기는 편이 필터 클래스에 종속되지 않는다.
 List<ActivityEvent> applyHistoryFilter(
-  List<ActivityEvent> events,
-  ApprovalFilter filter, {
+  List<ActivityEvent> events, {
+  required String query,
+  required ApprovalDateRange range,
+  DateTime? from,
+  DateTime? to,
+  required ApprovalSort sort,
   required Map<String, String> packTitles,
   required Map<String, String> packAuthors,
   DateTime? now,
@@ -258,10 +269,10 @@ List<ActivityEvent> applyHistoryFilter(
   final today = now ?? DateTime.now();
   final startOfToday = DateTime(today.year, today.month, today.day);
   final weekAgo = startOfToday.subtract(const Duration(days: 6));
-  final query = filter.query.trim().toLowerCase();
+  final normalizedQuery = query.trim().toLowerCase();
 
   bool matchesDate(DateTime? createdAt) {
-    switch (filter.range) {
+    switch (range) {
       case ApprovalDateRange.all:
         return true;
       case ApprovalDateRange.today:
@@ -270,8 +281,6 @@ List<ActivityEvent> applyHistoryFilter(
         return createdAt != null && !createdAt.isBefore(weekAgo);
       case ApprovalDateRange.custom:
         if (createdAt == null) return false;
-        final from = filter.from;
-        final to = filter.to;
         if (from != null &&
             createdAt.isBefore(DateTime(from.year, from.month, from.day))) {
           return false;
@@ -287,14 +296,14 @@ List<ActivityEvent> applyHistoryFilter(
   }
 
   bool matchesQuery(ActivityEvent event) {
-    if (query.isEmpty) return true;
+    if (normalizedQuery.isEmpty) return true;
     final packId = event.packId;
     final haystack = [
       event.authorName ?? (packId == null ? '' : packAuthors[packId] ?? ''),
       packId == null ? '' : (packTitles[packId] ?? packId),
       event.nodeId ?? '',
     ].join(' ').toLowerCase();
-    return haystack.contains(query);
+    return haystack.contains(normalizedQuery);
   }
 
   final result = events
@@ -307,9 +316,7 @@ List<ActivityEvent> applyHistoryFilter(
     if (x == null && y == null) return 0;
     if (x == null) return 1;
     if (y == null) return -1;
-    return filter.sort == ApprovalSort.oldestFirst
-        ? x.compareTo(y)
-        : y.compareTo(x);
+    return sort == ApprovalSort.oldestFirst ? x.compareTo(y) : y.compareTo(x);
   });
   return result;
 }

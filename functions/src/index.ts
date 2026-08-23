@@ -5,6 +5,7 @@ import {defineSecret} from "firebase-functions/params";
 import {initializeApp} from "firebase-admin/app";
 import {FieldValue, getFirestore} from "firebase-admin/firestore";
 import {getStorage} from "firebase-admin/storage";
+import {getAuth} from "firebase-admin/auth";
 import {createHash, randomUUID} from "crypto";
 
 initializeApp();
@@ -1750,5 +1751,231 @@ export const refreshTypecastVoices = onCall(
       throw new HttpsError("aborted", "보이스 목록을 불러오지 못했어요.");
     }
     return {success: true};
+  }
+);
+
+/**
+ * 계정의 Firebase Auth 로그인 자체를 막거나(disabled: true) 다시
+ * 허용한다(disabled: false) — "계정 정지"는 완전한 계정 삭제 대신
+ * 이 되돌릴 수 있는 조치를 쓴다(요청 사양: 지갑/거래/팩 등 데이터는 전혀
+ * 안 건드리고, 로그인만 막는다). 클라이언트 SDK는 다른 유저의 Auth 계정을
+ * 건드릴 수 없어서(Admin SDK 전용 API) 반드시 이 Cloud Function을 거쳐야
+ * 한다 — refundCoinCharge와 같은 이유로 admin 여부도 클라이언트 주장을
+ * 믿지 않고 서버가 users/{uid}.role을 직접 다시 읽어 확인한다.
+ *
+ * 함수 이름/`ActivityKind`("authorAccountDisabled" 등)는 작가 계정 정지
+ * 기능으로 처음 만들어진 이름 그대로다 — role과 무관하게 어떤 계정에도
+ * 그대로 쓴다(회원 관리 화면의 "회원" 탭이 독자/관리자 계정에도 이 함수를
+ * 부른다). 이름을 바꾸면 배포된 함수 이름이 바뀌어 재배포가 필요하고,
+ * `ActivityKind`의 wire value는 이미 실제 activityLog 문서에 그 문자열
+ * 그대로 저장돼 있어서(과거 기록을 깨뜨리지 않으려면 마이그레이션이
+ * 필요하다) — 바꿀 실익보다 손이 더 들어서 이름은 그대로 두고 동작만
+ * 일반화했다. `suspendPacks`는 role과 무관하게 그 uid가 authorId인
+ * storyPacks가 있으면 내리고 없으면 그냥 아무 일도 안 한다 — 독자
+ * 계정은 애초에 팩이 없으니 자연히 no-op이다.
+ *
+ * users/{uid}.accountDisabled에 같은 값을 거울로 남긴다 — Flutter 클라이언트는
+ * Auth Admin API를 직접 조회할 수 없어서, 화면에 "정지됨" 배지를 보여주려면
+ * 이 거울 필드를 읽는 수밖에 없다(lib/core/user/user_profile.dart의
+ * UserProfile.accountDisabled 문서 참고).
+ *
+ * disabled == true && suspendPacks == true일 때만 그 작가의 storyPacks를
+ * 전부 suspended: true로 일괄 내린다(스토리팩 승인 화면의 강제 내리기와
+ * 완전히 같은 필드를 쓴다). 반대로 재활성화(disabled: false)할 때는 절대
+ * 자동으로 팩을 복원하지 않는다 — admin이 계정은 다시 열어주면서도 특정
+ * 팩은 계속 내려 두고 싶을 수 있어서, 팩 복원은 항상 스토리팩 승인
+ * 화면에서 admin이 직접 누르는 별도의 명시적 조치로만 이뤄진다.
+ */
+export const setAuthorAccountDisabled = onCall(async (request) => {
+  const callerUid = request.auth?.uid;
+  if (!callerUid) {
+    throw new HttpsError("unauthenticated", "로그인이 필요합니다.");
+  }
+  if (!(await isCallerAdmin(callerUid))) {
+    throw new HttpsError("permission-denied", "관리자만 사용할 수 있어요.");
+  }
+
+  const data = request.data as {
+    uid?: unknown;
+    disabled?: unknown;
+    suspendPacks?: unknown;
+    reason?: unknown;
+  };
+  const {uid, disabled, suspendPacks, reason} = data;
+  if (typeof uid !== "string" || uid.length === 0 || typeof disabled !== "boolean") {
+    throw new HttpsError("invalid-argument", "요청 값이 올바르지 않습니다.");
+  }
+
+  const userRef = db.collection("users").doc(uid);
+  const userSnap = await userRef.get();
+  if (!userSnap.exists) {
+    throw new HttpsError("not-found", "존재하지 않는 계정이에요.");
+  }
+  const displayName = (userSnap.data()?.displayName as string | undefined) || "(이름 없음)";
+
+  // Auth 쪽 로그인 차단이 먼저, 그다음 Firestore 거울 필드 — 순서가
+  // 바뀌어 Auth 호출이 실패하면 거울 필드만 갱신된 채 실제로는 로그인이
+  // 막히지 않은 상태로 남는 게 더 나쁘다(화면은 "정지됨"이라고 보여주는데
+  // 실제로는 로그인이 된다).
+  await getAuth().updateUser(uid, {disabled});
+  await userRef.set({accountDisabled: disabled}, {merge: true});
+
+  let suspendedPackCount = 0;
+  if (disabled && suspendPacks === true) {
+    const suspendReason = typeof reason === "string" && reason.trim().length > 0
+      ? reason.trim()
+      : "계정 정지로 인한 일괄 비공개";
+    const packsSnap = await db.collection("storyPacks")
+      .where("authorId", "==", uid)
+      .get();
+    if (!packsSnap.empty) {
+      const batch = db.batch();
+      for (const doc of packsSnap.docs) {
+        batch.update(doc.ref, {
+          suspended: true,
+          suspendedReason: suspendReason,
+          suspendedAt: FieldValue.serverTimestamp(),
+          suspendedBy: callerUid,
+        });
+      }
+      await batch.commit();
+      suspendedPackCount = packsSnap.size;
+    }
+  }
+
+  await db.collection("activityLog").add({
+    kind: disabled ? "authorAccountDisabled" : "authorAccountReenabled",
+    message: disabled
+      ? `${displayName} 계정 정지${suspendedPackCount > 0 ? ` (작품 ${suspendedPackCount}개 비공개)` : ""}`
+      : `${displayName} 계정 정지 해제`,
+    actorUid: callerUid,
+    createdAt: FieldValue.serverTimestamp(),
+    authorName: displayName,
+  });
+
+  return {success: true, suspendedPackCount};
+});
+
+/** 카카오 개발자 콘솔 > 앱 > 카카오 로그인 > 보안 탭의 REST API 키/클라이언트
+ * 시크릿 — `firebase functions:secrets:set KAKAO_REST_API_KEY`/
+ * `KAKAO_CLIENT_SECRET`으로 값을 채워야 kakaoSignIn이 동작한다(값을 안
+ * 채우면 함수가 배포는 되지만 호출 시점에 .value()가 빈 문자열/에러를 내며
+ * 실패한다 — tossSecretKey와 같은 패턴). 카카오 JavaScript 키(공개 키, 클라
+ * 이언트에 그대로 박아 둬도 되는 값)와는 완전히 다른 키다 — 이 둘은 절대
+ * 클라이언트 코드에 두면 안 된다.
+ */
+const kakaoRestApiKey = defineSecret("KAKAO_REST_API_KEY");
+const kakaoClientSecret = defineSecret("KAKAO_CLIENT_SECRET");
+
+/**
+ * 카카오 로그인 — Firebase Authentication에는 카카오 공급자가 없어서, 카카오
+ * 자체 OAuth 인가 코드 흐름 + 이 Cloud Function으로 대신한다
+ * (lib/core/auth/kakao_auth_service.dart 문서 참고):
+ *
+ * 1. 클라이언트가 카카오 OAuth 팝업에서 받은 인가 코드(`code`)를 넘긴다 —
+ *    이 코드 자체는 아직 아무것도 증명하지 않는다.
+ * 2. 이 함수가 카카오 토큰 엔드포인트(`kauth.kakao.com/oauth/token`)에
+ *    REST API 키 + 클라이언트 시크릿으로 그 코드를 액세스 토큰과 교환한다
+ *    — 이 교환이 성공한다는 것 자체가 "이 요청이 진짜 우리 앱을 거쳐 카카오
+ *    로그인 팝업에서 나왔다"는 증거다(코드는 발급 시점의 redirect_uri와
+ *    묶여 있고, 시크릿 없이는 아무나 교환할 수 없다).
+ * 3. 그 액세스 토큰으로 카카오 사용자 API(`kapi.kakao.com/v2/user/me`)를
+ *    직접 불러 카카오 유저 id/프로필을 확인한다 — 클라이언트가 유저 id를
+ *    직접 보냈다면 그건 절대 못 믿는다(누구나 임의의 id를 보낼 수 있다),
+ *    하지만 이렇게 액세스 토큰으로 카카오에 직접 물어본 응답은 믿을 수
+ *    있다.
+ * 4. `uid = 'kakao_' + 카카오유저id`로 고정한다 — 접두어를 붙여서 Google
+ *    로그인이 발급하는 Firebase uid(Firebase Auth가 자동 생성하는 임의
+ *    문자열)와 절대 겹치지 않게 한다.
+ * 5. 그 uid로 Firebase Auth 유저가 없으면 새로 만들고(있으면 그대로 두고
+ *    — 재로그인마다 닉네임/프로필사진을 다시 덮어쓰지 않는다), Firebase
+ *    커스텀 토큰을 발급해 돌려준다. 클라이언트는 그 토큰으로
+ *    `signInWithCustomToken`을 불러 로그인을 마친다.
+ *
+ * 공개 로그인 엔드포인트라 admin 권한 확인이 없다 — Firebase 자체의 Google
+ * 로그인과 같은 신뢰 수준이다(요청 사양).
+ */
+export const kakaoSignIn = onCall(
+  {secrets: [kakaoRestApiKey, kakaoClientSecret]},
+  async (request) => {
+    const data = request.data as {code?: unknown; redirectUri?: unknown};
+    const {code, redirectUri} = data;
+    if (
+      typeof code !== "string" || code.length === 0 ||
+      typeof redirectUri !== "string" || redirectUri.length === 0
+    ) {
+      throw new HttpsError("invalid-argument", "요청 값이 올바르지 않습니다.");
+    }
+
+    // 1) 인가 코드 -> 액세스 토큰. client_secret이 앱 설정에서 꺼져 있으면
+    // 카카오가 그냥 이 값을 무시하므로, 켜져 있든 꺼져 있든 항상 보내도
+    // 안전하다(카카오 문서: 시크릿이 꺼져 있으면 파라미터 자체가 무시됨).
+    const tokenResponse = await fetch("https://kauth.kakao.com/oauth/token", {
+      method: "POST",
+      headers: {"Content-Type": "application/x-www-form-urlencoded"},
+      body: new URLSearchParams({
+        grant_type: "authorization_code",
+        client_id: kakaoRestApiKey.value(),
+        client_secret: kakaoClientSecret.value(),
+        redirect_uri: redirectUri,
+        code,
+      }).toString(),
+    });
+    const tokenBody = await tokenResponse.json() as Record<string, unknown>;
+    if (!tokenResponse.ok || typeof tokenBody.access_token !== "string") {
+      console.error("카카오 토큰 교환 실패:", tokenBody);
+      throw new HttpsError("aborted", "카카오 로그인에 실패했어요.");
+    }
+    const kakaoAccessToken = tokenBody.access_token;
+
+    // 2) 액세스 토큰 -> 카카오 사용자 정보(검증 겸 프로필 조회).
+    const meResponse = await fetch("https://kapi.kakao.com/v2/user/me", {
+      headers: {Authorization: `Bearer ${kakaoAccessToken}`},
+    });
+    const meBody = await meResponse.json() as Record<string, unknown>;
+    if (!meResponse.ok || typeof meBody.id !== "number") {
+      console.error("카카오 사용자 조회 실패:", meBody);
+      throw new HttpsError("aborted", "카카오 사용자 정보를 가져오지 못했어요.");
+    }
+
+    const kakaoAccount = meBody.kakao_account as Record<string, unknown> | undefined;
+    const kakaoProfile = kakaoAccount?.profile as Record<string, unknown> | undefined;
+    const nickname = typeof kakaoProfile?.nickname === "string" ? kakaoProfile.nickname : undefined;
+    const profileImageUrl = typeof kakaoProfile?.profile_image_url === "string" ?
+      kakaoProfile.profile_image_url :
+      undefined;
+    // 이메일 동의 항목은 기본으로 요청하지 않는다(요청 사양) — 있으면
+    // 쓰고, 없으면 undefined로 둔다(users/{uid}.email이 ''로 읽히는 다른
+    // 경로들과 같은 nullable-safe 취급).
+    const email = typeof kakaoAccount?.email === "string" ? kakaoAccount.email : undefined;
+
+    const uid = `kakao_${meBody.id}`;
+
+    let userExists = true;
+    try {
+      await getAuth().getUser(uid);
+    } catch (error) {
+      if ((error as {code?: string}).code === "auth/user-not-found") {
+        userExists = false;
+      } else {
+        throw error;
+      }
+    }
+
+    if (!userExists) {
+      const createPayload: {
+        uid: string;
+        displayName?: string;
+        photoURL?: string;
+        email?: string;
+      } = {uid};
+      if (nickname) createPayload.displayName = nickname;
+      if (profileImageUrl) createPayload.photoURL = profileImageUrl;
+      if (email) createPayload.email = email;
+      await getAuth().createUser(createPayload);
+    }
+
+    const customToken = await getAuth().createCustomToken(uid);
+    return {customToken};
   }
 );

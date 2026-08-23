@@ -279,7 +279,11 @@ class _ApprovalsTabState extends State<ApprovalsTab> {
                 final visibleHistory = showHistory
                     ? applyHistoryFilter(
                         historyEvents,
-                        _filter,
+                        query: _filter.query,
+                        range: _filter.range,
+                        from: _filter.from,
+                        to: _filter.to,
+                        sort: _filter.sort,
                         packTitles: widget.packTitles,
                         packAuthors: widget.packAuthors,
                       )

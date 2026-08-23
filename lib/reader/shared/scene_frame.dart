@@ -778,9 +778,7 @@ class _SceneFrameState extends State<SceneFrame>
   }
 
   Widget _buildCinematicScene(String url) {
-    final rightInset = _settingsOpen ? _settingsPanelWidth + 60 : 60.0;
-
-    return Stack(
+    final content = Stack(
       fit: StackFit.expand,
       children: [
         AnimatedOpacity(
@@ -811,49 +809,71 @@ class _SceneFrameState extends State<SceneFrame>
           ),
         ),
         // ⚠️ 본문/액션은 Positioned가 아니라 Stack의 일반 자식으로 둔다 —
-        // StackFit.expand가 이 자식에게 화면 전체 크기를 tight로 주므로
+        // StackFit.expand가 이 자식에게 박스 전체 크기를 tight로 주므로
         // 하단 정렬(Column mainAxisAlignment.end)만으로 자리가 정해지고,
         // Positioned로 띄웠을 때처럼 크기·히트테스트가 애매해지지 않는다
         // (선택지가 보이는데 눌리지 않는 문제의 원인이었다).
-        SafeArea(
-          child: Padding(
-            padding: EdgeInsets.only(
-              left: 60,
-              right: rightInset,
-              bottom: 40,
-              top: 16,
-            ),
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.end,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                SizedBox(
-                  width: _desktopReadingWidth,
-                  child: Align(
-                    alignment: Alignment.centerRight,
-                    child: _buildSkipButton(),
-                  ),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(48, 16, 48, 40),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.end,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              SizedBox(
+                width: _desktopReadingWidth,
+                child: Align(
+                  alignment: Alignment.centerRight,
+                  child: _buildSkipButton(),
                 ),
-                Flexible(
-                  child: ConstrainedBox(
-                    constraints: const BoxConstraints(
-                      maxWidth: _desktopReadingWidth,
-                    ),
-                    child: SingleChildScrollView(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: _buildVisibleBlocks(),
-                      ),
+              ),
+              Flexible(
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(
+                    maxWidth: _desktopReadingWidth,
+                  ),
+                  child: SingleChildScrollView(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: _buildVisibleBlocks(),
                     ),
                   ),
                 ),
-                const SizedBox(height: 10),
-                _buildActionArea(),
-              ],
-            ),
+              ),
+              const SizedBox(height: 10),
+              _buildActionArea(),
+            ],
           ),
         ),
       ],
+    );
+
+    // 사진을 화면 전체가 아니라 가운데의 고정 폭 박스 안에 가둔다 — 책 모드
+    // ([_buildBookScene])의 "어두운 화면 한가운데 뜬 지면" 느낌을 시네마틱
+    // 쪽에도 맞춘다. 폭은 책 모드가 이미 쓰는 두 값(본문 전용 780 /
+    // 두 쪽 펼침 1000) 중 새 상수를 또 만들지 않고, 두 쪽 펼침 폭
+    // ([_bookSpreadWidth])을 그대로 재사용한다 — 사진이 주인공인 레이아웃이라
+    // 본문 전용 폭만으로는 좁아 보이고, 이미 있는 "데스크톱에서 가장 넓은
+    // 박스" 값에 맞추면 두 레이아웃의 크기 감각도 통일된다. 박스 밖은 책
+    // 모드와 똑같이 순수한 어두운 배경(SceneFrame.build의 바깥 ColoredBox가
+    // 이미 검정이라 여기서 따로 칠할 필요가 없다) — 사진을 흐려 바깥까지
+    // 번지게 하는 연출은 비용 대비 이득이 크지 않아 넣지 않았다.
+    final rightInset = _settingsOpen ? _settingsPanelWidth : 0.0;
+    return Padding(
+      padding: EdgeInsets.only(right: rightInset),
+      child: Center(
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: 48),
+          child: SizedBox(
+            width: _bookSpreadWidth,
+            child: DecoratedBox(
+              decoration: BoxDecoration(
+                border: Border.all(color: _ivory.withOpacity(0.10)),
+              ),
+              child: ClipRect(child: content),
+            ),
+          ),
+        ),
+      ),
     );
   }
 

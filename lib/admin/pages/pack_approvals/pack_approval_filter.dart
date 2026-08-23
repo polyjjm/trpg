@@ -1,8 +1,14 @@
 import '../../models/admin_story_pack.dart';
+import '../approvals/approval_filter.dart'
+    show ApprovalDateRange, ApprovalSort, ApprovalStatusFilter;
 
-/// 요청 시각 포맷 함수(formatWaitedLabel/formatRequestedDate)는
-/// approvals/approval_filter.dart의 것을 그대로 재사용한다 — 순수
-/// DateTime 포맷터라 팩/노드 구분과 무관하다. 쓰는 쪽에서 직접 import한다.
+/// 요청 시각 포맷 함수(formatWaitedLabel/formatRequestedDate), 기간 필터
+/// ([ApprovalDateRange]), 정렬([ApprovalSort]), 상태 필터(대기중/처리됨/전체,
+/// [ApprovalStatusFilter])는 전부 approvals/approval_filter.dart의 것을 그대로
+/// 재사용한다 — "언제 요청됐는지"/"어떤 순서로 볼지"/"지금 뭘 보여줄지"는
+/// 팩/노드 구분과 무관한 값이다. 처음엔 팩 전용으로 따로 두었다가, 처리
+/// 이력([applyHistoryFilter])이 이 타입을 그대로 받게 되면서 중복 정의를
+/// 없앴다 — 포맷 함수는 쓰는 쪽에서 직접 import한다.
 
 /// 스토리팩 승인 화면의 대기 항목 하나 — 연재 시작 요청 또는 메타데이터
 /// 변경 요청. 두 스트림(watchPendingSerializationRequests/
@@ -51,49 +57,39 @@ extension PackRequestTypeFilterLabel on PackRequestTypeFilter {
   };
 }
 
-/// 요청일 기준 기간 필터 — approvals/approval_filter.dart의
-/// ApprovalDateRange와 같은 모양이지만, 팩 요청 목록은 [AdminStoryPack]을
-/// 다뤄 타입이 달라 독립된 열거형으로 둔다.
-enum PackApprovalDateRange { all, today, week, custom }
-
-extension PackApprovalDateRangeLabel on PackApprovalDateRange {
-  String get label => switch (this) {
-    PackApprovalDateRange.all => '전체',
-    PackApprovalDateRange.today => '오늘',
-    PackApprovalDateRange.week => '7일',
-    PackApprovalDateRange.custom => '직접 지정',
-  };
-}
-
-enum PackApprovalSort { oldestFirst, newestFirst }
-
 class PackApprovalFilter {
   /// 작가 이름 / 작품 제목을 한 칸에서 찾는다.
   final String query;
   final PackRequestTypeFilter type;
-  final PackApprovalDateRange range;
+  final ApprovalDateRange range;
 
-  /// [PackApprovalDateRange.custom]일 때만 쓴다. [to]는 그 날 23:59:59까지 포함한다.
+  /// [ApprovalDateRange.custom]일 때만 쓴다. [to]는 그 날 23:59:59까지 포함한다.
   final DateTime? from;
   final DateTime? to;
-  final PackApprovalSort sort;
+  final ApprovalSort sort;
+
+  /// 대기중(기본)/처리됨/전체 — approvals/approval_filter.dart의
+  /// [ApprovalStatusFilter] 참고.
+  final ApprovalStatusFilter status;
 
   const PackApprovalFilter({
     this.query = '',
     this.type = PackRequestTypeFilter.all,
-    this.range = PackApprovalDateRange.all,
+    this.range = ApprovalDateRange.all,
     this.from,
     this.to,
-    this.sort = PackApprovalSort.oldestFirst,
+    this.sort = ApprovalSort.oldestFirst,
+    this.status = ApprovalStatusFilter.pending,
   });
 
   PackApprovalFilter copyWith({
     String? query,
     PackRequestTypeFilter? type,
-    PackApprovalDateRange? range,
+    ApprovalDateRange? range,
     DateTime? from,
     DateTime? to,
-    PackApprovalSort? sort,
+    ApprovalSort? sort,
+    ApprovalStatusFilter? status,
   }) {
     return PackApprovalFilter(
       query: query ?? this.query,
@@ -102,6 +98,7 @@ class PackApprovalFilter {
       from: from ?? this.from,
       to: to ?? this.to,
       sort: sort ?? this.sort,
+      status: status ?? this.status,
     );
   }
 }
@@ -122,13 +119,13 @@ List<PendingPackRequest> applyPackApprovalFilter(
 
   bool matchesDate(DateTime? requestedAt) {
     switch (filter.range) {
-      case PackApprovalDateRange.all:
+      case ApprovalDateRange.all:
         return true;
-      case PackApprovalDateRange.today:
+      case ApprovalDateRange.today:
         return requestedAt != null && !requestedAt.isBefore(startOfToday);
-      case PackApprovalDateRange.week:
+      case ApprovalDateRange.week:
         return requestedAt != null && !requestedAt.isBefore(weekAgo);
-      case PackApprovalDateRange.custom:
+      case ApprovalDateRange.custom:
         if (requestedAt == null) return false;
         final from = filter.from;
         final to = filter.to;
@@ -167,7 +164,7 @@ List<PendingPackRequest> applyPackApprovalFilter(
     if (x == null && y == null) return 0;
     if (x == null) return 1;
     if (y == null) return -1;
-    return filter.sort == PackApprovalSort.oldestFirst
+    return filter.sort == ApprovalSort.oldestFirst
         ? x.compareTo(y)
         : y.compareTo(x);
   });

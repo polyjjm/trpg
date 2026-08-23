@@ -4,11 +4,15 @@ import '../../models/activity_event.dart';
 import '../../widgets/admin_theme.dart';
 import 'approval_filter.dart';
 
-/// 승인 대기함 "처리됨"/"전체" 상태에서 오른쪽 상세로 쓴다 — 이미 끝난
-/// 일이라 [PendingDetailPane]과 달리 diff도, 승인/반려 버튼도 없다. 볼 수
-/// 있는 건 그 순간 기록해 둔 한 줄([ActivityEvent.message])과 처리 시각뿐
-/// — 노드 내용은 그 뒤로 다시 바뀌었을 수 있어서 지금 시점의 diff를 다시
-/// 계산해 보여주는 건 오히려 "그때 실제로 뭘 승인/반려했는지"를 왜곡한다.
+/// 승인 대기함(노드)뿐 아니라 스토리팩 승인·작가 신청의 "처리됨"/"전체"
+/// 상태에서도 오른쪽 상세로 그대로 재사용한다 — 이미 끝난 일이라
+/// [PendingDetailPane]과 달리 diff도, 승인/반려 버튼도 없다. 볼 수 있는 건
+/// 그 순간 기록해 둔 한 줄([ActivityEvent.message])과 처리 시각뿐 — 대상
+/// (노드/팩/계정) 내용은 그 뒤로 다시 바뀌었을 수 있어서 지금 시점의 diff를
+/// 다시 계산해 보여주는 건 오히려 "그때 실제로 뭘 승인/반려했는지"를
+/// 왜곡한다. 승인/반려 판정은 [ActivityKindDisplay.isApprovalFamily]를
+/// 쓴다 — 특정 kind 하나(nodeApproved 등)만 비교하면 팩/작가 kind에서는
+/// 항상 "반려됨"으로 잘못 표시된다.
 class HistoryDetailPane extends StatelessWidget {
   final ActivityEvent? event;
   final String packTitle;
@@ -42,7 +46,7 @@ class HistoryDetailPane extends StatelessWidget {
       );
     }
 
-    final approved = current.kind == ActivityKind.nodeApproved;
+    final approved = current.kind.isApprovalFamily;
     final resultLabel = approved ? '승인됨' : '반려됨';
     final resultBg = approved ? AdminColors.approveBg : AdminColors.rejectBg;
     final resultBorder = approved
