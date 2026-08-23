@@ -105,7 +105,21 @@ class SceneFrame extends StatefulWidget {
 
   /// 배경 인계 규칙까지 적용해 이미 resolve된 이미지 URL. null이면 fallback
   /// 그라디언트만 보여준다.
+  ///
+  /// 이 URL은 `resolveStoryMedia`가 발급한 **5분짜리 signed URL**이다 —
+  /// 세션이 길어지면 만료된다. 만료 관리는 호출부의 [StoryMediaSession]이
+  /// 하고, 여기서는 실제로 로드가 실패했을 때 [onBackgroundLoadFailed]로
+  /// 알려 주기만 한다.
   final String? backgroundImageUrl;
+
+  /// 배경 이미지 로드가 실패했을 때 한 번 알려 준다 — signed URL 만료를
+  /// 사후에 복구하는 경로(B안)다. 호출부가 새 URL을 받아 오면 다른
+  /// [backgroundImageUrl]로 다시 빌드되고, 서명이 달라 Flutter의 실패 캐시에
+  /// 걸리지 않으므로 재요청이 실제로 일어난다.
+  ///
+  /// 만료가 아닌 이유(파일 없음 등)로 실패하는 경우 갱신해도 계속 실패하므로,
+  /// 반복 호출을 막는 쿨다운은 [StoryMediaSession] 쪽에 있다.
+  final VoidCallback? onBackgroundLoadFailed;
 
   /// 모든 블록이 다 드러난 뒤 보여줄 타입별 액션 영역 — 인터랙티브는 선택지
   /// 버튼들, 선형은 "다음"/"완료" 버튼.
@@ -157,6 +171,7 @@ class SceneFrame extends StatefulWidget {
     required this.blocks,
     required this.actionAreaBuilder,
     this.backgroundImageUrl,
+    this.onBackgroundLoadFailed,
     this.effects = const NodeEffects(),
     this.sfxUrl,
     this.chapterLabel,
@@ -740,7 +755,11 @@ class _SceneFrameState extends State<SceneFrame>
   Widget _buildMobileScene() {
     return Column(
       children: [
-        _BackgroundBanner(url: widget.backgroundImageUrl, visible: _bgVisible),
+        _BackgroundBanner(
+          url: widget.backgroundImageUrl,
+          visible: _bgVisible,
+          onLoadFailed: _reportBackgroundLoadFailure,
+        ),
         Expanded(
           child: Padding(
             padding: const EdgeInsets.fromLTRB(22, 16, 22, 44),
@@ -777,6 +796,19 @@ class _SceneFrameState extends State<SceneFrame>
     return _buildCinematicScene(url);
   }
 
+  /// 같은 URL로 errorBuilder가 여러 번 불릴 수 있어서(레이아웃 도중 반복
+  /// 빌드) URL이 바뀔 때만 한 번씩 위로 올린다. 실제 재해결 빈도 제한은
+  /// [StoryMediaSession] 쪽 쿨다운이 담당한다.
+  String? _reportedFailureUrl;
+
+  void _reportBackgroundLoadFailure() {
+    final url = widget.backgroundImageUrl;
+    if (url == null || url.isEmpty) return;
+    if (_reportedFailureUrl == url) return;
+    _reportedFailureUrl = url;
+    widget.onBackgroundLoadFailed?.call();
+  }
+
   Widget _buildCinematicScene(String url) {
     final content = Stack(
       fit: StackFit.expand,
@@ -785,11 +817,16 @@ class _SceneFrameState extends State<SceneFrame>
           opacity: _bgVisible ? 1 : 0,
           duration: const Duration(milliseconds: 500),
           curve: Curves.easeOut,
-          child: url != null && url.isNotEmpty
+          child: url.isNotEmpty
               ? Image.network(
                   url,
                   fit: BoxFit.cover,
-                  errorBuilder: (_, _, _) => const _BannerFallback(),
+                  errorBuilder: (_, _, _) {
+                    // signed URL 만료가 가장 흔한 원인이라 호출부에 갱신을
+                    // 요청한다(B안). 새 URL이 오면 이 위젯이 다시 빌드된다.
+                    _reportBackgroundLoadFailure();
+                    return const _BannerFallback();
+                  },
                 )
               : const _BannerFallback(),
         ),
@@ -1314,7 +1351,14 @@ class _BackgroundBanner extends StatelessWidget {
   final String? url;
   final bool visible;
 
-  const _BackgroundBanner({required this.url, required this.visible});
+  /// 배경 로드 실패를 SceneFrame으로 되돌려 signed URL 재해결을 트리거한다.
+  final VoidCallback? onLoadFailed;
+
+  const _BackgroundBanner({
+    required this.url,
+    required this.visible,
+    this.onLoadFailed,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -1335,7 +1379,10 @@ class _BackgroundBanner extends StatelessWidget {
               Image.network(
                 url,
                 fit: BoxFit.cover,
-                errorBuilder: (_, _, _) => const _BannerFallback(),
+                errorBuilder: (_, _, _) {
+                  onLoadFailed?.call();
+                  return const _BannerFallback();
+                },
               )
             else
               const _BannerFallback(),

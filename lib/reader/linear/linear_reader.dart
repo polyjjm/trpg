@@ -14,6 +14,7 @@ import '../shared/paywall.dart';
 import '../shared/reader_back_button.dart';
 import '../shared/reader_session_controller.dart';
 import '../shared/scene_frame.dart';
+import '../shared/story_media_session.dart';
 
 const Color _ivory = Color(0xFFE2D4BF);
 const Color _gold = Color(0xFFF0E68C);
@@ -68,10 +69,25 @@ class _LinearReaderState extends State<LinearReader> {
   final ReaderSessionController _sessionController = ReaderSessionController();
   String? _defaultBgmUrl;
 
+  /// InteractiveReader와 같다 — 미디어 signed URL의 만료를 선제 갱신(A안) +
+  /// 실패 시 갱신(B안)으로 막아 주는 세션(story_media_session.dart).
+  StoryMediaSession? _mediaSession;
+
   @override
   void initState() {
     super.initState();
     _load();
+  }
+
+  /// 새 URL이 도착하면 노드 맵을 갈아 끼우고 다시 그린다. 재생 중인 BGM은
+  /// 건드리지 않는다(_applyBgmFor를 다시 부르면 곡이 처음부터 재시작한다).
+  void _onMediaRefreshed() {
+    final session = _mediaSession;
+    if (!mounted || session == null) return;
+    setState(() {
+      _nodesById = session.nodesById;
+      _defaultBgmUrl = session.defaultBgmUrl;
+    });
   }
 
   @override
@@ -90,6 +106,9 @@ class _LinearReaderState extends State<LinearReader> {
   @override
   void dispose() {
     _prefsSub?.cancel();
+    _mediaSession
+      ?..removeListener(_onMediaRefreshed)
+      ..dispose();
     _sessionController.dispose();
     super.dispose();
   }
@@ -120,13 +139,14 @@ class _LinearReaderState extends State<LinearReader> {
 
   Future<void> _load() async {
     try {
-      final result = await _repository.fetchPublishedNodes(
+      final session = await _repository.openReadingSession(
         widget.pack.id,
         packDefaultBackgroundImageId: widget.pack.defaultBackgroundImage,
         packDefaultBgmId: widget.pack.defaultBgmId,
       );
-      final nodes = result.nodes;
-      _defaultBgmUrl = result.defaultBgmUrl;
+      final nodes = session.nodes;
+      _mediaSession = session..addListener(_onMediaRefreshed);
+      _defaultBgmUrl = session.defaultBgmUrl;
       if (!mounted) return;
 
       if (nodes.isEmpty) {
@@ -140,9 +160,9 @@ class _LinearReaderState extends State<LinearReader> {
       // 리딩 세션 시작 — 노드 이동마다가 아니라 팩을 여는 시점에 딱 한 번만.
       unawaited(_repository.incrementViewCount(widget.pack.id));
 
-      // fetchPublishedNodes()가 이미 order(=페이지 순서) 오름차순으로 정렬해 반환한다.
+      // openReadingSession()이 이미 order(=페이지 순서) 오름차순으로 정렬해 반환한다.
       final entryId = nodes.first.node.id;
-      final nodesById = {for (final n in nodes) n.node.id: n};
+      final nodesById = session.nodesById;
       final orderedIds = [for (final n in nodes) n.node.id];
 
       final resumeNodeId = await _resolveResumeNodeId(
@@ -201,6 +221,11 @@ class _LinearReaderState extends State<LinearReader> {
   /// 어긋나지 않는다.
   Future<void> _goToNext(String nextNodeId, {String? alsoVisited}) async {
     if (!_nodesById.containsKey(nextNodeId)) return;
+
+    // (A안) InteractiveReader._handleChoice와 같은 이유 — 페이지를 넘기기
+    // 전에 만료가 가까운 signed URL을 미리 갱신한다.
+    await _mediaSession?.ensureFresh();
+    if (!mounted) return;
 
     final gameState = GameStateScope.of(context);
     final pack = widget.pack;
@@ -337,6 +362,9 @@ class _LinearReaderState extends State<LinearReader> {
         autoPlayNarration: _sessionController.ttsUserEnabled,
         blocks: current.node.blocks,
         backgroundImageUrl: current.backgroundImageUrl,
+        // (B안) 선제 갱신이 놓친 만료를 사후에 복구한다. 아래 두 쪽 펼침
+        // 분기는 backgroundImageUrl 자체가 null이라(책 모드) 필요 없다.
+        onBackgroundLoadFailed: () => _mediaSession?.refreshAfterFailure(),
         effects: current.node.effects,
         sfxUrl: current.sfxUrl,
         simplifiedSettings: true,
