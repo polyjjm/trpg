@@ -1,6 +1,8 @@
 class UiPaths {
   // Telo 로고
   static const String logo = 'assets/images/telo_logo.svg';
+  // Telo 로고 — 종이색(#F7F1E6) 라운드 스퀘어 안에 마크(favicon/앱 아이콘 원본).
+  static const String logoIcon = 'assets/images/telo_icon.svg';
 
   // 홈 탭 상단 책장 삽화 배경 (LibraryHeader) — 래스터(PNG) placeholder.
   // 실제 삽화로 교체될 때도 SVG가 아니라 PNG/WebP 같은 래스터로 두는 걸

@@ -7,7 +7,7 @@ import 'bundle_purchase_flow.dart';
 
 const Color _ivory = Color(0xFFE2D4BF);
 const Color _gold = Color(0xFFF0E68C);
-const Color _coral = Color(0xFFFF6B4A);
+const Color _coral = Color(0xFFE2703A);
 
 /// 홈 탭 "번들 상품" 섹션과 스토리팩 상세 화면의 "이 팩이 포함된 번들"이
 /// 공유하는 카드 — PointPackageCard와 같은 시각 언어(할인 중이면 정가에
@@ -187,9 +187,7 @@ class _CoverThumbFallback extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return const DecoratedBox(
-      decoration: BoxDecoration(
-        gradient: LinearGradient(colors: [Color(0xFFFF6B4A), Color(0xFFFFB648)]),
-      ),
+      decoration: BoxDecoration(color: Color(0xFFE2703A)),
     );
   }
 }

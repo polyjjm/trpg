@@ -13,7 +13,7 @@
   #app-loading {
     position: fixed;
     inset: 0;
-    background: linear-gradient(to bottom, #1A1610, #000);
+    background: linear-gradient(to bottom, #241C10, #16110A 46%, #000);
     display: flex;
     align-items: center;
     justify-content: center;
@@ -21,18 +21,29 @@
   }
 
   .loading-box {
-    width: 280px;
-    padding: 20px;
+    width: 300px;
+    padding: 26px 24px;
+    box-sizing: border-box;
     border-radius: 20px;
-    background: rgba(30, 26, 20, 0.72);
-    border: 1px solid rgba(240, 230, 140, 0.18);
+    background: rgba(30, 26, 20, 0.82);
+    border: 1px solid rgba(242, 179, 61, 0.2);
     text-align: center;
     color: #E2D4BF;
     font-family: Arial, sans-serif;
   }
 
+  /* 로고 마크 — assets/images/telo_logo.svg와 같은 도형(주황 가로획 +
+     앰버 책갈피). Flutter 엔진이 뜨기 전이라 에셋을 못 쓰니 인라인으로 둔다. */
+  .loading-mark {
+    width: 56px;
+    height: 56px;
+    margin: 0 auto 20px;
+    display: block;
+  }
+
   .loading-text {
     font-size: 14px;
+    font-weight: 600;
     margin-bottom: 16px;
     color: rgba(226, 212, 191, 0.92);
   }
@@ -51,6 +62,12 @@
     background: #f0e68c;
     border-radius: 999px;
     animation: loadingMove 1.2s infinite ease-in-out;
+  }
+
+  .loading-sub {
+    font-size: 12px;
+    margin-top: 10px;
+    color: rgba(226, 212, 191, 0.55);
   }
 
   @keyframes loadingMove {
@@ -80,7 +97,7 @@
 
   <meta charset="UTF-8">
   <meta content="IE=Edge" http-equiv="X-UA-Compatible">
-  <meta name="description" content="A new Flutter project.">
+  <meta name="description" content="읽는 이야기, 고르는 이야기 — TELO">
 
   <!-- iOS meta tags & icons -->
   <meta name="mobile-web-app-capable" content="yes">
@@ -103,10 +120,15 @@
 <body>
 <div id="app-loading">
   <div class="loading-box">
+    <svg class="loading-mark" viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">
+      <rect x="26" y="24" width="48" height="9" rx="3" fill="#E2703A"/>
+      <path d="M42 24 H58 V70 L50 64 L42 70 Z" fill="#F2B33D"/>
+    </svg>
     <div class="loading-text">이야기를 불러오는 중...</div>
     <div class="loading-bar">
       <div class="loading-bar-inner"></div>
     </div>
+    <div class="loading-sub">잠시만 기다려 주세요</div>
   </div>
 </div>
 

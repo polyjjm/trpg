@@ -4,7 +4,7 @@ import '../models/point_package.dart';
 
 const Color _ivory = Color(0xFFE2D4BF);
 const Color _gold = Color(0xFFF0E68C);
-const Color _coral = Color(0xFFFF6B4A);
+const Color _coral = Color(0xFFE2703A);
 
 /// 천 단위 콤마가 들어간 원화 표기. 예: 11000 -> '11,000'. 코인 상품(원화로
 /// 결제)에서만 쓴다 — 이야기 팩 가격은 코인 단위라 이 포맷을 쓰지 않는다.

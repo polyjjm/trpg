@@ -17,7 +17,7 @@ import 'node_tts_playback_controller.dart';
 
 const Color _ivory = Color(0xFFE2D4BF);
 const Color _gold = Color(0xFFF0E68C);
-const Color _beatAccent = Color(0xFFFFB648);
+const Color _beatAccent = Color(0xFFF2B33D);
 
 /// 데스크톱 리더 레이아웃으로 갈리는 폭 — 카탈로그 쪽 homeDesktopBreakpoint와
 /// 같은 값이지만, lib/reader/**가 lib/features/catalog/**를 import하지 않도록

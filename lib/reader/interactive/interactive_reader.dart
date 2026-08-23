@@ -16,7 +16,7 @@ import '../shared/scene_frame.dart';
 
 const Color _ivory = Color(0xFFE2D4BF);
 const Color _gold = Color(0xFFF0E68C);
-const Color _coral = Color(0xFFFF6B4A);
+const Color _coral = Color(0xFFE2703A);
 
 /// 선택지 버튼 배치가 세로 스택에서 가로 한 줄로 바뀌는 폭 — SceneFrame의
 /// 데스크톱 분기와 같은 값이다(같은 화면에서 한쪽만 바뀌면 어긋난다).

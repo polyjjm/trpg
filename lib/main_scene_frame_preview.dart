@@ -121,9 +121,7 @@ class _PreviewChoiceButton extends StatelessWidget {
       height: 52,
       child: DecoratedBox(
         decoration: BoxDecoration(
-          gradient: const LinearGradient(
-            colors: [Color(0xFFFF6B4A), Color(0xFFFFB648)],
-          ),
+          color: const Color(0xFFE2703A),
           borderRadius: BorderRadius.circular(14),
         ),
         child: Material(

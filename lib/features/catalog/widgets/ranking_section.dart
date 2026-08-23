@@ -356,9 +356,7 @@ class _RankingCoverFallback extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return const DecoratedBox(
-      decoration: BoxDecoration(
-        gradient: LinearGradient(colors: [Color(0xFFFF6B4A), Color(0xFFFFB648)]),
-      ),
+      decoration: BoxDecoration(color: Color(0xFFE2703A)),
     );
   }
 }

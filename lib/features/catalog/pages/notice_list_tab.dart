@@ -6,7 +6,7 @@ import '../widgets/home_desktop_layout.dart';
 
 const Color _ivory = Color(0xFFE2D4BF);
 const Color _gold = Color(0xFFF0E68C);
-const Color _coral = Color(0xFFFF6B4A);
+const Color _coral = Color(0xFFE2703A);
 
 /// 하단 탭(데스크톱에서는 상단 내비)의 "공지사항" — notices 컬렉션
 /// (active == true, 최신순)을 구독한다.

@@ -318,8 +318,8 @@ class _TopBar extends StatelessWidget {
       // 남는다.
       child: Row(
         children: [
-          SvgPicture.asset(UiPaths.logo, width: 20, height: 20),
-          const SizedBox(width: 8),
+          SvgPicture.asset(UiPaths.logo, width: 36, height: 36),
+          const SizedBox(width: 11),
           Text(
             '작가 도구',
             style: TextStyle(

@@ -37,7 +37,7 @@ class AdminApp extends StatelessWidget {
       valueListenable: AdminTheme.mode,
       builder: (context, themeMode, _) {
         return MaterialApp(
-          title: 'Telo 작가 편집기',
+          title: 'TELO 작가 편집기',
           debugShowCheckedModeBanner: false,
           themeMode: themeMode,
           theme: ThemeData(

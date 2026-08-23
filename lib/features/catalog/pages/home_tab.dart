@@ -393,10 +393,11 @@ class _HomeTabState extends State<HomeTab> {
             onTap: goHome,
             child: const Row(
               mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.center,
               children: [
-                ForkingPathLogoMark(size: 24),
-                SizedBox(width: 8),
-                TeloWordmark(fontSize: 22),
+                ForkingPathLogoMark(size: 40),
+                SizedBox(width: 12),
+                TeloWordmark(fontSize: 24),
               ],
             ),
           ),

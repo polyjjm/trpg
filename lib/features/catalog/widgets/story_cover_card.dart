@@ -195,13 +195,7 @@ class _CoverPlaceholder extends StatelessWidget {
       fit: StackFit.expand,
       children: [
         const DecoratedBox(
-          decoration: BoxDecoration(
-            gradient: LinearGradient(
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
-              colors: [Color(0xFFFF6B4A), Color(0xFFFFB648)],
-            ),
-          ),
+          decoration: BoxDecoration(color: Color(0xFFE2703A)),
         ),
         Center(
           child: Icon(genreStyle.icon, color: Colors.white.withOpacity(0.92), size: 40),

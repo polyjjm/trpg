@@ -19,7 +19,7 @@ import '../widgets/pack_comments_section.dart';
 import '../widgets/pack_reviews_section.dart';
 
 const Color _ivory = Color(0xFFE2D4BF);
-const List<Color> _brandGradient = [Color(0xFFFF6B4A), Color(0xFFFFB648)];
+const Color _brandColor = Color(0xFFE2703A);
 
 /// 데스크톱에서 본문(설명/리뷰/댓글)이 늘어나는 최대 폭 — 1440px 화면에서
 /// 왼쪽 컬럼은 950px쯤 되는데, 본문 한 줄이 거기까지 늘어나면 눈이 줄을
@@ -684,7 +684,7 @@ class _PrimaryActionButton extends StatelessWidget {
       height: 54,
       child: DecoratedBox(
         decoration: BoxDecoration(
-          gradient: const LinearGradient(colors: _brandGradient),
+          color: _brandColor,
           borderRadius: BorderRadius.circular(14),
         ),
         child: Material(
@@ -797,7 +797,7 @@ class _BundlesForPackSectionState extends State<_BundlesForPackSection> {
 }
 
 /// 표지 이미지가 없거나 로드에 실패했을 때 쓰는 fallback — StoryCoverCard와
-/// 같은 브랜드 그라디언트 + 장르 아이콘.
+/// 같은 브랜드 단색 + 장르 아이콘.
 class _CoverFallback extends StatelessWidget {
   final GenreStyle genreStyle;
   final double iconSize;
@@ -807,13 +807,7 @@ class _CoverFallback extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return DecoratedBox(
-      decoration: const BoxDecoration(
-        gradient: LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: _brandGradient,
-        ),
-      ),
+      decoration: const BoxDecoration(color: _brandColor),
       child: Center(
         child: Icon(genreStyle.icon, color: Colors.white.withOpacity(0.5), size: iconSize),
       ),

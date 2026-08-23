@@ -249,9 +249,7 @@ class _CoverFallback extends StatelessWidget {
   Widget build(BuildContext context) {
     final style = genreStyleFor(genreSlug);
     return DecoratedBox(
-      decoration: const BoxDecoration(
-        gradient: LinearGradient(colors: [Color(0xFFFF6B4A), Color(0xFFFFB648)]),
-      ),
+      decoration: const BoxDecoration(color: Color(0xFFE2703A)),
       child: Center(
         child: Icon(style.icon, color: Colors.white.withOpacity(0.92), size: 16),
       ),

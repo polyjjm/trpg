@@ -8,7 +8,7 @@ import '../models/story_pack.dart';
 import '../pages/story_pack_detail_page.dart';
 
 const Color _ivory = Color(0xFFE2D4BF);
-const Color _amber = Color(0xFFFFB648);
+const Color _amber = Color(0xFFF2B33D);
 const Color _panelBg = Color(0xFF0E0E0D);
 const Color _panelBorder = Color(0xFF262624);
 const Color _hairline = Color(0xFF1E1E1C);

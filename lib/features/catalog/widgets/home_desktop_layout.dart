@@ -1,4 +1,8 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_svg/flutter_svg.dart';
+import 'package:google_fonts/google_fonts.dart';
+
+import '../../../core/constants/ui_paths.dart';
 
 /// 홈 상단을 2단(배너+번들 | 랭킹)으로 쪼갤지 판단하는 폭 기준.
 ///
@@ -8,7 +12,7 @@ import 'package:flutter/material.dart';
 const double homeDesktopBreakpoint = 1100;
 
 /// 데스크톱 랭킹 컬럼 폭.
-const double homeRankingColumnWidth = 400;
+const double homeRankingColumnWidth = 560;
 
 /// 데스크톱 히어로 배너 비율 — 모바일(16/6)이나 예전 데스크톱(21/6)보다
 /// 납작하다.
@@ -79,94 +83,43 @@ class HomeTopSections extends StatelessWidget {
   }
 }
 
-/// TELO 로고 마크 — 갈라지는 길(forking path) 아이콘을 코랄→앰버 그라데이션
-/// 스트로크로 그린다.
+/// TELO 로고 마크 — "책갈피 T"(주황 가로획 + 앰버 세로 리본, 밑단이 책갈피
+/// 모양 V로 파인 시그니처). assets/images/telo_logo.svg(배경 없는 마크)를
+/// 그대로 그린다 — 예전엔 이 자리에서 갈라지는 길(forking path) 모양을
+/// CustomPainter로 직접 그렸지만, 실제 로고 에셋이 들어오면서 그 스트로크
+/// 마크는 폐기했다.
 ///
-/// home_tab.dart 안에 private으로 있던 `_ForkingPathLogoPainter`를 그대로
-/// 옮긴 것이다. 데스크톱 상단 내비게이션도 같은 마크를 써야 하므로 public
-/// 위젯으로 꺼냈다 — home_tab.dart 쪽 private 사본은 지우고 이걸 쓴다.
-///
-/// assets/images/telo_logo.svg(주황 사각 타일 안에 흰 분기 글리프)와는 다른
-/// 도형이다. 실제 앱이 그리는 건 이 스트로크 마크 쪽이다.
+/// home_tab.dart 안에 private으로 있던 사본을 옮긴 자리라, 데스크톱 상단
+/// 내비게이션도 같은 마크를 써야 하므로 public 위젯으로 꺼내 둔 것이다 —
+/// home_tab.dart 쪽 private 사본은 지우고 이걸 쓴다.
 class ForkingPathLogoMark extends StatelessWidget {
   final double size;
 
-  const ForkingPathLogoMark({super.key, this.size = 24});
+  const ForkingPathLogoMark({super.key, this.size = 40});
 
   @override
   Widget build(BuildContext context) {
-    return SizedBox(
-      width: size,
-      height: size,
-      child: CustomPaint(painter: _ForkingPathLogoPainter()),
-    );
+    return SvgPicture.asset(UiPaths.logo, width: size, height: size);
   }
 }
 
-/// 코랄→앰버 그라데이션이 입혀진 'TELO' 워드마크.
+/// 대문자 'TELO' 워드마크 — Space Grotesk, 단색(브랜드 색 그라데이션 쓰지
+/// 않는다).
 class TeloWordmark extends StatelessWidget {
   final double fontSize;
 
-  const TeloWordmark({super.key, this.fontSize = 22});
+  const TeloWordmark({super.key, this.fontSize = 30});
 
   @override
   Widget build(BuildContext context) {
-    return ShaderMask(
-      shaderCallback: (bounds) =>
-          const LinearGradient(colors: [Color(0xFFFF6B4A), Color(0xFFFFB35C)])
-              .createShader(bounds),
-      child: Text(
-        'TELO',
-        style: TextStyle(
-          fontSize: fontSize,
-          fontWeight: FontWeight.w800,
-          letterSpacing: 1.2,
-          color: Colors.white, // ShaderMask가 이 색 위에 그라데이션을 입힌다
-        ),
+    return Text(
+      'TELO',
+      style: GoogleFonts.spaceGrotesk(
+        fontSize: fontSize,
+        fontWeight: FontWeight.w500,
+        letterSpacing: fontSize * 0.18,
+        color: const Color(0xFFF5EEE2),
       ),
     );
   }
-}
-
-class _ForkingPathLogoPainter extends CustomPainter {
-  static const Color _coral = Color(0xFFFF6B4A);
-  static const Color _amber = Color(0xFFFFB35C);
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final rect = Offset.zero & size;
-    final paint = Paint()
-      ..shader = const LinearGradient(
-        begin: Alignment.topLeft,
-        end: Alignment.bottomRight,
-        colors: [_coral, _amber],
-      ).createShader(rect)
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = size.width * 0.11
-      ..strokeCap = StrokeCap.round
-      ..strokeJoin = StrokeJoin.round;
-
-    final w = size.width;
-    final h = size.height;
-    final path = Path()
-      ..moveTo(w * 0.19, h * 0.19)
-      ..lineTo(w * 0.19, h * 0.47)
-      ..cubicTo(w * 0.19, h * 0.62, w * 0.34, h * 0.62, w * 0.34, h * 0.62)
-      ..cubicTo(w * 0.5, h * 0.62, w * 0.5, h * 0.47, w * 0.66, h * 0.47)
-      ..cubicTo(w * 0.81, h * 0.47, w * 0.81, h * 0.62, w * 0.81, h * 0.62)
-      ..moveTo(w * 0.34, h * 0.62)
-      ..lineTo(w * 0.34, h * 0.84)
-      ..moveTo(w * 0.66, h * 0.47)
-      ..lineTo(w * 0.66, h * 0.28);
-    canvas.drawPath(path, paint);
-
-    final dotPaint = Paint()
-      ..shader = const LinearGradient(colors: [_coral, _amber]).createShader(rect);
-    canvas.drawCircle(Offset(w * 0.19, h * 0.14), size.width * 0.08, dotPaint);
-    canvas.drawCircle(Offset(w * 0.66, h * 0.22), size.width * 0.08, dotPaint);
-    canvas.drawCircle(Offset(w * 0.34, h * 0.9), size.width * 0.08, dotPaint);
-  }
-
-  @override
-  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
 }

@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_svg/flutter_svg.dart';
+import 'package:google_fonts/google_fonts.dart';
 
 import '../../../core/constants/asset_paths.dart';
 import '../models/story_pack.dart';
@@ -158,18 +160,19 @@ class _TopRow extends StatelessWidget {
         Row(
           crossAxisAlignment: CrossAxisAlignment.center,
           children: [
-            // 번들된 세리프 폰트가 없어(pubspec.yaml에 NotoSansKR뿐) 실제
-            // 세리프 서체 대신 워드마크 특유의 넓은 자간 + 굵은 두께로 같은
-            // "정체성" 인상을 낸다 — 세리프 폰트가 생기면 이 fontFamily만
-            // 바꾸면 된다.
-            const Text(
-              'Telo',
-              style: TextStyle(
-                fontSize: 26,
-                fontWeight: FontWeight.w800,
-                letterSpacing: 1.5,
+            SvgPicture.asset(UiPaths.logo, width: 24, height: 24),
+            const SizedBox(width: 8),
+            // 배경 삽화 위에 얹히는 워드마크라 그림자는 유지한다(가독성용) —
+            // 나머지 UI의 TeloWordmark(home_desktop_layout.dart)는 어두운
+            // 단색 배경 위라 그림자가 없다.
+            Text(
+              'TELO',
+              style: GoogleFonts.spaceGrotesk(
+                fontSize: 22,
+                fontWeight: FontWeight.w500,
+                letterSpacing: 22 * 0.18,
                 color: _ivory,
-                shadows: [
+                shadows: const [
                   Shadow(color: Colors.black54, offset: Offset(0, 1), blurRadius: 4),
                 ],
               ),
@@ -337,9 +340,7 @@ class _CoverFallback extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return const DecoratedBox(
-      decoration: BoxDecoration(
-        gradient: LinearGradient(colors: [Color(0xFFFF6B4A), Color(0xFFFFB648)]),
-      ),
+      decoration: BoxDecoration(color: Color(0xFFE2703A)),
       child: Icon(Icons.menu_book_rounded, color: Colors.white70, size: 20),
     );
   }

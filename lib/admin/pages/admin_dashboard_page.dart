@@ -422,15 +422,15 @@ class _DashboardTopBar extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 14),
+      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
       decoration: BoxDecoration(
         color: AdminColors.panel,
         border: Border(bottom: BorderSide(color: AdminColors.border)),
       ),
       child: Row(
         children: [
-          SvgPicture.asset(UiPaths.logo, width: 20, height: 20),
-          const SizedBox(width: 8),
+          SvgPicture.asset(UiPaths.logo, width: 36, height: 36),
+          const SizedBox(width: 11),
           Text(
             '관리자',
             style: TextStyle(

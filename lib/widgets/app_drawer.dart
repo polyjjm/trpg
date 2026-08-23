@@ -1,4 +1,8 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_svg/flutter_svg.dart';
+import 'package:google_fonts/google_fonts.dart';
+
+import '../core/constants/asset_paths.dart';
 
 const Color _ivory = Color(0xFFE2D4BF);
 
@@ -26,16 +30,24 @@ class AppDrawer extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Padding(
-              padding: EdgeInsets.fromLTRB(20, 24, 20, 16),
-              child: Text(
-                'Telo',
-                style: TextStyle(
-                  color: _ivory,
-                  fontSize: 20,
-                  fontWeight: FontWeight.w800,
-                  letterSpacing: 1.5,
-                ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 24, 20, 16),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.center,
+                children: [
+                  SvgPicture.asset(UiPaths.logo, width: 28, height: 28),
+                  const SizedBox(width: 11),
+                  Text(
+                    'TELO',
+                    style: GoogleFonts.spaceGrotesk(
+                      color: _ivory,
+                      fontSize: 18,
+                      fontWeight: FontWeight.w500,
+                      letterSpacing: 18 * 0.18,
+                    ),
+                  ),
+                ],
               ),
             ),
             const Divider(color: Colors.white24, height: 1),

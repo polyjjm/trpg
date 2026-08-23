@@ -12,7 +12,7 @@ import '../../../core/auth/auth_scope.dart';
 
 const Color _ivory = Color(0xFFE2D4BF);
 const Color _gold = Color(0xFFF0E68C);
-const Color _amber = Color(0xFFFFB648);
+const Color _amber = Color(0xFFF2B33D);
 const Color _muted = Color(0xFF83817A);
 const Color _owned = Color(0xFF3FA66B);
 const Color _panelBg = Color(0xFF0E0E0D);
@@ -481,13 +481,7 @@ class _CoverPlaceholder extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return DecoratedBox(
-      decoration: const BoxDecoration(
-        gradient: LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: [Color(0xFFFF6B4A), Color(0xFFFFB648)],
-        ),
-      ),
+      decoration: const BoxDecoration(color: Color(0xFFE2703A)),
       child: Center(
         child: Icon(icon, color: Colors.white.withOpacity(0.92), size: 24),
       ),

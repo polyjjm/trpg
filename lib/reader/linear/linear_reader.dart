@@ -17,7 +17,7 @@ import '../shared/scene_frame.dart';
 
 const Color _ivory = Color(0xFFE2D4BF);
 const Color _gold = Color(0xFFF0E68C);
-const Color _coral = Color(0xFFFF6B4A);
+const Color _coral = Color(0xFFE2703A);
 
 /// 두 쪽 펼침을 시도하는 최소 폭 — SceneFrame의 데스크톱 기준과 같은 값이다.
 const double _spreadBreakpoint = 1100;

@@ -699,7 +699,7 @@ class _LikeDisplay extends StatelessWidget {
             Icon(
               liked ? Icons.favorite_rounded : Icons.favorite_border_rounded,
               size: 14,
-              color: liked ? const Color(0xFFFF6B4A) : _ivory.withOpacity(0.5),
+              color: liked ? const Color(0xFFE2703A) : _ivory.withOpacity(0.5),
             ),
             const SizedBox(width: 4),
             Text(

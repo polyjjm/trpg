@@ -284,7 +284,7 @@ class _CounterPill extends StatelessWidget {
 /// 텍스트 오버레이(스크림 그라디언트 + 아이브로우/타이틀/서브텍스트)를
 /// 켜는 기준값 — [HomeBanner.hasTextOverlay]와 정확히 같은 규칙을 여기서도
 /// 다시 쓴다(title이 없으면 오버레이 자체를 그리지 않는다).
-const Color _eyebrowColor = Color(0xFFFFB648);
+const Color _eyebrowColor = Color(0xFFF2B33D);
 
 class _BannerImage extends StatelessWidget {
   final HomeBanner banner;

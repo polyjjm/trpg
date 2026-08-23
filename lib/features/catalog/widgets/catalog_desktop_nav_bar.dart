@@ -9,8 +9,8 @@ import '../../wallet/pages/charge_page.dart';
 import 'home_desktop_layout.dart';
 
 const Color _ivory = Color(0xFFE2D4BF);
-const Color _coral = Color(0xFFFF6B4A);
-const Color _amber = Color(0xFFFFB35C);
+const Color _coral = Color(0xFFE2703A);
+const Color _amber = Color(0xFFF2B33D);
 
 /// 데스크톱 폭에서 하단 탭바(_CatalogBottomNav) 대신 화면 맨 위에 놓는
 /// 가로 내비게이션 바.
@@ -85,10 +85,11 @@ class CatalogDesktopNavBar extends StatelessWidget {
               padding: EdgeInsets.symmetric(horizontal: 4, vertical: 6),
               child: Row(
                 mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.center,
                 children: [
-                  ForkingPathLogoMark(size: 26),
-                  SizedBox(width: 9),
-                  TeloWordmark(fontSize: 22),
+                  ForkingPathLogoMark(size: 40),
+                  SizedBox(width: 12),
+                  TeloWordmark(fontSize: 24),
                 ],
               ),
             ),
