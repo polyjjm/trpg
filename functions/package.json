@@ -4,7 +4,7 @@
   "engines": {
     "node": "20"
   },
-  "main": "lib/secure_entrypoint.js",
+  "main": "lib/secure_entrypoint_v2.js",
   "scripts": {
     "build": "tsc",
     "build:watch": "tsc --watch",
