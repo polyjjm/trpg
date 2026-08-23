@@ -537,34 +537,29 @@ service cloud.firestore {
       allow delete: if isAdmin();
 
       match /nodes/{nodeId} {
-        // 읽기 — 작가 본인/admin은 무엇이든(초안 포함) 읽는다. 노드 편집기와
-        // 승인 화면이 top-level draft 필드를 그대로 봐야 하기 때문이다.
+        // 읽기 — **작가 본인과 admin만.** 독자는 이 컬렉션을 아예 못 읽는다.
         //
-        // 그 외 로그인 사용자(= 독자)는 **status == 'published'인 문서만**
-        // 읽을 수 있다. 이 조건이 리더 쪽 StoryReaderRepository.
-        // fetchPublishedNodes()의 쿼리(`.where('status','==','published')`)와
-        // 정확히 일치하기 때문에 그 쿼리는 그대로 통과한다 — Firestore는
-        // 규칙을 필터로 쓰지 않고(rules are not filters) "쿼리 제약만으로
-        // 규칙이 만족됨이 증명되는가"를 보므로, 쿼리가 제약하지 않는 필드를
-        // 규칙이 참조하면 쿼리 전체가 거부된다. 여기서는 status를 점(.)
-        // 표기로 직접 읽는 게 의도적이다 — get('status', ...)로 감싸면 그
-        // 증명이 성립하지 않을 수 있다. status는 AdminStoryNode.
-        // toFirestoreJson()이 항상 써 넣으므로 누락될 일이 없고, 만에 하나
-        // 없는 문서가 있어도 결과는 "거부"라 안전한 쪽으로 실패한다.
+        // PR #6부터 독자는 노드 문서를 직접 읽지 않는다. 본문은
+        // `fetchReaderStoryNodes` Cloud Function이 무료/구매/미리보기 권한을
+        // 서버에서 다시 판정한 뒤 승인본(liveSnapshot)만 골라서 돌려준다.
+        // 그래서 여기 독자 갈래를 없앨 수 있었다.
         //
-        // ⚠️ 이 조건이 막는 것과 못 막는 것을 정확히 알아둘 것:
-        //  - 막는다: 한 번도 발행된 적 없는 순수 초안(status == 'draft')이
-        //    독자에게 새는 것.
-        //  - 못 막는다(구조적 한계): 이미 발행된 노드를 작가가 수정 중일 때의
-        //    **미승인 초안**. saveNode()가 문서 전체를 set하므로 그 초안은
-        //    같은 문서의 top-level 필드에 들어가는데 status는 'published'로
-        //    남는다. Firestore 규칙은 문서 단위 전부-아니면-전무라 필드 단위
-        //    투영이 불가능하다 — 이걸 진짜로 막으려면 draft와 live를 서로 다른
-        //    문서로 쪼개야 한다(스키마 변경, 별도 작업).
-        //  - 못 막는다(별도 경로): 유료 팩의 **발행된** 본문. 아래
-        //    {path=**}/nodes 재귀 규칙 주석 참고 — 그쪽이 진짜 구멍이다.
-        allow read: if isPackOwnedBy(packId) || isAdmin()
-          || (isSignedIn() && resource.data.status == 'published');
+        // 예전엔 `isSignedIn() && resource.data.status == 'published'` 갈래가
+        // 있었다. 그건 순수 초안 유출은 막았지만 **유료 팩의 발행된 본문**은
+        // 로그인한 누구나 SDK로 직접 긁어갈 수 있었다 — 정상 앱이 안전한
+        // 서버 경로를 쓰더라도 악의적인 클라이언트에는 아무 소용이 없었다.
+        // (doc/paid_node_rules_hardening.md)
+        //
+        // 잠그기 전에 확인한 것: `lib/` 전체에서 nodes를 읽는 코드는
+        // AdminStoryRepository 두 곳뿐이고 둘 다 author/admin 화면이다.
+        // 리더/카탈로그(lib/reader, lib/features)에는 남은 직접 읽기가 없다 —
+        // 홈의 발행 노드 개수도 collectionGroup 스캔에서
+        // storyPacks.publishedNodeCount 서버 집계로 바뀌었다.
+        //
+        // ⚠️ 배포 순서: 이 잠금은 반드시 **새 리더 클라이언트 배포 뒤**에
+        // 나가야 한다. 먼저 나가면 구 클라이언트를 쓰는 모든 독자가 읽기
+        // 자체를 못 한다(doc/pr_6_7_integration_plan.md의 배포 순서 참고).
+        allow read: if isPackOwnedBy(packId) || isAdmin();
 
         // 작가 자신의 저장(임시저장/승인요청 제출, saveNode) — status/liveSnapshot은
         // 절대 못 건드린다. 이 두 필드는 오직 admin의 승인/반려에서만 바뀐다.
@@ -719,38 +714,30 @@ service cloud.firestore {
     // 읽기 전용이다 — 쓰기(saveNode/approveNode/rejectNode/deleteNodeDoc)는
     // 전부 직접 문서 참조로만 이뤄지므로 위 중첩 match의 쓰기 규칙만으로 충분하다.
     //
-    // 두 갈래로 나뉜다:
-    //  - admin: 무엇이든. watchPendingNodes()의 `.where('pendingAction', ...)`
-    //    쿼리는 status를 제약하지 않으므로 이 갈래가 없으면 승인 대기함이
-    //    통째로 깨진다. isAuthorOrAdmin()이 아니라 isAdmin()인 게 의도적이다 —
-    //    이 쿼리를 쓰는 화면(AdminDashboardPage)이 admin 전용이고, author까지
-    //    열어주면 남의 팩 초안을 collectionGroup으로 훑을 수 있게 된다.
-    //  - 그 외 로그인 사용자: status == 'published'인 문서만. 위 중첩 match의
-    //    독자 갈래와 같은 조건이고, 리더 쪽 StoryPackRepository.
-    //    _fetchPublishedNodeCounts()의 `.where('status','==','published')`
-    //    쿼리와 정확히 일치해 그대로 통과한다.
+    // **admin만.** isAuthorOrAdmin()이 아니라 isAdmin()인 게 의도적이다 — 이
+    // 규칙이 실제로 필요한 쿼리는 watchPendingNodes()
+    // (`.where('pendingAction', ...)`) 하나뿐이고, 그건 admin 전용 화면
+    // (AdminDashboardPage)에서만 열린다. author까지 열어주면 남의 팩 초안을
+    // collectionGroup으로 가로질러 훑을 수 있게 된다.
     //
-    // ⚠️ 알려진 미해결 구멍 — 유료 팩 본문이 여기로 샌다.
-    // _fetchPublishedNodeCounts()는 홈 화면에서 **모든 팩**의 발행 노드를
-    // collectionGroup으로 긁어 와서 팩별 개수를 센다(publishedNodeCount가
-    // storyPacks 문서에 비정규화돼 있지 않아서다). 그래서 이 규칙은 구매
-    // 여부와 무관하게 모든 독자에게 열려 있어야 하고, 결과적으로 **구매하지
-    // 않은 유료 팩의 발행 본문도 SDK로 직접 읽을 수 있다**.
+    // ✅ 예전에 여기 있던 유료 콘텐츠 구멍은 닫혔다.
+    // 예전엔 `isSignedIn() && resource.data.status == 'published'` 갈래가
+    // 있어서 **구매하지 않은 유료 팩의 발행 본문을 로그인한 누구나 SDK로 직접
+    // 읽을 수 있었다**. 그 갈래를 뺄 수 없었던 유일한 이유는 홈 화면의
+    // `StoryPackRepository._fetchPublishedNodeCounts()`가 모든 팩의 발행 노드를
+    // collectionGroup으로 긁어 개수를 셌기 때문이다 — 그리고 {path=**}는 상위
+    // 경로를 캡처하지 못해 packId를 모르므로 isPackFree/readerOwnsPack으로
+    // 좁히는 것도 불가능했다.
     //
-    // 여기서 isPackFree(packId)/readerOwnsPack(packId)로 좁히는 건 애초에
-    // 불가능하다 — {path=**}는 상위 경로를 캡처하지 못해서 packId를 알 수 없다.
+    // PR #6이 그 스캔을 없앴다: `maintainPublishedNodeCount` 트리거가
+    // storyPacks.publishedNodeCount를 서버에서 유지하고 클라이언트는 그 필드만
+    // 읽는다. 유일한 걸림돌이 사라져서 이제 admin 전용으로 좁힐 수 있다.
+    // (codebase_audit.md #2의 "닫는 법" 1~3단계가 실제로 수행된 결과다.)
     //
-    // 닫으려면 클라이언트 변경이 필요하다(별도 작업):
-    //   1. 노드 쓰기에 반응하는 Cloud Function 트리거로
-    //      storyPacks/{packId}.publishedNodeCount를 유지 + 기존 팩 백필,
-    //   2. _fetchPublishedNodeCounts()를 없애고 그 필드를 읽게 바꾸고,
-    //   3. 그러고 나면 이 규칙을 `allow read: if isAdmin();`으로 좁힐 수 있다,
-    //   4. 미리보기는 노드에 previewEligible 플래그를 승인 시점에 찍고
-    //      리더가 2단계로(미리보기분 → 구매 후 전체) 나눠 읽게 한다.
-    // 자세한 내용은 doc/codebase_audit.md 참고.
+    // ⚠️ 배포 순서: 위 중첩 match와 마찬가지로 **새 리더 클라이언트 배포 뒤**에
+    // 나가야 한다. 먼저 나가면 구 클라이언트의 홈 탭이 통째로 빈다.
     match /{path=**}/nodes/{nodeId} {
-      allow read: if isAdmin()
-        || (isSignedIn() && resource.data.status == 'published');
+      allow read: if isAdmin();
     }
 
     // =========================================================================

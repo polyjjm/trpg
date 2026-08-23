@@ -71,12 +71,17 @@ class StoryPack {
   final double? avgRating;
   final int reviewCount;
 
-  /// 발행된(status == 'published') 노드 총 개수. StoryPackRepository가 이미
-  /// "발행된 노드가 있는 팩"을 가리려고 훑는 collectionGroup('nodes') 조회
-  /// 결과를 그대로 세어 채운다(추가 조회 없음) — 내 서재 탭의 진행률 바가
+  /// 발행된(status == 'published') 노드 총 개수 — storyPacks 문서의
+  /// `publishedNodeCount` 필드를 그대로 읽는다. 내 서재 탭의 진행률 바가
   /// visitedNodeCount / publishedNodeCount로 실제 분량 대비 진행도를
-  /// 보여주는 데 쓴다. 0이면(이론상 있을 수 없지만) 진행률 바 대신 배지만
-  /// 보여주도록 호출부가 방어한다.
+  /// 보여주는 데 쓴다. 0이면 진행률 바 대신 배지만 보여주도록 호출부가
+  /// 방어한다.
+  ///
+  /// 예전엔 리더가 `collectionGroup('nodes')`로 모든 팩의 발행 노드를 훑어
+  /// 직접 셌는데, 그 쿼리 하나 때문에 노드 읽기 규칙을 전 독자에게 열어 둘
+  /// 수밖에 없었다(유료 본문 유출 경로). 지금은 `maintainPublishedNodeCount`
+  /// Cloud Function이 서버에서 집계해 두고 클라이언트는 그 값만 읽는다 —
+  /// 그래서 노드 읽기 규칙을 author/admin으로 잠글 수 있게 됐다.
   final int publishedNodeCount;
 
   const StoryPack({

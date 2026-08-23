@@ -39,5 +39,18 @@
 // 고쳐야 한다.
 // =============================================================================
 
+// 층 1+2 — index.ts의 15개 함수, 그중 TTS 3개는 secure_entrypoint의 보안
+// 래퍼로 교체된 상태. (+ migrateLegacyTtsTokens{Now,Scheduled})
 export * from "./secure_entrypoint";
+
+// 층 3 (#4) — 독자용 미디어 게이트.
 export {resolveStoryMedia} from "./secure_story_media";
+
+// 층 4 (#6) — 독자용 본문 게이트 + publishedNodeCount 서버 집계.
+// PR #6이 따로 만들었던 secure_reader_entrypoint.ts는 지웠다 — 그 파일은
+// `export * from "./index"`로 시작해서 위 [규칙 1]을 정면으로 위반했다.
+export {
+  fetchReaderStoryNodes,
+  maintainPublishedNodeCount,
+  backfillPublishedNodeCounts,
+} from "./secure_reader_nodes";

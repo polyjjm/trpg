@@ -101,11 +101,19 @@ List<ResolvedStoryNode> resolveNodesWithMedia({
   ];
 }
 
-/// storyPacks/{packId}/nodes에서 리더가 실제로 보여줄 콘텐츠를 읽어온다.
-/// 노드 본문은 liveSnapshot만 읽고, 이미지/SFX/BGM 실제 파일 URL은 Firestore
-/// 라이브러리 문서를 직접 읽지 않는다. resolveStoryMedia Cloud Function이
-/// 구매/무료/미리보기 권한과 실제 liveSnapshot 참조 여부를 서버에서 다시
-/// 검증한 뒤 pack 전용 private Storage 복사본의 짧은 signed URL만 반환한다.
+/// 리더가 실제로 보여줄 콘텐츠를 가져온다. **Firestore를 직접 읽는 경로가
+/// 하나도 없다** — 본문과 미디어가 각각 별도의 서버 게이트를 지난다.
+///
+/// - **본문**: `fetchReaderStoryNodes` Cloud Function(PR #6). 서버가 무료/구매/
+///   미리보기 권한을 다시 판정하고 승인본(`liveSnapshot`)만 반환한다. 그래서
+///   유료 팩 본문도, 작가가 수정 중인 미승인 top-level draft도 클라이언트의
+///   직접 쿼리로는 도달할 수 없다.
+/// - **미디어 URL**: `resolveStoryMedia` Cloud Function(PR #4). 팩 전용 private
+///   Storage 복사본의 5분짜리 signed URL만 돌려준다. 만료 관리(선제 갱신 +
+///   실패 시 갱신)는 [StoryMediaSession]이 맡는다.
+///
+/// 두 게이트는 서로 독립이다 — 본문 권한과 미디어 권한을 각자 다시 판정하므로
+/// 한쪽을 우회해도 다른 쪽이 열리지 않는다.
 class StoryReaderRepository {
   StoryReaderRepository({
     FirebaseFirestore? firestore,
@@ -116,32 +124,35 @@ class StoryReaderRepository {
   final FirebaseFirestore _firestore;
   final FirebaseFunctions _functions;
 
-  CollectionReference<Map<String, dynamic>> _nodes(String packId) =>
-      _firestore.collection('storyPacks').doc(packId).collection('nodes');
-
-  /// 팩을 열 때 한 번 호출한다 — 노드를 읽고 미디어 URL을 한 번 받아
-  /// [StoryMediaSession]을 만들어 돌려준다. 이후 URL 만료 관리(선제 갱신 +
-  /// 실패 시 갱신)는 그 세션이 맡는다.
+  /// 팩을 열 때 한 번 호출한다 — 본문을 서버에서 받고 미디어 URL을 한 번 받아
+  /// [StoryMediaSession]을 만들어 돌려준다. 이후 URL 만료 관리는 그 세션이
+  /// 맡는다.
   Future<StoryMediaSession> openReadingSession(
     String packId, {
     String? packDefaultBackgroundImageId,
     String? packDefaultBgmId,
   }) async {
-    debugPrint('openReadingSession($packId): nodes 쿼리 시작');
-    final snapshot = await _nodes(
-      packId,
-    ).where('status', isEqualTo: 'published').get();
-    debugPrint(
-      'openReadingSession($packId): nodes 쿼리 성공 (${snapshot.docs.length}건)',
-    );
+    debugPrint('openReadingSession($packId): 본문 서버 인가 조회 시작');
+    final response = await _functions
+        .httpsCallable('fetchReaderStoryNodes')
+        .call({'packId': packId});
+    final data = Map<String, dynamic>.from(response.data as Map);
+    final rawNodes = data['nodes'] as List<dynamic>? ?? const [];
 
     final nodes = <StoryNode>[];
-    for (final doc in snapshot.docs) {
-      final liveSnapshot = doc.data()['liveSnapshot'] as Map<String, dynamic>?;
-      if (liveSnapshot == null) continue;
-      nodes.add(StoryNode.fromFirestore(doc.id, liveSnapshot));
+    for (final raw in rawNodes) {
+      final map = Map<String, dynamic>.from(raw as Map);
+      // 서버가 liveSnapshot을 펼치면서 id를 같이 넣어 준다 — 본문 필드와
+      // 섞이지 않게 여기서 다시 뽑아낸다.
+      final id = map.remove('id') as String?;
+      if (id == null || id.isEmpty) continue;
+      nodes.add(StoryNode.fromFirestore(id, map));
     }
     nodes.sort((a, b) => a.order.compareTo(b.order));
+    debugPrint(
+      'openReadingSession($packId): 본문 조회 성공 '
+      '(${nodes.length}건, access=${data['access']})',
+    );
 
     final ids = collectMediaIds(
       nodes: nodes,
@@ -218,7 +229,9 @@ class StoryReaderRepository {
     );
   }
 
-  /// 리딩 세션이 시작될 때 정확히 한 번 호출한다.
+  /// 리딩 세션이 시작될 때 정확히 한 번 호출한다. 노드 본문과 달리 이건
+  /// 여전히 Firestore 직접 쓰기다 — firestore.rules가 viewCount 한 필드만,
+  /// 정확히 +1로만 바뀌는 update를 허용한다.
   Future<void> incrementViewCount(String packId) async {
     final payload = {'viewCount': FieldValue.increment(1)};
     debugPrint('incrementViewCount($packId) payload: $payload');
