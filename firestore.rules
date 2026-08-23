@@ -766,20 +766,13 @@ service cloud.firestore {
     // images/{imageId} — 색인 문서. 실제 파일은 Storage(콘솔 관리 규칙)에 있다.
     // 업로더를 추적하는 필드가 아직 없어 모든 author/admin이 공유하는
     // 라이브러리다 — uploaderId가 생기면 그때 좁힐 수 있다.
-    //
-    // ⚠️ 코드와 이 파일이 어긋난다(문서화 패스라 고치지 않고 남김):
-    // AdminImageRepository.updateCategory()가 `.update({'category': ...})`를
-    // 호출하는데(ImageLibraryTab의 "카테고리 변경" 액션) 이 match에는
-    // create/delete만 있고 update가 없다. 바로 아래 sfxLibrary도 완전히 같은
-    // 상태다(AdminSfxRepository.updateCategory). 둘 중 하나가 사실이다:
-    //   (a) 실제 배포된 규칙에는 update가 있다 — 이 파일이 배포본과 어긋난
-    //       또 하나의 예(파일 맨 위 배포 드리프트 주의 참고), 또는
-    //   (b) 두 라이브러리의 "카테고리 변경"이 프로덕션에서 permission-denied로
-    //       실패하고 있다.
-    // 콘솔에서 배포본을 확인해서 판정할 것. doc/codebase_audit.md 참고.
+    // 카테고리 변경은 author/admin에게 허용하되, 이 액션으로 URL/이름 등
+    // 다른 필드를 건드릴 수 없도록 category 한 필드만 화이트리스트로 연다.
     match /images/{imageId} {
       allow read: if isSignedIn();
       allow create, delete: if isAuthorOrAdmin();
+      allow update: if isAuthorOrAdmin()
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['category']);
     }
 
     // sfxLibrary/{sfxId} — images와 같은 패턴의 색인 문서(실제 파일은 Storage
@@ -787,9 +780,12 @@ service cloud.firestore {
     // 기본값(거부)으로 막혀 있었다 — 리더가 노드를 열 때 StoryReaderRepository.
     // fetchPublishedNodes()가 sfxLibrary를 조인 조회하면서 로그인 여부와 무관하게
     // 매번 permission-denied가 났다(실제로 겪은 버그).
+    // 카테고리 변경은 images와 동일하게 category 필드 하나만 허용한다.
     match /sfxLibrary/{sfxId} {
       allow read: if isSignedIn();
       allow create, delete: if isAuthorOrAdmin();
+      allow update: if isAuthorOrAdmin()
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['category']);
     }
 
     // bgmLibrary/{bgmId} — sfxLibrary와 같은 패턴의 색인 문서(실제 파일은
