@@ -7,10 +7,12 @@ import '../../core/constants/external_links.dart';
 import '../../core/platform/open_external_link.dart';
 import '../../core/user/user_profile.dart';
 import '../../core/user/user_profile_repository.dart';
+import '../data/activity_log_repository.dart';
 import '../data/admin_story_repository.dart';
 import '../data/author_application_repository.dart';
 import '../data/genre_repository.dart';
 import '../data/home_banner_repository.dart';
+import '../models/activity_event.dart';
 import '../models/admin_story_pack.dart';
 import '../models/author_application.dart';
 import '../models/pending_node_ref.dart';
@@ -31,6 +33,11 @@ import '../data/home_event_repository.dart';
 import 'home_event_management_section.dart';
 import 'billing_dashboard_section.dart';
 import '../data/billing_repository.dart';
+import 'overview/admin_card_grid.dart';
+import 'overview/author_application_preview.dart';
+import 'overview/pending_queue_preview.dart';
+import 'overview/recent_activity_card.dart';
+import 'overview/revenue_cards_row.dart';
 import 'pack_approvals_tab.dart';
 import 'pack_bundle_management_section.dart';
 import '../data/pack_bundle_repository.dart';
@@ -199,6 +206,7 @@ class _AdminDashboardShellState extends State<_AdminDashboardShell> {
   final AdminBillingRepository _billingRepository = AdminBillingRepository();
   final AdminGlobalNoticeRepository _globalNoticeRepository = AdminGlobalNoticeRepository();
   final AdminImageRepository _imageRepository = AdminImageRepository();
+  final ActivityLogRepository _activityLogRepository = ActivityLogRepository();
 
   _AdminSection _activeSection = _AdminSection.overview;
 
@@ -226,8 +234,13 @@ class _AdminDashboardShellState extends State<_AdminDashboardShell> {
   late final Stream<List<UserProfile>> _overviewAuthorsStream =
       _userProfileRepository.watchAuthors();
 
+  // 개요의 "최근 활동" 카드 전용 — 다른 화면은 이 스트림을 쓰지 않는다.
+  late final Stream<List<ActivityEvent>> _overviewActivityStream =
+      _activityLogRepository.watchRecent(limit: 6);
+
   // ApprovalsTab에 넘길 packTitles를 만들기 위한, 위 개요 카드용과도 별개인
-  // 팩 목록 구독.
+  // 팩 목록 구독. 개요의 대기함 미리보기도 작품 제목/작가 이름을 여기서
+  // 가져온다(구독을 또 만들지 않는다).
   late final Stream<List<AdminStoryPack>> _packTitlesStream = _storyRepository
       .watchPacks();
 
@@ -282,11 +295,26 @@ class _AdminDashboardShellState extends State<_AdminDashboardShell> {
   Widget _buildContent() {
     switch (_activeSection) {
       case _AdminSection.overview:
-        return _OverviewSection(
-          pendingNodesStream: _overviewPendingNodesStream,
-          pendingApplicationsStream: _overviewPendingApplicationsStream,
-          authorsStream: _overviewAuthorsStream,
-          packsStream: _overviewPacksStream,
+        return StreamBuilder<List<AdminStoryPack>>(
+          stream: _packTitlesStream,
+          builder: (context, snapshot) {
+            final packs = snapshot.data ?? const <AdminStoryPack>[];
+            return _OverviewSection(
+              queueStream: _overviewPendingNodesStream,
+              pendingApplicationsStream: _overviewPendingApplicationsStream,
+              authorsStream: _overviewAuthorsStream,
+              packsStream: _overviewPacksStream,
+              activityStream: _overviewActivityStream,
+              billingRepository: _billingRepository,
+              applicationRepository: _authorApplicationRepository,
+              activityLogRepository: _activityLogRepository,
+              reviewerUid: widget.authService.userId ?? '',
+              packTitles: {for (final p in packs) p.id: p.title},
+              packAuthors: {for (final p in packs) p.id: p.authorName},
+              onNavigate: (section) =>
+                  setState(() => _activeSection = section),
+            );
+          },
         );
       case _AdminSection.approvals:
         return StreamBuilder<List<AdminStoryPack>>(
@@ -670,23 +698,47 @@ class _SidebarItem extends StatelessWidget {
   }
 }
 
+/// 개요 — 드릴다운 전에 "지금 뭐가 밀려 있나"를 한 화면에서 판단하게 하는
+/// 것이 목적이다. 그래서 숫자 카드(양) → 매출 카드(돈) → 대기함(무엇이
+/// 얼마나 오래) → 작가 신청(바로 처리 가능) → 최근 활동(방금 무슨 일이
+/// 있었나) 순으로 위계를 잡았다.
+///
+/// 승인/반려 중 개요에서 직접 처리하는 건 작가 신청뿐이다 — 이유는
+/// overview/author_application_preview.dart와
+/// overview/pending_queue_preview.dart의 클래스 doc 참고.
 class _OverviewSection extends StatelessWidget {
-  final Stream<List<PendingNodeRef>> pendingNodesStream;
+  final Stream<List<PendingNodeRef>> queueStream;
   final Stream<List<AuthorApplication>> pendingApplicationsStream;
   final Stream<List<UserProfile>> authorsStream;
   final Stream<List<AdminStoryPack>> packsStream;
+  final Stream<List<ActivityEvent>> activityStream;
+  final AdminBillingRepository billingRepository;
+  final AuthorApplicationRepository applicationRepository;
+  final ActivityLogRepository activityLogRepository;
+  final String reviewerUid;
+  final Map<String, String> packTitles;
+  final Map<String, String> packAuthors;
+  final ValueChanged<_AdminSection> onNavigate;
 
   const _OverviewSection({
-    required this.pendingNodesStream,
+    required this.queueStream,
     required this.pendingApplicationsStream,
     required this.authorsStream,
     required this.packsStream,
+    required this.activityStream,
+    required this.billingRepository,
+    required this.applicationRepository,
+    required this.activityLogRepository,
+    required this.reviewerUid,
+    required this.packTitles,
+    required this.packAuthors,
+    required this.onNavigate,
   });
 
   @override
   Widget build(BuildContext context) {
     return SingleChildScrollView(
-      padding: const EdgeInsets.all(24),
+      padding: const EdgeInsets.fromLTRB(28, 24, 28, 48),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -703,47 +755,107 @@ class _OverviewSection extends StatelessWidget {
             '드릴다운하기 전에 한눈에 보는 현재 상태예요.',
             style: TextStyle(fontSize: 12, color: AdminColors.muted),
           ),
-          const SizedBox(height: 16),
-          Wrap(
-            spacing: 12,
-            runSpacing: 12,
-            children: [
-              SizedBox(
-                width: 180,
-                child: StreamBuilder<List<PendingNodeRef>>(
-                  stream: pendingNodesStream,
-                  builder: (context, snapshot) =>
-                      MetricCard(label: '승인 대기', count: snapshot.data?.length),
-                ),
-              ),
-              SizedBox(
-                width: 180,
-                child: StreamBuilder<List<AuthorApplication>>(
-                  stream: pendingApplicationsStream,
-                  builder: (context, snapshot) =>
-                      MetricCard(label: '작가 신청', count: snapshot.data?.length),
-                ),
-              ),
-              SizedBox(
-                width: 180,
-                child: StreamBuilder<List<UserProfile>>(
-                  stream: authorsStream,
-                  builder: (context, snapshot) =>
-                      MetricCard(label: '전체 작가', count: snapshot.data?.length),
-                ),
-              ),
-              SizedBox(
-                width: 180,
-                child: StreamBuilder<List<AdminStoryPack>>(
-                  stream: packsStream,
-                  builder: (context, snapshot) =>
-                      MetricCard(label: '전체 작품', count: snapshot.data?.length),
-                ),
-              ),
-            ],
+          const SizedBox(height: 20),
+
+          _CountCards(
+            queueStream: queueStream,
+            pendingApplicationsStream: pendingApplicationsStream,
+            authorsStream: authorsStream,
+            packsStream: packsStream,
+          ),
+          const SizedBox(height: 12),
+
+          RevenueCardsRow(billingRepository: billingRepository),
+          const SizedBox(height: 24),
+
+          // 넓을 때는 좌 1.7 : 우 1, 좁을 때는 위아래로 쌓는다 — 사이드바가
+          // 240을 고정으로 먹기 때문에 1100 미만에서는 2열이 둘 다 좁아진다.
+          LayoutBuilder(
+            builder: (context, constraints) {
+              final queue = PendingQueuePreview(
+                pendingNodesStream: queueStream,
+                packTitles: packTitles,
+                packAuthors: packAuthors,
+                onSeeAll: () => onNavigate(_AdminSection.approvals),
+              );
+              final side = Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  AuthorApplicationPreview(
+                    repository: applicationRepository,
+                    pendingStream: pendingApplicationsStream,
+                    activityLog: activityLogRepository,
+                    reviewerUid: reviewerUid,
+                    onSeeAll: () =>
+                        onNavigate(_AdminSection.authorApplications),
+                  ),
+                  const SizedBox(height: 20),
+                  RecentActivityCard(activityStream: activityStream),
+                ],
+              );
+
+              if (constraints.maxWidth < 1100) {
+                return Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [queue, const SizedBox(height: 20), side],
+                );
+              }
+              return Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Expanded(flex: 17, child: queue),
+                  const SizedBox(width: 20),
+                  Expanded(flex: 10, child: side),
+                ],
+              );
+            },
           ),
         ],
       ),
+    );
+  }
+}
+
+/// 숫자 카드 4장 — 카드마다 스트림이 달라서 StreamBuilder를 카드 단위로
+/// 감싼다(하나가 늦게 와도 나머지는 먼저 숫자를 보여준다).
+class _CountCards extends StatelessWidget {
+  final Stream<List<PendingNodeRef>> queueStream;
+  final Stream<List<AuthorApplication>> pendingApplicationsStream;
+  final Stream<List<UserProfile>> authorsStream;
+  final Stream<List<AdminStoryPack>> packsStream;
+
+  const _CountCards({
+    required this.queueStream,
+    required this.pendingApplicationsStream,
+    required this.authorsStream,
+    required this.packsStream,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return AdminCardGrid(
+      children: [
+        StreamBuilder<List<PendingNodeRef>>(
+          stream: queueStream,
+          builder: (context, snapshot) =>
+              MetricCard(label: '승인 대기', count: snapshot.data?.length),
+        ),
+        StreamBuilder<List<AuthorApplication>>(
+          stream: pendingApplicationsStream,
+          builder: (context, snapshot) =>
+              MetricCard(label: '작가 신청', count: snapshot.data?.length),
+        ),
+        StreamBuilder<List<UserProfile>>(
+          stream: authorsStream,
+          builder: (context, snapshot) =>
+              MetricCard(label: '전체 작가', count: snapshot.data?.length),
+        ),
+        StreamBuilder<List<AdminStoryPack>>(
+          stream: packsStream,
+          builder: (context, snapshot) =>
+              MetricCard(label: '전체 작품', count: snapshot.data?.length),
+        ),
+      ],
     );
   }
 }

@@ -370,12 +370,29 @@ class AdminStoryRepository {
     await batch.commit();
   }
 
+  /// 승인 요청 직후 요청 시각을 서버 시계로 찍는다 — saveNode()/
+  /// saveNodesBatch() 다음에 제출한 노드마다 부른다.
+  ///
+  /// 클라이언트 시계를 믿지 않으려고 모델 값이 아니라 serverTimestamp로 쓴다.
+  /// 그 다음 스냅샷에서 AdminStoryNode.approvalRequestedAt이 이 값을 읽어
+  /// 보존하므로(그 필드의 doc 참고), 이후 임시저장이 값을 지우지 않는다.
+  Future<void> stampApprovalRequestedAt(String packId, String nodeId) async {
+    await _nodes(packId).doc(nodeId).update({
+      'approvalRequestedAt': FieldValue.serverTimestamp(),
+    });
+  }
+
   /// 한 번도 발행된 적 없는 순수 초안을 즉시 삭제한다(승인 절차 불필요).
   Future<void> deleteNodeDoc(String packId, String nodeId) async {
     await _nodes(packId).doc(nodeId).delete();
   }
 
   /// 모든 스토리팩을 통틀어 승인 대기 중인 노드를 감시한다.
+  ///
+  /// 관리자 개요의 대기함 미리보기가 "얼마나 오래 기다렸나"로 정렬하므로,
+  /// 문서의 approvalRequestedAt을 [PendingNodeRef]에 같이 담아 넘긴다 —
+  /// 정렬/표시는 화면 쪽에서 한다(대기 건수가 수백 건대가 되기 전까지는
+  /// 서버 정렬 + 복합 색인을 붙일 이유가 없다).
   Stream<List<PendingNodeRef>> watchPendingNodes() {
     return _firestore
         .collectionGroup('nodes')
@@ -384,9 +401,11 @@ class AdminStoryRepository {
         .map(
           (snapshot) => snapshot.docs.map((doc) {
             final packId = doc.reference.parent.parent!.id;
+            final data = doc.data();
             return PendingNodeRef(
               packId: packId,
-              node: AdminStoryNode.fromFirestore(doc.id, doc.data()),
+              node: AdminStoryNode.fromFirestore(doc.id, data),
+              requestedAt: PendingNodeRef.requestedAtFrom(data),
             );
           }).toList(),
         );
@@ -397,6 +416,10 @@ class AdminStoryRepository {
   /// 같이 지운다 — 방어적 처리다(정상 흐름에서는 재제출 시점에 이미
   /// requestApprovalForNode가 지우지만, 혹시 그 경로를 안 거치고 옛 반려
   /// 사유가 남은 채로 승인되는 경우에도 승인된 버전에는 안 남아야 한다).
+  ///
+  /// approvalRequestedAt은 일부러 지우지 않는다 — "마지막으로 언제 요청됐던
+  /// 노드인가"를 나중에 되짚을 수 있어야 하고, pendingAction이 비면 대기함
+  /// 목록에서 어차피 빠진다.
   Future<void> approveNode(String packId, AdminStoryNode node) async {
     if (node.pendingAction == PendingAction.delete) {
       await deleteNodeDoc(packId, node.id);

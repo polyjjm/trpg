@@ -1,3 +1,5 @@
+import 'package:cloud_firestore/cloud_firestore.dart';
+
 import '../../core/text/paragraph_blocks.dart';
 import '../data/node_diff.dart';
 import 'admin_node_block.dart';
@@ -73,6 +75,19 @@ class AdminStoryNode {
   /// null — 이 값의 null 여부로 "신규 등록"인지 "기존 노드 수정"인지 판단한다.
   Map<String, dynamic>? liveSnapshot;
 
+  /// 승인 요청(등록/수정/삭제)을 보낸 시점 — 관리자 개요의 "대기" 열과
+  /// "가장 오래 기다린 요청" 문구가 이 값만 쓴다.
+  ///
+  /// 서버가 채우는 값이라(AdminStoryRepository.stampApprovalRequestedAt이
+  /// serverTimestamp로 쓴다) 이 모델은 읽어서 그대로 다시 쓰기만 한다 —
+  /// liveSnapshot/ttsAudioUrl과 똑같은 "그냥 보존만 하는 필드"다. 보존이
+  /// 필요한 이유: saveNode()는 `.set()` 전체 덮어쓰기라, 이 필드를 모델에
+  /// 넣지 않으면 작가가 그 뒤에 임시저장을 한 번만 해도 값이 날아간다.
+  ///
+  /// 승인/반려로 pendingAction이 비어도 굳이 지우지 않는다 — 마지막 요청
+  /// 시각으로 남겨두는 편이 나중에 되짚기 쉽다.
+  DateTime? approvalRequestedAt;
+
   /// TTS 캐시 — synthesizeNodeTts Cloud Function만 쓴다(Admin SDK로 규칙을
   /// 우회해서 쓴다). 이 모델은 이 두 필드를 읽어서 그대로 다시 쓰기만 한다
   /// (절대 값을 스스로 계산/변경하지 않는다) — [toFirestoreJson]이 이
@@ -113,6 +128,7 @@ class AdminStoryNode {
     this.pendingAction,
     this.liveSnapshot,
     this.rejectionReason,
+    this.approvalRequestedAt,
     this.ttsAudioUrl,
     this.ttsAudioGeneratedForBodyHash,
     this.ttsPreviewAudioUrl,
@@ -166,6 +182,8 @@ class AdminStoryNode {
       pendingAction: pendingActionFromWire(json['pendingAction'] as String?),
       liveSnapshot: (json['liveSnapshot'] as Map<String, dynamic>?),
       rejectionReason: json['rejectionReason'] as String?,
+      approvalRequestedAt: (json['approvalRequestedAt'] as Timestamp?)
+          ?.toDate(),
       ttsAudioUrl: json['ttsAudioUrl'] as String?,
       ttsAudioGeneratedForBodyHash:
           json['ttsAudioGeneratedForBodyHash'] as String?,
@@ -185,6 +203,9 @@ class AdminStoryNode {
     'pendingAction': pendingAction?.wireValue,
     'liveSnapshot': liveSnapshot,
     'rejectionReason': rejectionReason,
+    'approvalRequestedAt': approvalRequestedAt == null
+        ? null
+        : Timestamp.fromDate(approvalRequestedAt!),
     'ttsAudioUrl': ttsAudioUrl,
     'ttsAudioGeneratedForBodyHash': ttsAudioGeneratedForBodyHash,
     'ttsPreviewAudioUrl': ttsPreviewAudioUrl,

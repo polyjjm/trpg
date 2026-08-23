@@ -561,5 +561,13 @@ service cloud.firestore {
       allow create: if isAdmin() || isPackOwnedBy(request.resource.data.packId);
       allow delete: if isAdmin() || isPackOwnedBy(resource.data.packId);
     }
+
+      // 관리자 개요의 "최근 활동" 타임라인. 기록 주체가 Cloud Functions가
+        // 아니라 admin 클라이언트다. update/delete를 막아 append-only로 둔다.
+        match /activityLog/{eventId} {
+          allow read: if isAdmin();
+          allow create: if isAdmin();
+          allow update, delete: if false;
+        }
   }
 }

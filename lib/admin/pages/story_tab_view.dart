@@ -457,6 +457,10 @@ class _StoryTabViewState extends State<StoryTabView> {
     }
 
     await widget.repository.saveNodesBatch(widget.packId, nodes);
+    for (final node in nodes) {                                                 // ← 추가
+      await widget.repository.stampApprovalRequestedAt(widget.packId, node.id); // ← 추가
+    }
+
     if (!mounted) return;
 
     setState(() => _viewMode = _ViewMode.single);
@@ -528,6 +532,7 @@ class _StoryTabViewState extends State<StoryTabView> {
     node.pendingAction = PendingAction.delete;
     node.dirty = false;
     await widget.repository.saveNode(widget.packId, node);
+    await widget.repository.stampApprovalRequestedAt(widget.packId, node.id);  // ← 추가
     if (!mounted) return;
 
     if (_selectedNodeId == nodeId) {
@@ -600,6 +605,7 @@ class _StoryTabViewState extends State<StoryTabView> {
           node.pendingAction = PendingAction.delete;
           node.dirty = false;
           await widget.repository.saveNode(widget.packId, node);
+          await widget.repository.stampApprovalRequestedAt(widget.packId, node.id);  // ← 추가
           requestedForApproval += 1;
         }
 
@@ -728,6 +734,7 @@ class _StoryTabViewState extends State<StoryTabView> {
     // 제출한 버전에 옛 반려 사유가 그대로 남아 있으면 안 되므로 지운다.
     node.rejectionReason = null;
     await widget.repository.saveNode(widget.packId, node);
+    await widget.repository.stampApprovalRequestedAt(widget.packId, node.id);  // ← 추가
     if (!mounted) return;
     widget.sessionCache.remove(widget.packId, node.id);
   }
