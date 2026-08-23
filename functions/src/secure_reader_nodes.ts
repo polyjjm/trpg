@@ -37,6 +37,16 @@ async function ownsPack(uid: string, packId: string): Promise<boolean> {
   return owned.includes(packId);
 }
 
+async function publishedCountForPack(packId: string): Promise<number> {
+  const published = await db
+    .collection("storyPacks")
+    .doc(packId)
+    .collection("nodes")
+    .where("status", "==", "published")
+    .get();
+  return published.size;
+}
+
 /**
  * 독자에게 노드 본문을 전달하는 유일한 서버 게이트.
  *
@@ -126,14 +136,33 @@ export const maintainPublishedNodeCount = onDocumentWritten(
     const packSnap = await packRef.get();
     if (!packSnap.exists) return;
 
-    const published = await packRef
-      .collection("nodes")
-      .where("status", "==", "published")
-      .get();
-
     await packRef.update({
-      publishedNodeCount: published.size,
+      publishedNodeCount: await publishedCountForPack(packId),
       publishedNodeCountUpdatedAt: FieldValue.serverTimestamp(),
     });
   }
 );
+
+/**
+ * 기존 팩은 maintainPublishedNodeCount 트리거가 생기기 전에 만들어졌으므로
+ * 배포 직후 한 번 백필한다. admin만 수동 호출할 수 있고 이후에는 트리거가
+ * 계속 값을 유지한다.
+ */
+export const backfillPublishedNodeCounts = onCall(async (request) => {
+  const uid = request.auth?.uid;
+  if (!uid) throw new HttpsError("unauthenticated", "로그인이 필요합니다.");
+  if (await callerRole(uid) !== "admin") {
+    throw new HttpsError("permission-denied", "관리자만 실행할 수 있어요.");
+  }
+
+  const packs = await db.collection("storyPacks").get();
+  let updated = 0;
+  for (const pack of packs.docs) {
+    await pack.ref.update({
+      publishedNodeCount: await publishedCountForPack(pack.id),
+      publishedNodeCountUpdatedAt: FieldValue.serverTimestamp(),
+    });
+    updated += 1;
+  }
+  return {success: true, updated};
+});
