@@ -236,6 +236,55 @@ node -e "const m=require('./lib/secure_entrypoint_v2.js');
 
 ---
 
+## 5-1. 구현하면서 계획에서 벗어난 것 (기록)
+
+계획을 쓴 뒤 실제로 머지하면서 추가로 발견해 고친 것들.
+
+1. **`node_docs.ts`의 콜드 스타트 크래시.** 공유 헬퍼를 만들면서 모듈 최상위에
+   `const db = getFirestore()`를 뒀는데, 이 모듈은 `index.ts`가 import하므로
+   index.ts 본문의 `initializeApp()`보다 **먼저** 평가된다 → "The default
+   Firebase app does not exist"로 **모든 함수가 콜드 스타트에서 죽는다.**
+   배포 전 export 검증 스크립트가 실제로 이걸 잡았다. 접근자를 lazy 함수로
+   바꿨다. (다른 모듈들이 최상위에서 불러도 괜찮은 건 전부 index 뒤에 로드되기
+   때문이다 — 이 모듈만 index보다 앞선다.)
+
+2. **`draftNodes.pendingAction` COLLECTION_GROUP 색인 누락.** PR #7이 승인
+   대기함을 `collectionGroup('nodes')` → `collectionGroup('draftNodes')`로
+   옮기면서 대응하는 `fieldOverrides` 항목을 안 넣었다. 그대로 배포하면
+   대기함이 `FAILED_PRECONDITION`으로 죽는다 — `nodes.pendingAction` 때 이미
+   똑같이 겪은 문제다(FIRESTORE_SCHEMA.md 참고). `firestore.indexes.json`에
+   추가했고, 그래서 **배포 순서에 색인 단계가 하나 생겼다.**
+
+3. **PR #7이 지운 doc 주석 89줄 복원.** 동작과 무관한 손실이라 되살렸다.
+
+4. **`approveNode`의 `batch.update(draftRef, ...)`는 그대로 뒀다.** draft 문서가
+   없으면 배치 전체가 실패한다. 백필(3단계)이 admin 클라이언트 배포(6단계)보다
+   앞서므로 정상 순서에서는 일어나지 않는다. `set(merge:true)`로 바꾸면 실패는
+   막지만 **콘텐츠 없는 반쪽짜리 draft 문서**가 조용히 생겨서 편집기가 빈 노드를
+   보여주게 된다 — 시끄럽게 실패하는 쪽이 낫다고 판단했다.
+
+## 5-2. 최종 배포 런북
+
+색인 단계가 추가돼 계획의 6단계가 7단계가 됐다.
+
+| # | 작업 | 명령 | 롤백 |
+|---|---|---|---|
+| 1 | 색인 배포 | `firebase deploy --only firestore:indexes` | 되돌릴 필요 없음(추가만) |
+| 2 | Functions 배포 | `firebase deploy --only functions` | 이전 리비전으로 재배포 |
+| 3 | `backfillPublishedNodeCounts` 실행 (admin) | 앱에서 호출 | 멱등, 재실행 가능 |
+| 4 | `backfillNodeDraftDocuments` 실행 (admin) | 앱에서 호출 | 멱등, 기존 draft 안 덮어씀 |
+| 5 | draftNodes 규칙 배포 | `firebase deploy --only firestore:rules` | 해당 match 제거 후 재배포 |
+| 6 | 웹 클라이언트 배포(리더+admin) | `firebase deploy --only hosting` 등 | 이전 빌드 재배포 |
+| 7 | nodes 잠금 규칙 배포 | `firebase deploy --only firestore:rules` | 독자 갈래 복원 후 재배포 |
+
+5와 7이 둘 다 규칙 배포인 이유: `firestore.rules`는 파일 단위로 배포되므로
+**두 번 나눠 배포하려면 7단계 내용을 5단계 시점에는 잠시 빼 둬야 한다.**
+한 번에 배포하고 싶다면 5+7을 합쳐 6단계 **뒤에** 한 번만 하면 된다 — 그게 더
+단순하고, draftNodes 규칙이 클라이언트보다 늦어도 되는지만 확인하면 된다
+(안 된다: 6단계의 새 admin 클라이언트가 즉시 draftNodes를 읽는다). 그래서
+나눠 배포하거나, 아니면 **5단계에서 전체 규칙을 배포하되 nodes 잠금만 주석
+처리**하고 7단계에서 주석을 푸는 방식을 권한다.
+
 ## 6. 하지 않는 것
 
 - **`images` read 축소**: 이번에도 하지 않는다. 카탈로그 표지 경로
