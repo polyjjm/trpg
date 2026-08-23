@@ -2,7 +2,7 @@ import {onDocumentWritten} from "firebase-functions/v2/firestore";
 import {onSchedule} from "firebase-functions/v2/scheduler";
 import {onCall, HttpsError} from "firebase-functions/v2/https";
 import {defineSecret} from "firebase-functions/params";
-import {FieldValue, getFirestore} from "firebase-admin/firestore";
+import {DocumentReference, FieldValue, getFirestore} from "firebase-admin/firestore";
 import {getStorage} from "firebase-admin/storage";
 
 import * as legacy from "./index";
@@ -101,7 +101,7 @@ async function shortLivedTtsUrl(storagePath: string): Promise<string> {
  * 폐기한다. trigger/콜러블/일회성 마이그레이션이 모두 이 함수를 공유한다.
  */
 async function normalizeNodeTtsRefs(
-  nodeRef: FirebaseFirestore.DocumentReference,
+  nodeRef: DocumentReference,
   data: NodeTtsFields
 ): Promise<number> {
   const updates: Record<string, string> = {};
