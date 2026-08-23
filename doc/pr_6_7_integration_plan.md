@@ -265,25 +265,44 @@ node -e "const m=require('./lib/secure_entrypoint_v2.js');
 
 ## 5-2. 최종 배포 런북
 
-색인 단계가 추가돼 계획의 6단계가 7단계가 됐다.
+계획의 6단계가 7단계가 됐다. 두 가지가 순서를 바꿨다:
+- 색인 단계 추가(위 5-1의 2번).
+- **백필 실행 수단이 admin 웹 앱 안에 있다.** 세 마이그레이션 callable을
+  부르는 Dart 코드가 아예 없어서 "admin으로 실행"할 방법 자체가 없었다.
+  CLI로도 안 된다 — `request.auth`를 채우려면 Firebase Auth **ID 토큰**이
+  필요한데 `gcloud functions call`은 Google OIDC 토큰을 보내서 항상
+  `unauthenticated`로 거부된다. 그래서 admin 대시보드에 **"유지보수" 섹션**을
+  추가했고(`lib/admin/pages/maintenance_section.dart`), 그 결과 **admin 앱
+  배포가 백필보다 앞서야 한다.**
 
-| # | 작업 | 명령 | 롤백 |
+리더 앱과 admin 앱은 진입점이 달라 따로 배포되므로(`lib/main.dart` /
+`lib/main_admin.dart`) 이 순환을 끊을 수 있다 — admin을 먼저 올리고, 백필을
+돌리고, 그다음 리더를 올린다. 그러면 **독자는 깨진 상태를 한 번도 보지 않는다.**
+
+| # | 작업 | 명령 / 경로 | 롤백 |
 |---|---|---|---|
-| 1 | 색인 배포 | `firebase deploy --only firestore:indexes` | 되돌릴 필요 없음(추가만) |
-| 2 | Functions 배포 | `firebase deploy --only functions` | 이전 리비전으로 재배포 |
-| 3 | `backfillPublishedNodeCounts` 실행 (admin) | 앱에서 호출 | 멱등, 재실행 가능 |
-| 4 | `backfillNodeDraftDocuments` 실행 (admin) | 앱에서 호출 | 멱등, 기존 draft 안 덮어씀 |
-| 5 | draftNodes 규칙 배포 | `firebase deploy --only firestore:rules` | 해당 match 제거 후 재배포 |
-| 6 | 웹 클라이언트 배포(리더+admin) | `firebase deploy --only hosting` 등 | 이전 빌드 재배포 |
+| 1 | 색인 배포 | `firebase deploy --only firestore:indexes` | 불필요(추가만) |
+| 2 | Functions 배포 | `firebase deploy --only functions` | 이전 리비전 재배포 |
+| 3 | draftNodes 규칙 배포 (nodes 잠금은 아직 제외) | `firebase deploy --only firestore:rules` | 해당 match 제거 후 재배포 |
+| 4 | **admin 웹 배포** | `flutter build web -t lib/main_admin.dart` → 호스팅 | 이전 빌드 재배포 |
+| 5 | 백필 2건 실행 | 관리자 페이지 → 사이드바 **시스템 › 유지보수** → 1번, 2번 카드의 **실행** | 멱등, 재실행 가능 |
+| 6 | **리더 웹 배포** | `flutter build web -t lib/main.dart` → 호스팅 | 이전 빌드 재배포 |
 | 7 | nodes 잠금 규칙 배포 | `firebase deploy --only firestore:rules` | 독자 갈래 복원 후 재배포 |
 
-5와 7이 둘 다 규칙 배포인 이유: `firestore.rules`는 파일 단위로 배포되므로
-**두 번 나눠 배포하려면 7단계 내용을 5단계 시점에는 잠시 빼 둬야 한다.**
-한 번에 배포하고 싶다면 5+7을 합쳐 6단계 **뒤에** 한 번만 하면 된다 — 그게 더
-단순하고, draftNodes 규칙이 클라이언트보다 늦어도 되는지만 확인하면 된다
-(안 된다: 6단계의 새 admin 클라이언트가 즉시 draftNodes를 읽는다). 그래서
-나눠 배포하거나, 아니면 **5단계에서 전체 규칙을 배포하되 nodes 잠금만 주석
-처리**하고 7단계에서 주석을 푸는 방식을 권한다.
+3과 7이 둘 다 규칙 배포인 이유: `firestore.rules`는 파일 단위로 배포되므로
+**나눠 배포하려면 7단계 내용을 3단계 시점에는 잠시 빼 둬야 한다.** 가장 간단한
+방법은 3단계에서 전체 규칙을 배포하되 nodes 잠금 두 곳만 주석 처리하고,
+7단계에서 주석을 푸는 것이다. 한 번에 합쳐 6단계 뒤에 배포하는 건 안 된다 —
+4단계의 admin 클라이언트가 즉시 draftNodes를 읽기 때문이다.
+
+**4~5 사이의 짧은 저하**: admin 앱은 배포됐는데 백필은 아직 안 돌아서 작가
+편집기의 노드 목록이 잠깐 비어 보인다(`watchNodeSummaries`가 draftNodes만
+본다). `fetchNode`에 legacy 폴백이 있어 이미 아는 노드를 여는 것 자체는 되고,
+5단계가 끝나는 즉시 정상으로 돌아온다. 독자 쪽은 이 구간에 아무 영향이 없다.
+
+**6~7 사이의 불일치**: 노드 읽기 규칙이 아직 넓어서 보안은 예전 수준이지만
+기능은 정상이다. 순서를 뒤집으면 구 클라이언트를 쓰는 독자가 읽기 자체를 못
+하므로 이 순서를 택한다.
 
 ## 6. 하지 않는 것
 
