@@ -1006,7 +1006,11 @@ class _StoryTabViewState extends State<StoryTabView> {
     if (_selectedNodeId != null && _selectedNodeId != editingNode.id) {
       widget.sessionCache.remove(widget.packId, _selectedNodeId!);
     }
-    widget.sessionCache.put(widget.packId, editingNode);
+    if (editingNode.isNew || editingNode.hasUnsubmittedChanges) {
+      widget.sessionCache.put(widget.packId, editingNode);
+    } else {
+      widget.sessionCache.remove(widget.packId, editingNode.id);
+    }
     setState(() => _selectedNodeId = editingNode.id);
   }
 
