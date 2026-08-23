@@ -35,6 +35,7 @@ class _GameStateProviderState extends State<GameStateProvider> {
   @override
   void dispose() {
     _cloudSyncController.detach();
+    _cloudSyncController.dispose();
     _gameState.dispose();
     super.dispose();
   }
