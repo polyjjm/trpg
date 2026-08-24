@@ -2159,6 +2159,7 @@ class _FontChip extends StatelessWidget {
             fontSize: 12.5,
             fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
           ),
+
         ),
       ),
     );
