@@ -72,7 +72,7 @@ class DesktopRankingList extends StatelessWidget {
     }
 
     return Container(
-      padding: const EdgeInsets.fromLTRB(20, 18, 20, 12),
+      padding: const EdgeInsets.fromLTRB(18, 16, 18, 10),
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(18),
         border: Border.all(color: Colors.white.withOpacity(0.09)),
@@ -81,13 +81,6 @@ class DesktopRankingList extends StatelessWidget {
           end: Alignment.bottomRight,
           colors: [Color(0xFF151515), Color(0xFF0D0D0D)],
         ),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.22),
-            blurRadius: 20,
-            offset: const Offset(0, 10),
-          ),
-        ],
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -123,7 +116,7 @@ class DesktopRankingList extends StatelessWidget {
               ),
             ],
           ),
-          const SizedBox(height: 12),
+          const SizedBox(height: 10),
           if (rows.isEmpty)
             const Padding(
               padding: EdgeInsets.symmetric(vertical: 18, horizontal: 2),
@@ -171,7 +164,6 @@ class _RankRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final pack = data.pack;
-    final isTop3 = data.rank <= 3;
     final coverUrl = pack.coverImageUrl;
 
     return InkWell(
@@ -181,33 +173,21 @@ class _RankRow extends StatelessWidget {
         MaterialPageRoute(builder: (_) => StoryPackDetailPage(pack: pack)),
       ),
       child: Container(
-        padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 8),
+        padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 4),
         decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(12),
           border: Border(
             bottom: BorderSide(color: Colors.white.withOpacity(0.045)),
           ),
         ),
         child: Row(
           children: [
-            SizedBox(
-              width: 30,
-              child: Text(
-                '${data.rank}',
-                textAlign: TextAlign.center,
-                style: TextStyle(
-                  fontSize: isTop3 ? 20 : 16,
-                  fontWeight: isTop3 ? FontWeight.w800 : FontWeight.w500,
-                  color: isTop3 ? _medalColors[data.rank - 1] : _rankRest,
-                ),
-              ),
-            ),
-            const SizedBox(width: 10),
+            _RankNumber(rank: data.rank),
+            const SizedBox(width: 11),
             ClipRRect(
               borderRadius: BorderRadius.circular(8),
               child: SizedBox(
-                width: 46,
-                height: 58,
+                width: 44,
+                height: 56,
                 child: coverUrl != null && coverUrl.isNotEmpty
                     ? Image.network(
                         coverUrl,
@@ -250,6 +230,59 @@ class _RankRow extends StatelessWidget {
               previousRank: data.previousRank,
             ),
           ],
+        ),
+      ),
+    );
+  }
+}
+
+/// 목업처럼 1~3위가 한눈에 들어오도록 숫자 자체를 독립적인 메달 오브제로
+/// 만든다. 4위부터는 장식을 줄여 정보 밀도를 유지한다.
+class _RankNumber extends StatelessWidget {
+  final int rank;
+
+  const _RankNumber({required this.rank});
+
+  @override
+  Widget build(BuildContext context) {
+    if (rank > 3) {
+      return SizedBox(
+        width: 42,
+        child: Text(
+          '$rank',
+          textAlign: TextAlign.center,
+          style: const TextStyle(
+            fontSize: 17,
+            fontWeight: FontWeight.w600,
+            color: _rankRest,
+          ),
+        ),
+      );
+    }
+
+    final color = _medalColors[rank - 1];
+    return Container(
+      width: 42,
+      height: 42,
+      alignment: Alignment.center,
+      decoration: BoxDecoration(
+        shape: BoxShape.circle,
+        color: color.withOpacity(0.07),
+        border: Border.all(color: color.withOpacity(0.65), width: 1.2),
+        boxShadow: [
+          BoxShadow(
+            color: color.withOpacity(rank == 1 ? 0.16 : 0.08),
+            blurRadius: rank == 1 ? 14 : 8,
+          ),
+        ],
+      ),
+      child: Text(
+        '$rank',
+        style: TextStyle(
+          fontSize: 20,
+          fontWeight: FontWeight.w900,
+          color: color,
+          height: 1,
         ),
       ),
     );
