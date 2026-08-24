@@ -10,15 +10,13 @@ const double homeDesktopBreakpoint = 1100;
 /// 데스크톱 랭킹 컬럼 폭.
 const double homeRankingColumnWidth = 520;
 
-/// 데스크톱 히어로 배너 비율 — 기존보다 세로 공간을 더 줘서 단순 배너가
-/// 아니라 실제 메인 피처 영역처럼 보이게 한다.
-const double homeDesktopBannerAspect = 2.55;
+/// 데스크톱 히어로 배너 비율 — 메인 피처 느낌은 유지하되 세로폭을 조금
+/// 줄여 아래 콘텐츠가 첫 화면 안에 더 빨리 들어오게 한다.
+const double homeDesktopBannerAspect = 3.05;
 
 /// 홈 상단 세 섹션의 배치.
 ///
 /// - 데스크톱: 첫 줄에 히어로 + 랭킹, 둘째 줄에 번들 상품을 전체 폭으로 둔다.
-///   번들이 여러 개일 때 가로 카드 캐러셀이 자연스럽게 늘어나고, 한 개만
-///   있어도 랭킹 아래 좁은 왼쪽 컬럼에 갇혀 보이지 않는다.
 /// - 좁은 폭: 배너 → 랭킹 → 번들 순서로 세로 배치.
 class HomeTopSections extends StatelessWidget {
   final Widget banner;
