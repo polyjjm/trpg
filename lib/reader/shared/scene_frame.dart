@@ -2164,4 +2164,5 @@ class _FontChip extends StatelessWidget {
       ),
     );
   }
+
 }
