@@ -5,22 +5,17 @@ import '../models/pack_bundle.dart';
 import '../models/story_pack.dart';
 import 'bundle_purchase_flow.dart';
 
-const Color _ivory = Color(0xFFE2D4BF);
-const Color _gold = Color(0xFFF0E68C);
-const Color _coral = Color(0xFFE2703A);
+const Color _ivory = Color(0xFFE7E2DA);
+const Color _muted = Color(0xFF8E8A84);
+const Color _orange = Color(0xFFF47A2A);
+const Color _orangeSoft = Color(0x33F47A2A);
+const Color _green = Color(0xFF67B97A);
 
-/// 홈 탭 "번들 상품" 섹션과 스토리팩 상세 화면의 "이 팩이 포함된 번들"이
-/// 공유하는 카드 — PointPackageCard와 같은 시각 언어(할인 중이면 정가에
-/// 취소선 + 할인가 + 할인율 배지)를 코인 가격 번들에 맞춰 쓴다. 이미 일부
-/// 팩을 보유 중이면 "이미 N개 보유 — X코인만 더 내면돼요"를 보여준다 —
-/// 실제 청구액의 유일한 원천은 서버(purchaseBundle Cloud Function)지만,
-/// [PackBundle.amountToChargeFor]가 정확히 같은 계산을 미리 보여준다.
+/// 홈 번들 캐러셀과 상세 화면에서 공용으로 쓰는 현대적인 가로형 번들 카드.
+/// 번들이 여러 개여도 한 화면에 2~3개가 자연스럽게 보이고, 포함 작품 표지를
+/// 최대 세 장까지 나란히 보여줘 카드 하나만 봐도 구성품을 바로 이해할 수 있다.
 class BundleCard extends StatelessWidget {
   final PackBundle bundle;
-
-  /// 포함된 팩의 표지/제목을 다시 조회하지 않고, 호출부가 이미 구독 중인
-  /// 전체 팩 목록에서 바로 찾아 쓴다(HeroBannerSection의 allPacks와 같은
-  /// 패턴).
   final List<StoryPack> allPacks;
 
   const BundleCard({super.key, required this.bundle, required this.allPacks});
@@ -36,76 +31,150 @@ class BundleCard extends StatelessWidget {
     final hasDiscount = bundle.hasActiveDiscount;
 
     return InkWell(
-      borderRadius: BorderRadius.circular(14),
-      onTap: () => showBundlePurchaseDialog(context, bundle: bundle, allPacks: allPacks),
+      borderRadius: BorderRadius.circular(18),
+      onTap: () => showBundlePurchaseDialog(
+        context,
+        bundle: bundle,
+        allPacks: allPacks,
+      ),
       child: Container(
-        width: 240,
-        padding: const EdgeInsets.all(14),
+        width: 430,
+        padding: const EdgeInsets.fromLTRB(18, 16, 18, 16),
         decoration: BoxDecoration(
-          color: Colors.white.withOpacity(0.05),
-          borderRadius: BorderRadius.circular(14),
-          border: Border.all(color: _gold.withOpacity(0.25)),
+          borderRadius: BorderRadius.circular(18),
+          border: Border.all(color: Colors.white.withOpacity(0.09)),
+          gradient: const LinearGradient(
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+            colors: [Color(0xFF151515), Color(0xFF0E0E0E)],
+          ),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withOpacity(0.28),
+              blurRadius: 22,
+              offset: const Offset(0, 10),
+            ),
+          ],
         ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
+        child: Row(
           children: [
-            _CoverStack(coverUrls: included.map((p) => p.coverImageUrl).toList()),
-            const SizedBox(height: 10),
-            Text(
-              bundle.name.isEmpty ? '번들 상품' : bundle.name,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w800, color: _ivory),
-            ),
-            const SizedBox(height: 2),
-            Text(
-              '팩 $totalCount개 포함',
-              style: TextStyle(fontSize: 11.5, color: _ivory.withOpacity(0.6)),
-            ),
-            const SizedBox(height: 8),
-            if (!canPurchase)
-              Text(
-                '이미 전부 보유 중이에요',
-                style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: const Color(0xFF3FA66B)),
-              )
-            else ...[
-              if (hasDiscount)
-                Row(
-                  children: [
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                      decoration: BoxDecoration(color: _coral, borderRadius: BorderRadius.circular(999)),
-                      child: Text(
-                        '${_discountPercent(bundle)}%',
-                        style: const TextStyle(fontSize: 10, fontWeight: FontWeight.w800, color: Colors.white),
-                      ),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 8,
+                      vertical: 4,
                     ),
-                    const SizedBox(width: 6),
-                    Text(
-                      '${bundle.price}코인',
+                    decoration: BoxDecoration(
+                      color: _orangeSoft,
+                      borderRadius: BorderRadius.circular(7),
+                      border: Border.all(color: _orange.withOpacity(0.30)),
+                    ),
+                    child: const Text(
+                      'BUNDLE',
                       style: TextStyle(
-                        fontSize: 11,
-                        color: _ivory.withOpacity(0.45),
-                        decoration: TextDecoration.lineThrough,
+                        fontSize: 10,
+                        letterSpacing: 0.8,
+                        fontWeight: FontWeight.w800,
+                        color: _orange,
                       ),
                     ),
+                  ),
+                  const SizedBox(height: 10),
+                  Text(
+                    bundle.name.isEmpty ? '번들 상품' : bundle.name,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.w800,
+                      color: _ivory,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    '스토리 $totalCount개 포함',
+                    style: const TextStyle(fontSize: 11.5, color: _muted),
+                  ),
+                  const Spacer(),
+                  if (!canPurchase)
+                    const Text(
+                      '이미 전부 보유 중이에요',
+                      style: TextStyle(
+                        fontSize: 12.5,
+                        fontWeight: FontWeight.w700,
+                        color: _green,
+                      ),
+                    )
+                  else ...[
+                    Row(
+                      crossAxisAlignment: CrossAxisAlignment.end,
+                      children: [
+                        Text(
+                          '$amountToCharge코인',
+                          style: const TextStyle(
+                            fontSize: 18,
+                            fontWeight: FontWeight.w900,
+                            color: _orange,
+                          ),
+                        ),
+                        if (hasDiscount) ...[
+                          const SizedBox(width: 8),
+                          Padding(
+                            padding: const EdgeInsets.only(bottom: 2),
+                            child: Text(
+                              '${bundle.price}코인',
+                              style: const TextStyle(
+                                fontSize: 11,
+                                color: _muted,
+                                decoration: TextDecoration.lineThrough,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ],
+                    ),
+                    if (hasDiscount) ...[
+                      const SizedBox(height: 5),
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 7,
+                          vertical: 3,
+                        ),
+                        decoration: BoxDecoration(
+                          color: _orange.withOpacity(0.12),
+                          borderRadius: BorderRadius.circular(999),
+                        ),
+                        child: Text(
+                          '${_discountPercent(bundle)}% 할인',
+                          style: const TextStyle(
+                            fontSize: 10,
+                            fontWeight: FontWeight.w800,
+                            color: _orange,
+                          ),
+                        ),
+                      ),
+                    ],
+                    if (ownedCount > 0) ...[
+                      const SizedBox(height: 5),
+                      Text(
+                        '이미 $ownedCount개 보유 · 차액만 결제',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(fontSize: 10.5, color: _muted),
+                      ),
+                    ],
                   ],
-                ),
-              if (hasDiscount) const SizedBox(height: 2),
-              Text(
-                '$amountToCharge코인',
-                style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w800, color: _gold),
+                ],
               ),
-              if (ownedCount > 0) ...[
-                const SizedBox(height: 2),
-                Text(
-                  '이미 $ownedCount개 보유 — $amountToCharge코인만 더',
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(fontSize: 10.5, color: _ivory.withOpacity(0.6)),
-                ),
-              ],
-            ],
+            ),
+            const SizedBox(width: 16),
+            _CoverStrip(
+              coverUrls: included.map((p) => p.coverImageUrl).toList(),
+            ),
           ],
         ),
       ),
@@ -114,42 +183,36 @@ class BundleCard extends StatelessWidget {
 
   static int _discountPercent(PackBundle bundle) {
     if (bundle.price <= 0 || bundle.salePrice == null) return 0;
-    return (((bundle.price - bundle.salePrice!) / bundle.price) * 100).round().clamp(0, 100);
+    return (((bundle.price - bundle.salePrice!) / bundle.price) * 100)
+        .round()
+        .clamp(0, 100);
   }
 }
 
-/// 포함된 팩 표지를 최대 3장까지 겹쳐 보여준다 — 카드 하나에 팩 표지가
-/// 여러 장 섞여 있다는 인상을 주는 용도라 개별 표지를 또렷이 보여줄
-/// 필요는 없다.
-class _CoverStack extends StatelessWidget {
+/// 포함 작품을 최대 세 장까지 나란히 보여준다.
+class _CoverStrip extends StatelessWidget {
   final List<String?> coverUrls;
 
-  const _CoverStack({required this.coverUrls});
-
-  // 고정 높이(AspectRatio 대신) — 카드 폭이 얼마든 이 섹션의 높이가 항상
-  // 같아야 카드 전체 높이를 예측 가능하게 유지할 수 있다(호출부가 가로
-  // 스크롤 행 높이를 고정값으로 주기 때문).
-  static const double _height = 64;
+  const _CoverStrip({required this.coverUrls});
 
   @override
   Widget build(BuildContext context) {
     final shown = coverUrls.take(3).toList();
-    if (shown.isEmpty) {
-      return const SizedBox(height: _height, child: _CoverThumb(url: null));
-    }
+    if (shown.isEmpty) shown.add(null);
 
     return SizedBox(
-      height: _height,
-      child: Stack(
+      width: 150,
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.end,
         children: [
-          for (var i = 0; i < shown.length; i++)
-            Positioned(
-              left: i * 18.0,
-              top: 0,
-              bottom: 0,
-              width: 60,
+          for (var i = 0; i < shown.length; i++) ...[
+            if (i > 0) const SizedBox(width: 6),
+            SizedBox(
+              width: shown.length == 1 ? 72 : 44,
+              height: 92,
               child: _CoverThumb(url: shown[i]),
             ),
+          ],
         ],
       ),
     );
@@ -164,10 +227,10 @@ class _CoverThumb extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return ClipRRect(
-      borderRadius: BorderRadius.circular(8),
+      borderRadius: BorderRadius.circular(9),
       child: Container(
         decoration: BoxDecoration(
-          border: Border.all(color: Colors.black.withOpacity(0.4), width: 1.5),
+          border: Border.all(color: Colors.white.withOpacity(0.10)),
         ),
         child: url != null && url!.isNotEmpty
             ? Image.network(
@@ -187,7 +250,16 @@ class _CoverThumbFallback extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return const DecoratedBox(
-      decoration: BoxDecoration(color: Color(0xFFE2703A)),
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [Color(0xFFF47A2A), Color(0xFFB54818)],
+        ),
+      ),
+      child: Center(
+        child: Icon(Icons.auto_stories_rounded, color: Colors.white, size: 22),
+      ),
     );
   }
 }
