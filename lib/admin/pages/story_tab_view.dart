@@ -1056,6 +1056,14 @@ class _StoryTabViewState extends State<StoryTabView> {
         // 저장 안 한 초안까지 포함)를 여기 섞어 넘기면, 방금 만든 미저장
         // 초안이 이미 존재하는 노드로 카운트되어 다음 "+" 클릭 때 번호를
         // 하나 건너뛴다(실제로 겪은 버그).
+        if (snapshot.hasError) {
+          return Center(
+            child: Text(
+              '노드 목록을 불러오지 못했어요.\n${snapshot.error}',
+              textAlign: TextAlign.center,
+            ),
+          );
+        }
         final rawSummaries = List<AdminStoryNodeSummary>.from(
           snapshot.data ?? const [],
         );

@@ -42,6 +42,14 @@ const double _bookLineHeight = 2.05;
 const Color _bookPaperTop = Color(0xFF15120F);
 const Color _bookPaperBottom = Color(0xFF100E0C);
 
+/// 책/시네마틱 패널의 공통 프레임 색 — 완전한 금색 선 대신 짙은 브론즈를
+/// 겹쳐 써서 오래 읽어도 눈에 거슬리지 않게 한다.
+const Color _panelOuterGold = Color(0x665E4323);
+const Color _panelInnerGold = Color(0xAA8E6A3D);
+const Color _panelGlow = Color(0x337A522A);
+const Color _panelSurfaceTop = Color(0xFF14110E);
+const Color _panelSurfaceBottom = Color(0xFF0F0D0B);
+
 /// 노드 한 편(= 화면 한 장)을 렌더링하는 공유 프레임. 인터랙티브/선형 리더가
 /// 둘 다 이 위로 자기만의 하단 액션 영역(선택지 버튼들 / "다음" 버튼)만 얹는다
 /// — 배경, 문단/비트/이미지 블록 타이핑, 설정은 두 리더가 완전히 같은 동작을
@@ -271,9 +279,9 @@ class _SceneFrameState extends State<SceneFrame>
       unawaited(
         _tts
             .playSequence(
-              packId: widget.packId,
-              nodeIds: widget.narrationNodeIds,
-            )
+          packId: widget.packId,
+          nodeIds: widget.narrationNodeIds,
+        )
             .catchError((Object _) {}),
       );
     }
@@ -484,6 +492,7 @@ class _SceneFrameState extends State<SceneFrame>
       color: Colors.black,
       child: Stack(
         children: [
+          _buildAmbientBackground(),
           // 흔들림은 두 레이아웃이 공유한다 — 감쇠하는 사인파로 원위치에
           // 자연스럽게 멎는다.
           AnimatedBuilder(
@@ -587,7 +596,7 @@ class _SceneFrameState extends State<SceneFrame>
     // 받아 놓고도 한 쪽으로 그리게 된다(게스트는 스냅샷이 아예 안 온다).
     final spread =
         (widget.spreadSplitIndex != null || _prefs.isSpread) &&
-        blocks.length >= 2;
+            blocks.length >= 2;
     final rightInset = _settingsOpen ? _settingsPanelWidth : 0.0;
 
     return Padding(
@@ -595,22 +604,135 @@ class _SceneFrameState extends State<SceneFrame>
       child: Center(
         child: SizedBox(
           width: spread ? _bookSpreadWidth : _bookPageWidth,
+          child: _buildElegantPanelFrame(
+            child: spread ? _buildSpread(blocks) : _buildSinglePage(blocks),
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// 책 모드와 시네마틱 모드가 공유하는 고급 패널 프레임.
+  ///
+  /// 외곽 브론즈 선 → 미세한 간격 → 안쪽 골드 선을 겹쳐, 평평한 검은 박스가
+  /// 아니라 어두운 공간 위에 떠 있는 하나의 오브제로 읽히게 한다. 장식은
+  /// IgnorePointer라 본문/선택지/설정의 히트테스트를 건드리지 않는다.
+  Widget _buildElegantPanelFrame({
+    required Widget child,
+    EdgeInsets padding = const EdgeInsets.fromLTRB(0, 64, 0, 40),
+  }) {
+    return Padding(
+      padding: padding,
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(9),
+          boxShadow: [
+            const BoxShadow(
+              color: _panelGlow,
+              blurRadius: 34,
+              spreadRadius: 1,
+            ),
+            BoxShadow(
+              color: Colors.black.withOpacity(0.58),
+              blurRadius: 24,
+              offset: const Offset(0, 12),
+            ),
+          ],
+        ),
+        child: Container(
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(9),
+            border: Border.all(color: _panelOuterGold, width: 1),
+            gradient: const LinearGradient(
+              begin: Alignment.topCenter,
+              end: Alignment.bottomCenter,
+              colors: [_panelSurfaceTop, _panelSurfaceBottom],
+            ),
+          ),
           child: Padding(
-            padding: const EdgeInsets.fromLTRB(0, 64, 0, 40),
-            child: DecoratedBox(
+            padding: const EdgeInsets.all(8),
+            child: Container(
               decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(6),
+                border: Border.all(color: _panelInnerGold, width: 0.8),
                 gradient: const LinearGradient(
                   begin: Alignment.topCenter,
                   end: Alignment.bottomCenter,
                   colors: [_bookPaperTop, _bookPaperBottom],
                 ),
-                border: Border.symmetric(
-                  vertical: BorderSide(color: _ivory.withOpacity(0.10)),
+              ),
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(5),
+                child: Stack(
+                  fit: StackFit.expand,
+                  children: [
+                    // 내부 표면에 아주 약한 광택/음영을 줘서 단색 박스처럼
+                    // 보이지 않게 한다.
+                    const DecoratedBox(
+                      decoration: BoxDecoration(
+                        gradient: LinearGradient(
+                          begin: Alignment.topCenter,
+                          end: Alignment.bottomCenter,
+                          colors: [
+                            Color(0x0AFFFFFF),
+                            Colors.transparent,
+                            Color(0x16000000),
+                          ],
+                          stops: [0.0, 0.22, 1.0],
+                        ),
+                      ),
+                    ),
+                    child,
+                    const _PanelCornerOrnaments(),
+                  ],
                 ),
               ),
-              child: spread ? _buildSpread(blocks) : _buildSinglePage(blocks),
             ),
           ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildAmbientBackground() {
+    return const Positioned.fill(
+      child: IgnorePointer(
+        child: Stack(
+          fit: StackFit.expand,
+          children: [
+            // 중앙 앰버 글로우
+            DecoratedBox(
+              decoration: BoxDecoration(
+                gradient: RadialGradient(
+                  center: Alignment(0, 0),
+                  radius: 0.95,
+                  colors: [
+                    Color(0x994A3018),
+                    Color(0x66332113),
+                    Color(0x331A110B),
+                    Colors.transparent,
+                  ],
+                  stops: [0.0, 0.38, 0.70, 1.0],
+                ),
+              ),
+            ),
+
+            // 바깥쪽 비네팅
+            DecoratedBox(
+              decoration: BoxDecoration(
+                gradient: RadialGradient(
+                  center: Alignment.center,
+                  radius: 1.15,
+                  colors: [
+                    Colors.transparent,
+                    Colors.transparent,
+                    Color(0xCC000000),
+                  ],
+                  stops: [0.0, 0.62, 1.0],
+                ),
+              ),
+            ),
+          ],
         ),
       ),
     );
@@ -739,10 +861,9 @@ class _SceneFrameState extends State<SceneFrame>
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.end,
         children: [
-          Container(
-            height: 1,
-            margin: const EdgeInsets.only(bottom: 20),
-            color: _ivory.withOpacity(0.10),
+          const _OrnamentalDivider(
+            margin: EdgeInsets.only(bottom: 18),
+            symbolSize: 9,
           ),
           _buildSkipButton() ?? const SizedBox.shrink(),
           _buildActionArea(),
@@ -819,15 +940,15 @@ class _SceneFrameState extends State<SceneFrame>
           curve: Curves.easeOut,
           child: url.isNotEmpty
               ? Image.network(
-                  url,
-                  fit: BoxFit.cover,
-                  errorBuilder: (_, _, _) {
-                    // signed URL 만료가 가장 흔한 원인이라 호출부에 갱신을
-                    // 요청한다(B안). 새 URL이 오면 이 위젯이 다시 빌드된다.
-                    _reportBackgroundLoadFailure();
-                    return const _BannerFallback();
-                  },
-                )
+            url,
+            fit: BoxFit.cover,
+            errorBuilder: (_, _, _) {
+              // signed URL 만료가 가장 흔한 원인이라 호출부에 갱신을
+              // 요청한다(B안). 새 URL이 오면 이 위젯이 다시 빌드된다.
+              _reportBackgroundLoadFailure();
+              return const _BannerFallback();
+            },
+          )
               : const _BannerFallback(),
         ),
         // 본문이 사진 위에서도 읽히도록 아래로 갈수록 짙어지는 스크림.
@@ -898,16 +1019,11 @@ class _SceneFrameState extends State<SceneFrame>
     return Padding(
       padding: EdgeInsets.only(right: rightInset),
       child: Center(
-        child: Padding(
-          padding: const EdgeInsets.symmetric(vertical: 48),
-          child: SizedBox(
-            width: _bookSpreadWidth,
-            child: DecoratedBox(
-              decoration: BoxDecoration(
-                border: Border.all(color: _ivory.withOpacity(0.10)),
-              ),
-              child: ClipRect(child: content),
-            ),
+        child: SizedBox(
+          width: _bookSpreadWidth,
+          child: _buildElegantPanelFrame(
+            padding: const EdgeInsets.symmetric(vertical: 48),
+            child: content,
           ),
         ),
       ),
@@ -1062,6 +1178,133 @@ class _SceneFrameState extends State<SceneFrame>
   }
 }
 
+
+/// 책 패널 상·하단에서 쓰는 장식 가름선 — 복잡한 SVG/asset 없이도
+/// 얇은 선 + 작은 다이아몬드로 충분히 고급스러운 리듬을 만든다.
+class _OrnamentalDivider extends StatelessWidget {
+  final EdgeInsetsGeometry margin;
+  final double symbolSize;
+
+  const _OrnamentalDivider({
+    this.margin = EdgeInsets.zero,
+    this.symbolSize = 10,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: margin,
+      child: SizedBox(
+        height: 18,
+        child: Row(
+          children: [
+            Expanded(
+              child: Container(height: 1, color: _ivory.withOpacity(0.09)),
+            ),
+            const SizedBox(width: 10),
+            Transform.rotate(
+              angle: math.pi / 4,
+              child: Container(
+                width: symbolSize,
+                height: symbolSize,
+                decoration: BoxDecoration(
+                  border: Border.all(
+                    color: _gold.withOpacity(0.48),
+                    width: 0.8,
+                  ),
+                ),
+              ),
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Container(height: 1, color: _ivory.withOpacity(0.09)),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// 네 귀퉁이의 아주 얇은 브론즈 장식. 크기를 작게 유지해 고서 장식처럼
+/// 과해지지 않고, 프레임이 "디자인된 물체"라는 신호만 준다.
+class _PanelCornerOrnaments extends StatelessWidget {
+  const _PanelCornerOrnaments();
+
+  @override
+  Widget build(BuildContext context) {
+    Widget corner({
+      required Alignment alignment,
+      required bool flipX,
+      required bool flipY,
+    }) {
+      return Align(
+        alignment: alignment,
+        child: Transform(
+          alignment: Alignment.center,
+          transform: Matrix4.identity()
+            ..scale(flipX ? -1.0 : 1.0, flipY ? -1.0 : 1.0),
+          child: const Padding(
+            padding: EdgeInsets.all(7),
+            child: SizedBox(
+              width: 20,
+              height: 20,
+              child: CustomPaint(painter: _CornerPainter()),
+            ),
+          ),
+        ),
+      );
+    }
+
+    return IgnorePointer(
+      child: Stack(
+        fit: StackFit.expand,
+        children: [
+          corner(alignment: Alignment.topLeft, flipX: false, flipY: false),
+          corner(alignment: Alignment.topRight, flipX: true, flipY: false),
+          corner(alignment: Alignment.bottomLeft, flipX: false, flipY: true),
+          corner(alignment: Alignment.bottomRight, flipX: true, flipY: true),
+        ],
+      ),
+    );
+  }
+}
+
+class _CornerPainter extends CustomPainter {
+  const _CornerPainter();
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()
+      ..color = _gold.withOpacity(0.40)
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 0.8;
+
+    final outer = Path()
+      ..moveTo(1, size.height * 0.72)
+      ..quadraticBezierTo(1, 1, size.width * 0.72, 1);
+
+    final inner = Path()
+      ..moveTo(5, size.height * 0.56)
+      ..quadraticBezierTo(5, 5, size.width * 0.56, 5);
+
+    canvas.drawPath(outer, paint);
+    canvas.drawPath(inner, paint);
+
+    final diamond = Path()
+      ..moveTo(size.width * 0.72, 1)
+      ..lineTo(size.width * 0.82, 3)
+      ..lineTo(size.width * 0.72, 5)
+      ..lineTo(size.width * 0.62, 3)
+      ..close();
+    canvas.drawPath(diamond, paint);
+  }
+
+  @override
+  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
+}
+
+
 /// 데스크톱 우상단의 설정 진입 버튼 — 읽는 동안 화면에 남는 유일한 크롬이다.
 /// 사이드바가 열려 있는 동안에는 아예 렌더하지 않는다(패널이 이 자리를 덮어
 /// 버튼이 닫기 X 아래에 깔린다).
@@ -1176,8 +1419,8 @@ class _ReaderSettingsPanel extends StatelessWidget {
                       icon: ttsLoading
                           ? Icons.hourglass_top_rounded
                           : (ttsPlaying
-                                ? Icons.pause_circle_rounded
-                                : Icons.play_circle_rounded),
+                          ? Icons.pause_circle_rounded
+                          : Icons.play_circle_rounded),
                       label: ttsLoading
                           ? 'TTS 준비 중'
                           : (ttsPlaying ? 'TTS 켜짐' : 'TTS'),
@@ -1437,10 +1680,10 @@ class _ImageBlockView extends StatelessWidget {
             borderRadius: BorderRadius.circular(12),
             child: url != null && url.isNotEmpty
                 ? Image.network(
-                    url,
-                    fit: BoxFit.cover,
-                    errorBuilder: (_, _, _) => const SizedBox.shrink(),
-                  )
+              url,
+              fit: BoxFit.cover,
+              errorBuilder: (_, _, _) => const SizedBox.shrink(),
+            )
                 : const SizedBox.shrink(),
           ),
           if (block.caption != null && block.caption!.isNotEmpty) ...[
@@ -1551,10 +1794,10 @@ class _BookPageHeader extends StatelessWidget {
           ),
           const SizedBox(height: 16),
         ],
-        Container(
-          height: 1,
-          margin: const EdgeInsets.only(bottom: 22),
-          color: _ivory.withOpacity(0.12),
+        const SizedBox(height: 2),
+        _OrnamentalDivider(
+          margin: const EdgeInsets.only(bottom: 18),
+          symbolSize: 10,
         ),
       ],
     );
@@ -1626,76 +1869,76 @@ class _ReaderSettingsSheet extends StatelessWidget {
         ),
         child: expanded
             ? Padding(
-                padding: const EdgeInsets.fromLTRB(20, 10, 20, 14),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    _buildHandle(),
-                    const SizedBox(height: 14),
-                    Row(
-                      children: [
-                        _SheetIconToggle(
-                          icon: ttsLoading
-                              ? Icons.hourglass_top_rounded
-                              : (ttsPlaying
-                                    ? Icons.pause_circle_rounded
-                                    : Icons.play_circle_rounded),
-                          label: ttsLoading
-                              ? 'TTS 준비 중'
-                              : (ttsPlaying ? 'TTS 켜짐' : 'TTS'),
-                          active: ttsPlaying,
-                          onTap: ttsLoading ? null : onToggleTts,
-                        ),
-                        const Spacer(),
-                        const Text(
-                          '글자 애니메이션',
-                          style: TextStyle(color: _ivory, fontSize: 12.5),
-                        ),
-                        Switch(
-                          value: prefs.animationEnabled,
-                          activeThumbColor: _gold,
-                          onChanged: onAnimationToggled,
-                        ),
-                      ],
+          padding: const EdgeInsets.fromLTRB(20, 10, 20, 14),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              _buildHandle(),
+              const SizedBox(height: 14),
+              Row(
+                children: [
+                  _SheetIconToggle(
+                    icon: ttsLoading
+                        ? Icons.hourglass_top_rounded
+                        : (ttsPlaying
+                        ? Icons.pause_circle_rounded
+                        : Icons.play_circle_rounded),
+                    label: ttsLoading
+                        ? 'TTS 준비 중'
+                        : (ttsPlaying ? 'TTS 켜짐' : 'TTS'),
+                    active: ttsPlaying,
+                    onTap: ttsLoading ? null : onToggleTts,
+                  ),
+                  const Spacer(),
+                  const Text(
+                    '글자 애니메이션',
+                    style: TextStyle(color: _ivory, fontSize: 12.5),
+                  ),
+                  Switch(
+                    value: prefs.animationEnabled,
+                    activeThumbColor: _gold,
+                    onChanged: onAnimationToggled,
+                  ),
+                ],
+              ),
+              const SizedBox(height: 8),
+              Row(
+                children: [
+                  const Text(
+                    'TTS 자동 이어재생',
+                    style: TextStyle(color: _ivory, fontSize: 12.5),
+                  ),
+                  const Spacer(),
+                  Switch(
+                    value: prefs.ttsAutoContinueEnabled,
+                    activeThumbColor: _gold,
+                    onChanged: onAutoContinueToggled,
+                  ),
+                ],
+              ),
+              const SizedBox(height: 8),
+              _BgmVolumeRow(
+                volume: prefs.bgmMasterVolume,
+                onChanged: onBgmVolumeChanged,
+                onChangeEnd: onBgmVolumeCommitted,
+              ),
+              const SizedBox(height: 10),
+              Row(
+                children: [
+                  for (final option in _fontOptions) ...[
+                    _FontChip(
+                      label: option.label,
+                      selected: prefs.fontId == option.id,
+                      onTap: () => onFontSelected(option.id),
                     ),
-                    const SizedBox(height: 8),
-                    Row(
-                      children: [
-                        const Text(
-                          'TTS 자동 이어재생',
-                          style: TextStyle(color: _ivory, fontSize: 12.5),
-                        ),
-                        const Spacer(),
-                        Switch(
-                          value: prefs.ttsAutoContinueEnabled,
-                          activeThumbColor: _gold,
-                          onChanged: onAutoContinueToggled,
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 8),
-                    _BgmVolumeRow(
-                      volume: prefs.bgmMasterVolume,
-                      onChanged: onBgmVolumeChanged,
-                      onChangeEnd: onBgmVolumeCommitted,
-                    ),
-                    const SizedBox(height: 10),
-                    Row(
-                      children: [
-                        for (final option in _fontOptions) ...[
-                          _FontChip(
-                            label: option.label,
-                            selected: prefs.fontId == option.id,
-                            onTap: () => onFontSelected(option.id),
-                          ),
-                          const SizedBox(width: 8),
-                        ],
-                      ],
-                    ),
+                    const SizedBox(width: 8),
                   ],
-                ),
-              )
+                ],
+              ),
+            ],
+          ),
+        )
             : Center(child: _buildHandle()),
       ),
     );

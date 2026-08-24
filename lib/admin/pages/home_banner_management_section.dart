@@ -109,6 +109,29 @@ class _HomeBannerManagementSectionState
     return StreamBuilder<List<AdminStoryPack>>(
       stream: widget.packsStream,
       builder: (context, packSnapshot) {
+        if (packSnapshot.hasError) {
+          return Padding(
+            padding: const EdgeInsets.all(24),
+            child: SelectableText(
+              '스토리팩 목록을 불러오지 못했어요:\n${packSnapshot.error}',
+              style: const TextStyle(
+                color: AdminColors.danger,
+                fontSize: 13,
+              ),
+            ),
+          );
+        }
+
+        if (packSnapshot.connectionState == ConnectionState.waiting) {
+          return Padding(
+            padding: const EdgeInsets.all(24),
+            child: Text(
+              '스토리팩 목록 불러오는 중...',
+              style: TextStyle(color: AdminColors.muted),
+            ),
+          );
+        }
+
         final packs = packSnapshot.data ?? const <AdminStoryPack>[];
         final packTitles = {for (final p in packs) p.id: p.title};
 
@@ -188,15 +211,6 @@ class _HomeBannerManagementSectionState
                         style: const TextStyle(
                           fontSize: 12,
                           color: AdminColors.danger,
-                        ),
-                      );
-                    }
-                    if (snapshot.connectionState == ConnectionState.waiting) {
-                      return Text(
-                        '불러오는 중...',
-                        style: TextStyle(
-                          fontSize: 13,
-                          color: AdminColors.muted,
                         ),
                       );
                     }
