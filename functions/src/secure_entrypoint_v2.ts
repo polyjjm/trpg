@@ -58,3 +58,10 @@ export {
 // 층 5 (#7) — draft/live 분리 백필. PR #7의 draft_live_entrypoint.ts도 같은
 // 이유로 지웠다(그 파일 역시 `export * from "./index"`로 시작했다).
 export {backfillNodeDraftDocuments} from "./draft_live_migration";
+
+// 층 6 — 공개 카탈로그 자산. 승인된 표지만 private 원본에서 public 복사본으로
+// 옮기고, 기존 승인 팩을 위한 관리자 백필도 함께 노출한다.
+export {
+  publishApprovedStoryCover,
+  backfillPublicStoryCovers,
+} from "./public_catalog_assets";

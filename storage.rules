@@ -16,6 +16,22 @@ service firebase.storage {
       return myRole() == 'author' || myRole() == 'admin';
     }
 
+    // 홈 배너는 카탈로그의 공개 콘텐츠다. 업로드/교체는 author/admin만,
+    // 읽기는 로그인 여부와 상관없이 허용한다.
+    match /public/home_banners/{allPaths=**} {
+      allow read: if true;
+      allow write: if isAuthorOrAdmin();
+    }
+
+    // 승인된 스토리의 표지만 별도 공개 복사본으로 둔다. 원본
+    // admin/story_images에는 본문용 이미지도 섞여 있으므로 그 경로 자체는
+    // 절대 공개하지 않는다. 공개 커버 생성/교체는 Cloud Functions(Admin SDK)가
+    // 담당하므로 클라이언트 쓰기는 막는다.
+    match /public/story_covers/{allPaths=**} {
+      allow read: if true;
+      allow write: if false;
+    }
+
     // 작가용 공유 라이브러리 원본. 독자에게는 Cloud Function이 별도
     // private/story_media 경로의 짧은 signed URL을 발급하므로 직접 읽기를
     // 허용하지 않는다. 기존 Firebase download-token URL은 Storage Rules를
