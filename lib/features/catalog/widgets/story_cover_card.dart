@@ -30,7 +30,7 @@ SliverGridDelegateWithMaxCrossAxisExtent storyCoverGridDelegate({
 const double storyGridWideBreakpoint = 600;
 
 /// 홈/검색/내 서재가 공유하는 스토리 카드.
-/// 205px 이상이면 왼쪽 표지 + 오른쪽 제목/설명/가격의 가로 카드,
+/// 충분히 넓은 카드에서는 왼쪽 표지 + 오른쪽 제목/설명/가격의 가로 카드,
 /// 그보다 좁으면 기존 세로형 카드로 그린다.
 class StoryCoverCard extends StatelessWidget {
   final StoryPack pack;
@@ -58,7 +58,7 @@ class StoryCoverCard extends StatelessWidget {
 
     return LayoutBuilder(
       builder: (context, constraints) {
-        final horizontal = constraints.maxWidth >= 205;
+        final horizontal = constraints.maxWidth >= 300;
         return Material(
           color: Colors.transparent,
           child: InkWell(
