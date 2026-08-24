@@ -1,4 +1,5 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_storage/firebase_storage.dart';
 
 import '../models/story_pack.dart';
 
@@ -6,10 +7,12 @@ import '../models/story_pack.dart';
 /// 읽어온다. 발행 노드 개수는 노드 collectionGroup을 직접 훑지 않고
 /// storyPacks.publishedNodeCount 서버 집계값을 사용한다.
 class StoryPackRepository {
-  StoryPackRepository({FirebaseFirestore? firestore})
-    : _firestore = firestore ?? FirebaseFirestore.instance;
+  StoryPackRepository({FirebaseFirestore? firestore, FirebaseStorage? storage})
+    : _firestore = firestore ?? FirebaseFirestore.instance,
+      _storage = storage ?? FirebaseStorage.instance;
 
   final FirebaseFirestore _firestore;
+  final FirebaseStorage _storage;
 
   Stream<List<StoryPack>> watchVisiblePacks() {
     return _firestore
@@ -33,7 +36,12 @@ class StoryPackRepository {
         .toList();
     if (candidates.isEmpty) return const [];
 
-    final coverImageIds = candidates
+    final legacyCoverIds = candidates
+        .where((doc) {
+          final live = doc.data()['liveMetadata'] as Map<String, dynamic>?;
+          final publicPath = live?['publicCoverPath'] as String?;
+          return publicPath == null || publicPath.isEmpty;
+        })
         .map(
           (doc) =>
               (doc.data()['liveMetadata']
@@ -42,19 +50,22 @@ class StoryPackRepository {
         )
         .whereType<String>()
         .toSet();
-    final coverUrls = await _fetchImageUrls(coverImageIds);
+    final legacyCoverUrls = await _fetchImageUrls(legacyCoverIds);
+    final publicCoverUrlByPackId = await _resolvePublicCoverUrls(candidates);
 
     return candidates.map((doc) {
       final data = doc.data();
       final live = data['liveMetadata'] as Map<String, dynamic>?;
       final coverImageId = live?['coverImageId'] as String?;
+      final publicCoverUrl = publicCoverUrlByPackId[doc.id];
       return StoryPack(
         id: doc.id,
         title:
             live?['title'] as String? ?? data['title'] as String? ?? '(제목 없음)',
         description: live?['description'] as String? ?? '',
         authorName: data['authorName'] as String? ?? '알 수 없음',
-        coverImageUrl: coverImageId != null ? coverUrls[coverImageId] : null,
+        coverImageUrl: publicCoverUrl ??
+            (coverImageId != null ? legacyCoverUrls[coverImageId] : null),
         price: (live?['price'] as num?)?.toInt() ?? 0,
         salePrice: (live?['salePrice'] as num?)?.toInt(),
         discountStartAt: (live?['discountStartAt'] as Timestamp?)?.toDate(),
@@ -83,7 +94,12 @@ class StoryPackRepository {
         .get();
     if (snapshot.docs.isEmpty) return const [];
 
-    final coverImageIds = snapshot.docs
+    final legacyCoverIds = snapshot.docs
+        .where((doc) {
+          final live = doc.data()['liveMetadata'] as Map<String, dynamic>?;
+          final publicPath = live?['publicCoverPath'] as String?;
+          return publicPath == null || publicPath.isEmpty;
+        })
         .map(
           (doc) =>
               (doc.data()['liveMetadata']
@@ -92,19 +108,22 @@ class StoryPackRepository {
         )
         .whereType<String>()
         .toSet();
-    final coverUrls = await _fetchImageUrls(coverImageIds);
+    final legacyCoverUrls = await _fetchImageUrls(legacyCoverIds);
+    final publicCoverUrlByPackId = await _resolvePublicCoverUrls(snapshot.docs);
 
     return snapshot.docs.map((doc) {
       final data = doc.data();
       final live = data['liveMetadata'] as Map<String, dynamic>?;
       final coverImageId = live?['coverImageId'] as String?;
+      final publicCoverUrl = publicCoverUrlByPackId[doc.id];
       return StoryPack(
         id: doc.id,
         title:
             live?['title'] as String? ?? data['title'] as String? ?? '(제목 없음)',
         description: live?['description'] as String? ?? '',
         authorName: data['authorName'] as String? ?? '알 수 없음',
-        coverImageUrl: coverImageId != null ? coverUrls[coverImageId] : null,
+        coverImageUrl: publicCoverUrl ??
+            (coverImageId != null ? legacyCoverUrls[coverImageId] : null),
         price: (live?['price'] as num?)?.toInt() ?? 0,
         salePrice: (live?['salePrice'] as num?)?.toInt(),
         discountStartAt: (live?['discountStartAt'] as Timestamp?)?.toDate(),
@@ -115,6 +134,29 @@ class StoryPackRepository {
         genres: (live?['genres'] as List<dynamic>?)?.cast<String>() ?? const [],
       );
     }).toList();
+  }
+
+  Future<Map<String, String?>> _resolvePublicCoverUrls(
+    Iterable<QueryDocumentSnapshot<Map<String, dynamic>>> docs,
+  ) async {
+    final entries = await Future.wait(
+      docs.map((doc) async {
+        final live = doc.data()['liveMetadata'] as Map<String, dynamic>?;
+        final path = live?['publicCoverPath'] as String?;
+        if (path == null || path.isEmpty) {
+          return MapEntry<String, String?>(doc.id, null);
+        }
+        try {
+          return MapEntry<String, String?>(
+            doc.id,
+            await _storage.ref(path).getDownloadURL(),
+          );
+        } catch (_) {
+          return MapEntry<String, String?>(doc.id, null);
+        }
+      }),
+    );
+    return {for (final entry in entries) entry.key: entry.value};
   }
 
   Future<Map<String, String>> _fetchImageUrls(Set<String> imageIds) async {
