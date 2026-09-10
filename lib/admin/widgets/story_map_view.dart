@@ -325,27 +325,12 @@ class _StoryMapViewState extends State<StoryMapView> {
   ///   그대로 만들어지고, 그래프에 자기 자신의 박스로 매달려 렌더링된다(그
   ///   상태 자체가 정상이다 — 나중에 그 박스의 "+"로 언제든 연결하면 된다,
   ///   STEP 2 = [_handleChoicePlusTap]).
-  /// - linear: "선택지 문구" 개념 자체가 없다(nextNodeId 하나뿐) — 텍스트
-  ///   단계 없이 곧바로 대상을 고르는 팝업을 연다.
+  /// - linear: 연결은 목록 순서로만 편집하므로 이 동작을 제공하지 않는다.
   Future<void> _handlePlusTap(String sourceId) async {
     final anchorRect = _globalRectForNode(sourceId);
     if (anchorRect == null || !mounted) return;
 
-    if (widget.packType != StoryPackType.interactive) {
-      _showAnchoredPopover(
-        anchorRect: anchorRect,
-        builder: (close) => _ChoiceConnectPopoverCard(
-          candidates: widget.nodes.where((c) => c.id != sourceId).toList(),
-          onCreateNewNode: () {
-            close();
-            _connectToNewNode(sourceId);
-          },
-          onSelectExisting: (targetId) =>
-              _handleLinearConnect(sourceId, targetId, close),
-        ),
-      );
-      return;
-    }
+    if (widget.packType != StoryPackType.interactive) return;
 
     _showAnchoredPopover(
       anchorRect: anchorRect,
@@ -371,36 +356,17 @@ class _StoryMapViewState extends State<StoryMapView> {
     close();
   }
 
-  Future<void> _handleLinearConnect(
-    String sourceId,
-    String targetId,
-    VoidCallback close,
-  ) async {
-    final sourceNode = await _loadNode(sourceId);
-    if (sourceNode == null || !mounted) return;
-    sourceNode.nextNodeId = targetId;
-    _restage(sourceNode);
-    close();
-  }
-
   /// "+"에서 기존 노드로 드래그.
   /// - interactive: 드래그 자체가 이미 "이 노드로 연결한다"는 명확한
   ///   의사표시라서, STEP 1/STEP 2를 굳이 나누지 않고 드롭 즉시 nextNodeId가
   ///   채워진 선택지를 만들어 스테이징한다. 뜨는 팝업은 대상을 다시 고르는
   ///   자리가 아니라(그건 이제 선택지 카드의 "+" 몫이다) 문구만 채우는
   ///   자리다 — 이미 연결된 대상은 안내 문구로만 보여준다.
-  /// - linear: 팝업 없이 nextNodeId만 바로 바꾼다(편집할 "문구"가 아예
-  ///   없으므로).
+  /// - linear: 수동 연결 변경을 허용하지 않는다.
   Future<void> _connectToExisting(String sourceId, String targetId) async {
     if (sourceId == targetId) return;
 
-    if (widget.packType != StoryPackType.interactive) {
-      final sourceNode = await _loadNode(sourceId);
-      if (sourceNode == null || !mounted) return;
-      sourceNode.nextNodeId = targetId;
-      _restage(sourceNode);
-      return;
-    }
+    if (widget.packType != StoryPackType.interactive) return;
 
     final anchorRect = _globalRectForNode(sourceId);
     if (anchorRect == null || !mounted) return;
@@ -437,6 +403,7 @@ class _StoryMapViewState extends State<StoryMapView> {
   /// 않는다 — Sugiyama가 다음 레이아웃 재계산 때 알아서 배치하므로, 여기서는
   /// order만 "일단 맨 뒤"로 매겨 둔다.
   Future<void> _connectToNewNode(String sourceId) async {
+    if (widget.packType != StoryPackType.interactive) return;
     final takenIds = widget.nodes.map((n) => n.id).toSet();
     final newId = suggestSequentialNodeIds(takenIds, 1).first;
     final maxOrder = widget.nodes.isEmpty
@@ -654,6 +621,7 @@ class _StoryMapViewState extends State<StoryMapView> {
   }
 
   Future<void> _handleEdgeTap(_LayoutEdge edge) async {
+    if (widget.packType != StoryPackType.interactive) return;
     final node = await _loadNode(edge.sourceId);
     if (node == null || !mounted) return;
     await _openEdgePopover(node, edge.choiceIndex);
@@ -686,7 +654,9 @@ class _StoryMapViewState extends State<StoryMapView> {
       width: 110,
       child: Center(
         child: InkWell(
-          onTap: () => _handleEdgeTap(edge),
+          onTap: widget.packType == StoryPackType.linear
+              ? null
+              : () => _handleEdgeTap(edge),
           borderRadius: BorderRadius.circular(999),
           child: Container(
             padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
@@ -881,7 +851,8 @@ class _StoryMapViewState extends State<StoryMapView> {
                       // 카드는 STEP 2(대상 연결/변경)를 여는
                       // [_ChoicePlusHandle]로 서로 다르다.
                       for (final id in layout.nodeRects.keys)
-                        if (!id.startsWith('__missing__') &&
+                        if (widget.packType == StoryPackType.interactive &&
+                            !id.startsWith('__missing__') &&
                             !id.startsWith('__choice__'))
                           _PlusHandle(
                             key: ValueKey('plus_$id'),

@@ -10,6 +10,7 @@ import '../data/admin_story_repository.dart';
 import '../data/admin_tts_voice_repository.dart';
 import '../data/node_edit_session_cache.dart';
 import '../data/node_id_suggestion.dart';
+import '../data/linear_node_order.dart';
 import '../models/admin_bgm.dart';
 import '../models/admin_image.dart';
 import '../models/admin_sfx.dart';
@@ -285,35 +286,87 @@ class _StoryTabViewState extends State<StoryTabView> {
     });
   }
 
-  /// [existing]은 반드시 Firestore에 실제로 저장된 노드 목록(rawSummaries)이어야
-  /// 한다 — 사이드바 표시용으로 미저장 초안을 끼워 넣은 목록을 넘기면,
-  /// suggestSequentialNodeIds가 그 초안을 이미 존재하는 노드로 세어 다음
-  /// "+" 클릭 때 번호를 하나 건너뛴다(실제로 겪은 버그 — story_tab_view.dart의
-  /// build()에서 rawSummaries/displaySummaries를 분리해 두는 이유). 세션
-  /// 캐시에만 있는(아직 저장 안 한) 신규 노드 id도 같이 피해야 한다 — 안
-  /// 그러면 "+"를 두 번 눌렀을 때 첫 번째로 만든 미저장 초안과 같은 id를
-  /// 다시 제안해서 그 초안을 덮어써 버린다.
-  /// linear 팩의 "지금 체인의 마지막 노드" — nextNodeId가 비어 있는 노드
-  /// 중 order가 가장 큰 것. order는 이미 이 메서드 바로 아래(nextOrder
-  /// 계산)와 배경 이미지 인계/사이드바 정렬에서 "지금까지 만들어진 순서"를
-  /// 나타내는 값으로 쓰이고 있어서 그 개념을 그대로 재사용한다 — 새로운
-  /// 순회 규칙을 따로 만들지 않는다. nextNodeId가 비어 있는 노드가 여러
-  /// 개면(체인이 어딘가 끊겨 있는 등 이례적인 경우) order가 가장 큰 쪽을
-  /// "마지막"으로 본다. 하나도 없으면(모든 노드가 이미 연결돼 있음) null —
-  /// 자동으로 이을 대상이 없다는 뜻이다.
-  AdminStoryNodeSummary? _findLastLinearNode(
-    List<AdminStoryNodeSummary> existing,
-  ) {
-    AdminStoryNodeSummary? last;
-    for (final n in existing) {
-      final next = n.nextNodeId;
-      if (next != null && next.isNotEmpty) continue;
-      if (last == null || n.order > last.order) last = n;
+  bool _changingLinearOrder = false;
+
+  List<AdminStoryNodeSummary> _displayNodes(List<AdminStoryNodeSummary> saved) {
+    final byId = {for (final n in saved) n.id: n};
+    for (final id in widget.sessionCache.nodeIdsForPack(widget.packId)) {
+      final node = widget.sessionCache.get(widget.packId, id);
+      if (node != null) byId[id] = summaryFromNode(node);
     }
-    return last;
+    if (widget.pack.type == StoryPackType.linear) {
+      return [
+        for (final n in mergeLinearNodeOrder(
+          byId.values.map(_position),
+          const [],
+        ))
+          byId[n.id]!,
+      ];
+    }
+    return byId.values.toList()..sort((a, b) => a.order.compareTo(b.order));
+  }
+
+  LinearNodePosition _position(AdminStoryNodeSummary n) =>
+      (id: n.id, order: n.order, nextNodeId: n.nextNodeId);
+
+  Future<void> _stageLinearOrder(
+    List<String> ids, {
+    List<AdminStoryNode> added = const [],
+  }) async {
+    final positions = linearNodePositions(ids);
+    final additions = {for (final node in added) node.id: node};
+    final loaded = <String, AdminStoryNode>{};
+    // Fetch all nodes before changing any edges.
+    for (final position in positions) {
+      final node =
+          additions[position.id] ??
+          widget.sessionCache.get(widget.packId, position.id) ??
+          (_editingNode?.id == position.id ? _editingNode : null) ??
+          await widget.repository.fetchNode(widget.packId, position.id);
+      if (!mounted) return;
+      if (node == null) throw StateError('노드를 찾을 수 없어요: ${position.id}');
+      loaded[position.id] = node;
+    }
+    for (final position in positions) {
+      final node =
+          widget.sessionCache.get(widget.packId, position.id) ??
+          loaded[position.id]!;
+      if (additions.containsKey(node.id) ||
+          node.order != position.order ||
+          node.nextNodeId != position.nextNodeId) {
+        node.order = position.order;
+        node.nextNodeId = position.nextNodeId;
+        widget.sessionCache.put(widget.packId, node);
+      }
+    }
+  }
+
+  Future<void> _changeLinearOrder(Future<void> Function() change) async {
+    if (_changingLinearOrder) return;
+    setState(() => _changingLinearOrder = true);
+    try {
+      await change();
+    } catch (e) {
+      if (mounted) _showToast(context, '순서 변경 실패: $e');
+    } finally {
+      if (mounted) setState(() => _changingLinearOrder = false);
+    }
   }
 
   Future<void> _handleAddNode(List<AdminStoryNodeSummary> existing) async {
+    if (widget.pack.type == StoryPackType.linear) {
+      await _changeLinearOrder(() async {
+        final ids = _displayNodes(_lastRawSummaries).map((n) => n.id).toList();
+        final node = AdminStoryNode(id: suggestSequentialNodeIds(ids, 1).first);
+        await _stageLinearOrder([...ids, node.id], added: [node]);
+        if (!mounted) return;
+        _selectedNodeId = node.id;
+        _editingNode = node;
+        _creationSourceId = null;
+        _creationSourceChoiceIndex = null;
+      });
+      return;
+    }
     final takenIds = {
       ...existing.map((n) => n.id),
       ...widget.sessionCache.nodeIdsForPack(widget.packId),
@@ -332,59 +385,42 @@ class _StoryTabViewState extends State<StoryTabView> {
     // 다른 노드로 옮겼다 돌아와도(또는 팩/탭을 오가도) 그대로 남아있어야 한다.
     widget.sessionCache.put(widget.packId, node);
 
-    // linear 팩은 "맨 뒤에 이어 쓰기"가 압도적으로 흔한 경우라, 새 노드를
-    // 만들 때 기존 체인의 마지막 노드를 자동으로 이 새 노드에 연결해 둔다
-    // — 매번 "다음 노드" 후보 목록에서 수동으로 골라 잇는 수고를 없앤다.
-    // interactive 팩은 하지 않는다 — 새 노드가 아직 아무 데도 안 이어진
-    // 채(나중에 선택지 대상으로 고를) 있는 게 정상적인 경우가 많아서,
-    // 자동으로 이어 붙이면 오히려 방해가 된다.
-    String? autoLinkedSourceId;
-    if (widget.pack.type == StoryPackType.linear) {
-      final lastNode = _findLastLinearNode(existing);
-      if (lastNode != null) {
-        final previousNode =
-            widget.sessionCache.get(widget.packId, lastNode.id) ??
-            await widget.repository.fetchNode(widget.packId, lastNode.id);
-        if (mounted && previousNode != null) {
-          previousNode.nextNodeId = node.id;
-          widget.sessionCache.put(widget.packId, previousNode);
-          autoLinkedSourceId = previousNode.id;
-        }
-      }
-    }
     if (!mounted) return;
 
     setState(() {
       _selectedNodeId = node.id;
       _editingNode = node;
-      // _creationSourceId를 설정해 두면, 이 새 노드를 저장/승인요청할 때
-      // _persistCreationSourceEdgeIfNeeded가 방금 자동으로 이어붙인 이전
-      // 노드도 같이(항상 임시저장으로만) 저장해 준다 — 구조보기에서 선택지로
-      // 새 노드를 만들 때와 완전히 같은 메커니즘을 그대로 재사용하는 것이지,
-      // 별도의 저장 경로를 새로 만드는 게 아니다. choiceIndex는 남겨 두지
-      // 않는다(null이면 _fillCreationChoiceLabelIfNeeded가 자연히 아무것도
-      // 안 한다 — linear는 "선택지 문구" 개념이 없다).
-      _creationSourceId = autoLinkedSourceId;
+      _creationSourceId = null;
       _creationSourceChoiceIndex = null;
     });
     unawaited(_refreshUnsubmittedNodes());
   }
 
-  /// 사이드바 드래그 재정렬 — [displayed]는 지금 화면에 보이는 순서 그대로의
-  /// 목록(order로 정렬된 displaySummaries)이다. 옮긴 자리를 반영해 순서를
-  /// 다시 매기고, order가 실제로 바뀐 노드만 세션 캐시에 반영한다 — 다른
-  /// 편집과 똑같이 "임시저장"/"승인 요청 보내기"를 눌러야 Firestore에
-  /// 반영되는 초안일 뿐, 드래그만으로 즉시 쓰지 않는다.
-  ///
-  /// 배경 이미지 인계 체인(lib/core/story/background_image_inheritance.dart)은
-  /// order를 기준으로 매 build마다 다시 계산되므로, 여기서 order만 바꿔
-  /// 두면 재정렬 직후 미리보기에 곧바로 반영된다 — 별도로 인계 값을
-  /// 다시 계산해 넣을 필요가 없다.
+  /// 선형은 표시 순서로 order와 nextNodeId를 함께 스테이징한다.
+  /// interactive는 기존처럼 order만 바꾸고 선택지 연결은 보존한다.
+  /// 배경 상속은 변경된 order로 다시 계산되며 저장은 명시적으로 수행한다.
   Future<void> _handleReorder(
     List<AdminStoryNodeSummary> displayed,
     int oldIndex,
     int newIndex,
   ) async {
+    if (widget.pack.type == StoryPackType.linear) {
+      await _changeLinearOrder(() async {
+        final current = _displayNodes(_lastRawSummaries);
+        if (current.map((n) => n.id).join('\u0000') !=
+            displayed.map((n) => n.id).join('\u0000')) {
+          throw StateError('목록이 바뀌었어요. 다시 이동해주세요.');
+        }
+        await _stageLinearOrder(
+          reorderLinearNodeIds(
+            current.map((n) => n.id).toList(),
+            oldIndex,
+            newIndex,
+          ),
+        );
+      });
+      return;
+    }
     // ReorderableListView의 관례: 아래로 옮길 때 newIndex는 옮기는 항목을
     // 뺀 목록 기준이라, oldIndex보다 크면 1을 빼야 실제 삽입 위치가 된다.
     if (oldIndex < newIndex) newIndex -= 1;
@@ -435,34 +471,45 @@ class _StoryTabViewState extends State<StoryTabView> {
     );
     if (!confirmed || !mounted) return;
 
+    existing = _displayNodes(_lastRawSummaries);
     final ids = suggestSequentialNodeIds(
       existing.map((n) => n.id),
       pages.length,
     );
-    final startOrder = existing.isEmpty
-        ? 0
-        : existing.map((n) => n.order).reduce((a, b) => a > b ? a : b) + 1;
+    final positions = linearNodePositions([
+      ...existing.map((n) => n.id),
+      ...ids,
+    ]);
 
     final nodes = <AdminStoryNode>[];
     for (var i = 0; i < pages.length; i++) {
       final node = AdminStoryNode(
         id: ids[i],
-        order: startOrder + i,
+        order: positions[existing.length + i].order,
         bodyText: pages[i].text,
-        nextNodeId: i < pages.length - 1 ? ids[i + 1] : null,
+        nextNodeId: positions[existing.length + i].nextNodeId,
         pendingAction: PendingAction.create,
       );
       node.applyBodyTextToBlocks();
       nodes.add(node);
     }
 
+    await _stageLinearOrder(positions.map((n) => n.id).toList(), added: nodes);
+    if (!mounted) return;
     await widget.repository.saveNodesBatch(widget.packId, nodes);
+    // Preserve the existing per-node draft save path for changed predecessors.
+    for (final summary in existing) {
+      final cached = widget.sessionCache.get(widget.packId, summary.id);
+      if (cached != null) await _saveDraftForNode(cached);
+      if (!mounted) return;
+    }
     for (final node in nodes) {
       // ← 추가
       await widget.repository.stampApprovalRequestedAt(
         widget.packId,
         node.id,
       ); // ← 추가
+      widget.sessionCache.remove(widget.packId, node.id);
     }
 
     if (!mounted) return;
@@ -790,6 +837,12 @@ class _StoryTabViewState extends State<StoryTabView> {
     final node = _editingNode;
     if (node == null) return;
 
+    if (widget.pack.type == StoryPackType.linear) {
+      if (_changingLinearOrder) return;
+      await _handleBulkSaveDraftAll();
+      return;
+    }
+
     await _fillCreationChoiceLabelIfNeeded();
     if (!mounted) return;
 
@@ -1106,24 +1159,10 @@ class _StoryTabViewState extends State<StoryTabView> {
         // rawSummaries 대신 캐시 값을 쓴다 — 그래야 순서를 드래그로 바꾸거나
         // 본문을 고친 게 저장 전에도 미리보기(순서, 배경 이미지 인계 계산)에
         // 바로 반영된다. rawSummaries 자체는 절대 건드리지 않는다.
-        final displaySummaries = <AdminStoryNodeSummary>[];
-        final coveredIds = <String>{};
-
-        for (final raw in rawSummaries) {
-          final cached = widget.sessionCache.get(widget.packId, raw.id);
-          displaySummaries.add(cached == null ? raw : summaryFromNode(cached));
-          coveredIds.add(raw.id);
-        }
-        for (final cachedId in widget.sessionCache.nodeIdsForPack(
-          widget.packId,
-        )) {
-          if (coveredIds.contains(cachedId)) continue;
-          final cached = widget.sessionCache.get(widget.packId, cachedId);
-          if (cached == null) continue;
-          displaySummaries.add(summaryFromNode(cached));
-          coveredIds.add(cachedId);
-        }
-        displaySummaries.sort((a, b) => a.order.compareTo(b.order));
+        final displaySummaries = _displayNodes(rawSummaries);
+        final linearProblems = widget.pack.type == StoryPackType.linear
+            ? diagnoseLinearNodeOrder(displaySummaries.map(_position).toList())
+            : const <String>[];
 
         // "수정됨" 배지 — [_cachedUnsubmittedNodes]가 즉시 계산하는 값을
         // 그대로 쓴다. "변경사항 전체 승인요청" 버튼의 개수/대상
@@ -1161,203 +1200,239 @@ class _StoryTabViewState extends State<StoryTabView> {
         return Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
+            if (widget.pack.type == StoryPackType.linear)
+              Padding(
+                padding: const EdgeInsets.all(8),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      '선형 연결은 목록 순서로 결정됩니다. 추가·순서 변경은 노드별로 쓰기에서 진행하세요.',
+                    ),
+                    if (linearProblems.isNotEmpty) ...[
+                      Text(linearProblems.join(' · ')),
+                      Text(
+                        '적용할 순서: ${displaySummaries.map((n) => n.id).join(' → ')} → 끝',
+                      ),
+                      TextButton(
+                        onPressed: _changingLinearOrder
+                            ? null
+                            : () => _changeLinearOrder(
+                                () => _stageLinearOrder(
+                                  _displayNodes(
+                                    _lastRawSummaries,
+                                  ).map((n) => n.id).toList(),
+                                ),
+                              ),
+                        child: const Text('표시 순서로 연결 정리 (임시저장 전)'),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
             _ViewModeToggle(
               mode: _viewMode,
               showBulkOption: widget.pack.type == StoryPackType.linear,
               onChanged: (mode) => setState(() => _viewMode = mode),
             ),
             Expanded(
-              child: StreamBuilder<List<AdminImage>>(
-                stream: _imagesStream,
-                builder: (context, imgSnapshot) {
-                  final images = imgSnapshot.data ?? const <AdminImage>[];
+              child: AbsorbPointer(
+                absorbing: _changingLinearOrder,
+                child: StreamBuilder<List<AdminImage>>(
+                  stream: _imagesStream,
+                  builder: (context, imgSnapshot) {
+                    final images = imgSnapshot.data ?? const <AdminImage>[];
 
-                  return StreamBuilder<List<AdminSfx>>(
-                    stream: _sfxLibraryStream,
-                    builder: (context, sfxSnapshot) {
-                      final sfxLibrary = sfxSnapshot.data ?? const <AdminSfx>[];
+                    return StreamBuilder<List<AdminSfx>>(
+                      stream: _sfxLibraryStream,
+                      builder: (context, sfxSnapshot) {
+                        final sfxLibrary =
+                            sfxSnapshot.data ?? const <AdminSfx>[];
 
-                      return StreamBuilder<List<AdminBgm>>(
-                        stream: _bgmLibraryStream,
-                        builder: (context, bgmSnapshot) {
-                          final bgmLibrary =
-                              bgmSnapshot.data ?? const <AdminBgm>[];
+                        return StreamBuilder<List<AdminBgm>>(
+                          stream: _bgmLibraryStream,
+                          builder: (context, bgmSnapshot) {
+                            final bgmLibrary =
+                                bgmSnapshot.data ?? const <AdminBgm>[];
 
-                          return StreamBuilder<List<AdminTtsVoice>>(
-                            stream: _ttsVoicesStream,
-                            builder: (context, ttsVoicesSnapshot) {
-                              final ttsVoices =
-                                  ttsVoicesSnapshot.data ??
-                                  const <AdminTtsVoice>[];
+                            return StreamBuilder<List<AdminTtsVoice>>(
+                              stream: _ttsVoicesStream,
+                              builder: (context, ttsVoicesSnapshot) {
+                                final ttsVoices =
+                                    ttsVoicesSnapshot.data ??
+                                    const <AdminTtsVoice>[];
 
-                              return switch (_viewMode) {
-                                _ViewMode.bulk => BulkNodeWriter(
-                                  onSave: (pages) =>
-                                      _handleBulkSave(pages, rawSummaries),
-                                ),
-                                _ViewMode.map => StoryMapView(
-                                  packId: widget.packId,
-                                  packType: widget.pack.type,
-                                  nodes: displaySummaries,
-                                  unsavedNodeIds: unsavedNodeIds,
-                                  sessionCache: widget.sessionCache,
-                                  repository: widget.repository,
-                                  // 더 이상 "노드별로 쓰기"로 넘어가지 않는다 — 그래프
-                                  // 화면 안에서 바로 [_NodeEditorPanel]로 연다(같은
-                                  // _selectNode가 _editingNode/_creationSourceId를
-                                  // 채워 주면, 아래로 내려주는 editingNode 등이 자동으로
-                                  // 그 값을 반영한다).
-                                  onOpenNode: (id) => _selectNode(id),
-                                  onNodeCreatedFromDrag:
-                                      (newNodeId, sourceId, choiceIndex) =>
-                                          _selectNode(
-                                            newNodeId,
-                                            creationSourceId: sourceId,
-                                            creationSourceChoiceIndex:
-                                                choiceIndex,
-                                          ),
-                                  onChanged: () => setState(() {}),
-                                  editingNode: editingNode,
-                                  editingNodeDirty:
-                                      editingNode != null &&
-                                      widget.sessionCache.has(
-                                        widget.packId,
-                                        editingNode.id,
-                                      ),
-                                  editingNodeIdEditable: isNewUnsaved,
-                                  images: images,
-                                  inheritedBackgroundImageId:
-                                      inheritedBackgroundImageId,
-                                  editingNodeCreationSourceId:
-                                      editingNode != null &&
-                                          _selectedNodeId == editingNode.id
-                                      ? _creationSourceId
-                                      : null,
-                                  onEditorChanged: () =>
-                                      _handleEditorChanged(editingNode!),
-                                  onSaveDraft: _handleSaveDraft,
-                                  onCancelDeleteRequest:
-                                      _handleCancelDeleteRequest,
-                                  onClosePanel: _handleClosePanel,
-                                  onBulkSaveDraft: _handleBulkSaveDraftAll,
-                                  onBulkRequestApproval:
-                                      _handleBulkRequestApprovalAll,
-                                  sfxLibrary: sfxLibrary,
-                                  bgmLibrary: bgmLibrary,
-                                  ttsVoices: ttsVoices,
-                                  onRefreshTtsVoices: _handleRefreshTtsVoices,
-                                  refreshingTtsVoices: _refreshingTtsVoices,
-                                  ttsVoiceRepository: widget.ttsVoiceRepository,
-                                  defaultTtsVoiceId:
-                                      widget.pack.defaultTtsVoiceId,
-                                ),
-                                _ViewMode.single => Row(
-                                  crossAxisAlignment:
-                                      CrossAxisAlignment.stretch,
-                                  children: [
-                                    StoryNodeSidebar(
-                                      nodes: displaySummaries,
-                                      selectedNodeId: _selectedNodeId,
-                                      unsavedNodeIds: unsavedNodeIds,
-                                      onAddNode: () =>
-                                          _handleAddNode(rawSummaries),
-                                      unsubmittedCount:
-                                          _allUnsubmittedNodes().length,
-                                      onSubmitAllChanges:
-                                          _handleBulkSubmitAllChanges,
-                                      onSelect: (id) {
-                                        if (id == _selectedNodeId) return;
-                                        _selectNode(id);
-                                      },
-                                      onDelete: (id) =>
-                                          _handleDeleteNode(id, rawSummaries),
-                                      onReorder: (oldIndex, newIndex) =>
-                                          _handleReorder(
-                                            displaySummaries,
-                                            oldIndex,
-                                            newIndex,
-                                          ),
-                                      bulkSelectedIds: _bulkDeleteSelection,
-                                      onToggleBulkSelect:
-                                          _toggleBulkDeleteSelect,
-                                      onToggleSelectAll: () =>
-                                          _toggleBulkDeleteSelectAll(
-                                            displaySummaries,
-                                          ),
-                                      onBulkDelete: _handleBulkDelete,
-                                    ),
-                                    Expanded(
-                                      child: editingNode == null
-                                          ? Center(
-                                              child: Text(
-                                                '노드를 선택하거나 새로 만들어주세요.',
-                                                style: TextStyle(
-                                                  color: AdminColors.muted,
-                                                ),
-                                              ),
-                                            )
-                                          : NodeEditor(
-                                              // id 문자열이 아니라 객체 identity로 키를
-                                              // 잡는다 — "새 스토리 노드"를 두 번
-                                              // 누르면 두 번째도 같은 id를 제안할 수
-                                              // 있어서(취소된 적 없는 세션 캐시 기준
-                                              // 재확인), _selectedNodeId 문자열만으로는
-                                              // 항상 다른 값이라는 보장이 없다.
-                                              // ValueKey(id)를 쓰면 Flutter가 "같은
-                                              // 위젯"으로 보고 NodeBodyEditor의
-                                              // TextFormField를 다시 만들지 않아 화면에
-                                              // 이전 내용이 남는다. editingNode는
-                                              // 세션이 바뀔 때마다 다른 인스턴스이므로
-                                              // ObjectKey는 id 충돌과 무관하게 항상
-                                              // 다시 마운트한다.
-                                              key: ObjectKey(editingNode),
-                                              node: editingNode,
-                                              dirty: widget.sessionCache.has(
-                                                widget.packId,
-                                                editingNode.id,
-                                              ),
-                                              isIdEditable: isNewUnsaved,
-                                              images: images,
-                                              sfxLibrary: sfxLibrary,
-                                              bgmLibrary: bgmLibrary,
-                                              ttsVoices: ttsVoices,
-                                              onRefreshTtsVoices:
-                                                  _handleRefreshTtsVoices,
-                                              refreshingTtsVoices:
-                                                  _refreshingTtsVoices,
-                                              ttsVoiceRepository:
-                                                  widget.ttsVoiceRepository,
-                                              packId: widget.packId,
-                                              defaultTtsVoiceId:
-                                                  widget.pack.defaultTtsVoiceId,
-                                              packType: widget.pack.type,
-                                              candidates: displaySummaries,
-                                              inheritedBackgroundImageId:
-                                                  inheritedBackgroundImageId,
-                                              creationSourceId:
-                                                  _selectedNodeId ==
-                                                      editingNode.id
-                                                  ? _creationSourceId
-                                                  : null,
-                                              onChanged: () =>
-                                                  _handleEditorChanged(
-                                                    editingNode,
-                                                  ),
-                                              onSaveDraft: _handleSaveDraft,
-                                              onCancelDeleteRequest:
-                                                  _handleCancelDeleteRequest,
+                                return switch (_viewMode) {
+                                  _ViewMode.bulk => BulkNodeWriter(
+                                    onSave: (pages) =>
+                                        _handleBulkSave(pages, rawSummaries),
+                                  ),
+                                  _ViewMode.map => StoryMapView(
+                                    packId: widget.packId,
+                                    packType: widget.pack.type,
+                                    nodes: displaySummaries,
+                                    unsavedNodeIds: unsavedNodeIds,
+                                    sessionCache: widget.sessionCache,
+                                    repository: widget.repository,
+                                    // 더 이상 "노드별로 쓰기"로 넘어가지 않는다 — 그래프
+                                    // 화면 안에서 바로 [_NodeEditorPanel]로 연다(같은
+                                    // _selectNode가 _editingNode/_creationSourceId를
+                                    // 채워 주면, 아래로 내려주는 editingNode 등이 자동으로
+                                    // 그 값을 반영한다).
+                                    onOpenNode: (id) => _selectNode(id),
+                                    onNodeCreatedFromDrag:
+                                        (newNodeId, sourceId, choiceIndex) =>
+                                            _selectNode(
+                                              newNodeId,
+                                              creationSourceId: sourceId,
+                                              creationSourceChoiceIndex:
+                                                  choiceIndex,
                                             ),
-                                    ),
-                                  ],
-                                ),
-                              };
-                            },
-                          );
-                        },
-                      );
-                    },
-                  );
-                },
+                                    onChanged: () => setState(() {}),
+                                    editingNode: editingNode,
+                                    editingNodeDirty:
+                                        editingNode != null &&
+                                        widget.sessionCache.has(
+                                          widget.packId,
+                                          editingNode.id,
+                                        ),
+                                    editingNodeIdEditable: isNewUnsaved,
+                                    images: images,
+                                    inheritedBackgroundImageId:
+                                        inheritedBackgroundImageId,
+                                    editingNodeCreationSourceId:
+                                        editingNode != null &&
+                                            _selectedNodeId == editingNode.id
+                                        ? _creationSourceId
+                                        : null,
+                                    onEditorChanged: () =>
+                                        _handleEditorChanged(editingNode!),
+                                    onSaveDraft: _handleSaveDraft,
+                                    onCancelDeleteRequest:
+                                        _handleCancelDeleteRequest,
+                                    onClosePanel: _handleClosePanel,
+                                    onBulkSaveDraft: _handleBulkSaveDraftAll,
+                                    onBulkRequestApproval:
+                                        _handleBulkRequestApprovalAll,
+                                    sfxLibrary: sfxLibrary,
+                                    bgmLibrary: bgmLibrary,
+                                    ttsVoices: ttsVoices,
+                                    onRefreshTtsVoices: _handleRefreshTtsVoices,
+                                    refreshingTtsVoices: _refreshingTtsVoices,
+                                    ttsVoiceRepository:
+                                        widget.ttsVoiceRepository,
+                                    defaultTtsVoiceId:
+                                        widget.pack.defaultTtsVoiceId,
+                                  ),
+                                  _ViewMode.single => Row(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.stretch,
+                                    children: [
+                                      StoryNodeSidebar(
+                                        nodes: displaySummaries,
+                                        selectedNodeId: _selectedNodeId,
+                                        unsavedNodeIds: unsavedNodeIds,
+                                        onAddNode: () =>
+                                            _handleAddNode(rawSummaries),
+                                        unsubmittedCount:
+                                            _allUnsubmittedNodes().length,
+                                        onSubmitAllChanges:
+                                            _handleBulkSubmitAllChanges,
+                                        onSelect: (id) {
+                                          if (id == _selectedNodeId) return;
+                                          _selectNode(id);
+                                        },
+                                        onDelete: (id) =>
+                                            _handleDeleteNode(id, rawSummaries),
+                                        onReorder: (oldIndex, newIndex) =>
+                                            _handleReorder(
+                                              displaySummaries,
+                                              oldIndex,
+                                              newIndex,
+                                            ),
+                                        bulkSelectedIds: _bulkDeleteSelection,
+                                        onToggleBulkSelect:
+                                            _toggleBulkDeleteSelect,
+                                        onToggleSelectAll: () =>
+                                            _toggleBulkDeleteSelectAll(
+                                              displaySummaries,
+                                            ),
+                                        onBulkDelete: _handleBulkDelete,
+                                      ),
+                                      Expanded(
+                                        child: editingNode == null
+                                            ? Center(
+                                                child: Text(
+                                                  '노드를 선택하거나 새로 만들어주세요.',
+                                                  style: TextStyle(
+                                                    color: AdminColors.muted,
+                                                  ),
+                                                ),
+                                              )
+                                            : NodeEditor(
+                                                // id 문자열이 아니라 객체 identity로 키를
+                                                // 잡는다 — "새 스토리 노드"를 두 번
+                                                // 누르면 두 번째도 같은 id를 제안할 수
+                                                // 있어서(취소된 적 없는 세션 캐시 기준
+                                                // 재확인), _selectedNodeId 문자열만으로는
+                                                // 항상 다른 값이라는 보장이 없다.
+                                                // ValueKey(id)를 쓰면 Flutter가 "같은
+                                                // 위젯"으로 보고 NodeBodyEditor의
+                                                // TextFormField를 다시 만들지 않아 화면에
+                                                // 이전 내용이 남는다. editingNode는
+                                                // 세션이 바뀔 때마다 다른 인스턴스이므로
+                                                // ObjectKey는 id 충돌과 무관하게 항상
+                                                // 다시 마운트한다.
+                                                key: ObjectKey(editingNode),
+                                                node: editingNode,
+                                                dirty: widget.sessionCache.has(
+                                                  widget.packId,
+                                                  editingNode.id,
+                                                ),
+                                                isIdEditable: isNewUnsaved,
+                                                images: images,
+                                                sfxLibrary: sfxLibrary,
+                                                bgmLibrary: bgmLibrary,
+                                                ttsVoices: ttsVoices,
+                                                onRefreshTtsVoices:
+                                                    _handleRefreshTtsVoices,
+                                                refreshingTtsVoices:
+                                                    _refreshingTtsVoices,
+                                                ttsVoiceRepository:
+                                                    widget.ttsVoiceRepository,
+                                                packId: widget.packId,
+                                                defaultTtsVoiceId: widget
+                                                    .pack
+                                                    .defaultTtsVoiceId,
+                                                packType: widget.pack.type,
+                                                candidates: displaySummaries,
+                                                inheritedBackgroundImageId:
+                                                    inheritedBackgroundImageId,
+                                                creationSourceId:
+                                                    _selectedNodeId ==
+                                                        editingNode.id
+                                                    ? _creationSourceId
+                                                    : null,
+                                                onChanged: () =>
+                                                    _handleEditorChanged(
+                                                      editingNode,
+                                                    ),
+                                                onSaveDraft: _handleSaveDraft,
+                                                onCancelDeleteRequest:
+                                                    _handleCancelDeleteRequest,
+                                              ),
+                                      ),
+                                    ],
+                                  ),
+                                };
+                              },
+                            );
+                          },
+                        );
+                      },
+                    );
+                  },
+                ),
               ),
             ),
           ],

@@ -15,7 +15,6 @@ import '../models/node_effects.dart';
 import '../models/pending_action.dart';
 import '../models/story_pack_type.dart';
 import 'admin_theme.dart';
-import 'choice_target_picker.dart';
 import 'image_picker_field.dart';
 import 'info_banner.dart';
 import 'labeled_field.dart';
@@ -174,7 +173,10 @@ class _NodeEditorState extends State<NodeEditor> {
             const SizedBox(height: 4),
             _MetaRow(
               node: node,
-              isIdEditable: widget.isIdEditable,
+              isIdEditable:
+                  widget.isIdEditable &&
+                  widget.packType == StoryPackType.interactive,
+              isOrderEditable: widget.packType == StoryPackType.interactive,
               onChanged: widget.onChanged,
             ),
             const SizedBox(height: 22),
@@ -198,22 +200,7 @@ class _NodeEditorState extends State<NodeEditor> {
                 onChanged: widget.onChanged,
               )
             else
-              SizedBox(
-                width: 400,
-                child: LabeledField(
-                  label: '다음 페이지',
-                  child: ChoiceTargetPicker(
-                    selectedId: node.nextNodeId,
-                    candidates: widget.candidates
-                        .where((c) => c.id != node.id)
-                        .toList(),
-                    onSelected: (id) {
-                      node.nextNodeId = id;
-                      widget.onChanged();
-                    },
-                  ),
-                ),
-              ),
+              Text('다음 페이지: ${node.nextNodeId ?? "끝"} · 목록 순서로 자동 연결'),
             const SizedBox(height: 20),
             Divider(color: AdminColors.border, height: 1),
             const SizedBox(height: 20),
@@ -222,7 +209,10 @@ class _NodeEditorState extends State<NodeEditor> {
             else
               ..._buildNarrowStagingSections(),
             const SizedBox(height: 20),
-            _SaveBar(onSaveDraft: widget.onSaveDraft),
+            _SaveBar(
+              onSaveDraft: widget.onSaveDraft,
+              saveAll: widget.packType == StoryPackType.linear,
+            ),
           ],
         ),
       ),
@@ -660,11 +650,13 @@ class _Header extends StatelessWidget {
 class _MetaRow extends StatelessWidget {
   final AdminStoryNode node;
   final bool isIdEditable;
+  final bool isOrderEditable;
   final VoidCallback onChanged;
 
   const _MetaRow({
     required this.node,
     required this.isIdEditable,
+    required this.isOrderEditable,
     required this.onChanged,
   });
 
@@ -693,26 +685,29 @@ class _MetaRow extends StatelessWidget {
           )
         else
           Text(
-            '이미 저장된 노드의 ID는 바꿀 수 없어요.',
+            '이 노드의 ID는 바꿀 수 없어요.',
             style: TextStyle(fontSize: 11, color: AdminColors.muted),
           ),
-        SizedBox(
-          width: 130,
-          child: TextFormField(
-            initialValue: '${node.order}',
-            keyboardType: TextInputType.number,
-            style: TextStyle(color: AdminColors.inputText, fontSize: 12.5),
-            decoration: adminInputDecoration(hintText: '순서 (배경 인계 기준)')
-                .copyWith(
-                  isDense: true,
-                  prefixIcon: const Icon(Icons.sort_rounded, size: 14),
-                ),
-            onChanged: (value) {
-              node.order = int.tryParse(value) ?? node.order;
-              onChanged();
-            },
+        if (!isOrderEditable)
+          Text("순서: ${node.order + 1} · 목록에서 이동")
+        else
+          SizedBox(
+            width: 130,
+            child: TextFormField(
+              initialValue: '${node.order}',
+              keyboardType: TextInputType.number,
+              style: TextStyle(color: AdminColors.inputText, fontSize: 12.5),
+              decoration: adminInputDecoration(hintText: '순서 (배경 인계 기준)')
+                  .copyWith(
+                    isDense: true,
+                    prefixIcon: const Icon(Icons.sort_rounded, size: 14),
+                  ),
+              onChanged: (value) {
+                node.order = int.tryParse(value) ?? node.order;
+                onChanged();
+              },
+            ),
           ),
-        ),
       ],
     );
   }
@@ -925,8 +920,9 @@ class _BackgroundAppliesForwardToggle extends StatelessWidget {
 /// "이 노드부터 미리보기"(새 창)로 옮겨간다.
 class _SaveBar extends StatelessWidget {
   final VoidCallback onSaveDraft;
+  final bool saveAll;
 
-  const _SaveBar({required this.onSaveDraft});
+  const _SaveBar({required this.onSaveDraft, required this.saveAll});
 
   @override
   Widget build(BuildContext context) {
@@ -950,9 +946,9 @@ class _SaveBar extends StatelessWidget {
                 borderRadius: BorderRadius.circular(8),
               ),
             ),
-            child: const Text(
-              '임시저장 (나만 보임)',
-              style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
+            child: Text(
+              saveAll ? '전체 임시저장 (나만 보임)' : '임시저장 (나만 보임)',
+              style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
             ),
           ),
           Text(
